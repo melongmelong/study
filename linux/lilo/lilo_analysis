@@ -1,0 +1,11 @@
+bootsect.S
+  _main
+    ds reg에 #BOOTSEG (0x07c0) copy
+    
+    int 0x12 수행.(ax=total low-memory(<=1MB) in KBytes)
+    ax=ax-STK_SIZE수행.
+    ax=ax<<6 수행
+    bx=#INITSEG 수행
+    ax=ax>bx ? bx : ax 수행. 일반적으로 bx값이 작을 것으로 보임.
+    BOOTSEG(0x07c0) -> INITSEG(0x9000) 로 512 bytes를 copy.
+    

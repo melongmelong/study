@@ -1,0 +1,36 @@
+lilo make analysis
+
+./Makefile
+  top-level make
+  make -C src all 수행
+  make -C images all 수행
+  
+./src/Makefile : 
+  lilo, bootsect.b를 빌드
+  all:    lilo bootsect.b
+  lilo : lilo userspace tool binary.
+  bootsect.b : lilo bootloader img.
+
+  lilo: $(OBJS)
+    $(CC) $(CPPFLAGS) $(CFLAGS) $(LDFLAGS) -o lilo $(OBJS) $(LIBS) 
+  OBJS=lilo.o raid.o map.o geometry.o boot.o device.o common.o bsect.o cfg.o    partition.o identify.o probe.o shs2.o edit.o temp.o
+  LIBS=$(DEVMAPPER). optional.
+
+  bootsect.b : bootsect.img(SUFFIX rule)
+  bootsect.img : bootsect.o(SUFFIX rule)
+  bootsect.o : bootsect.s(SUFFIX rule)
+  bootsect.s : bootsect.S disk.b
+        $(CPP) $(CPPFLAGS) -traditional $(PCONFIG) \
+                -DSIZEDISKB=`wc -c <disk.b | sed "s/ //g"` \
+                -o bootsect.s  bootsect.S
+
+  disk.b : disk.img(SUFFIX rule)
+  disk.img : disk.o(SUFFIX rule)
+  disk.o : disk.s(SUFFIX rule)
+  disk.s : disk.S read.S bdata.h biosdata.S lilo.h Makefile
+        $(CPP) $(CPPFLAGS) -traditional $(PCONFIG) -o disk.s  disk.S
+
+./images/Makefile : 
+  lilo에서 사용할 bitmap img를 빌드
+  
+
