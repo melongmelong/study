@@ -1,0 +1,23 @@
+최종이미지 생성(x86기준)
+
+arch/x86/boot/Makefile에서 아래 command를 실행함
+arch/x86/boot/tools/build arch/x86/boot/setup.bin arch/x86/boot/vmlinux.bin arch/x86/boot/zoffset.h arch/x86/boot/bzImage
+
+build : build binary to be executed
+setup.bin : setup bin
+vmlinux.bin : kernel bin
+zoffset.h : addr info from kernel img.
+bzImage : output
+
+build tool이 하는 일(efi는 제외)
+  zoffset.h parsing.
+  setup.bin 을 read하고 buf[508](509번째 byte)에 root device정보를 setting.
+  vmlinux.bin을 read. memory mapping을 진행.
+  setup_sector사이즈를 buf의 498번째 byte에 저장.
+  sys_size를 buf의 501번째 byte에 저장.
+  kernel_info를 buf의 617번째 byte에 저장.
+  buf(수정된 setup.bin)을 dest(bzImage)에 write.
+  kernel의 crc를 구함
+  kernel(vmlinux.bin)을 dest(bzImage)에 wrtie.
+  kernel의 crc를 dest(bzImage)에 write.
+  => bzImage = setup.bin + vmlinux.bin + crc 순서로 구성됨.

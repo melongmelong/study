@@ -1,0 +1,690 @@
+부팅과정(x86기준, understanding the linux kernel 참조)
+-step1. BIOS
+초기 0xfffffff0 의 code를 실행.(해당 영역은 BIOS코드를 가지고있는 ROM영역임)
+하드웨어 check, 하드웨어 초기화, 부팅 디바이스의 부트섹터를 RAM에 copy하고(physical address 0x00007c00 이 첫번째 offset) 해당 위치로 control을 넘김.
+일반적으로 boot loader를 load하고 실행.
+0xfffffff0 : 9.1, Vol3, intel arch manual.
+
+-step2. Boot loader
+일반적으로 2stage boot loader사용. bootsector는 boot loader를 모두 담기에 size가 작은 것이 이유.
+LILO의 경우 다음의 과정으로 kernel img를 load.
+디스크에서 커널의 초기부분을 ram으로 copy. 첫 512byte는 physical address 0x00090000로 copy, setup() function은 physical addr 0x00090200로 copy 됨.
+이후, 나머지 커널이미지를 다음의 phy addr로 copy
+zImage(0x00010000), bzImage(0x00100000)
+그리고나서 setup()로 jump함.
+
+x86의 경우, X(bootloader에서 정해지는 addr)일 때, 
+0xX~0xX+0x08000 : kernel bootsector/kernel setup code.
+0x100000 ~ : protected-mode kernel img.(compressed kernel)
+kernel source tree의 Documentation/x86/boot.rst 참조.
+
+Documentation/x86/boot.rst
+boot protocol을 명시. x86에서 kernel image와 boot loader, bios에 대한 memory layout 정보와 header 정보, kernel_info, commandline passing 등을 기술. 즉, kernel booting을 위한 interface spec 정보가 기술되어있음.
+conventional memory : IBM compatible PC에서 0~640KB(1024bytes * 640) 즉, 0~A0000 까지의 메모리 range를 의미.(wikipedia conventional memory 참조)
+low memory : conventional memory영역에서 0~64KB영역을 의미.
+ibm compatible pc의 경우 20 pin addr line이 지원되어서 1MB까지 만 addressable 하였음. 640KB까지는 RAM, 나머지 384KB는 UMA라고 불리어짐.(ROM BIOS, device memory 를 위해서 사용됨). ibm compatible pc에서는 호환성을 위해 이 제약은 유지되고있음.(640KB conventional memory, 1MB addressing 있음)
+
+-arch/x86/boot/header.S
+cs = ds+0x20, ds = es = ss = start of real-mode-kernel code 로 설정됨(from bootloader)
+BIOS에서 바로 리눅스로 부팅된다면 더이상 부팅을 진행하지 않음.(start2 label참조)
+bootloader로부터 실행되는 경우 512byte번째, 즉 _start label에서부터 부팅을 시작함.
+
+_start: start_of_setup label로 jmp. short jump를 수행
+start_of_setup : stack을 사용하기 위한 stack관련 설정(레지스터, 스택사이즈) 및 설정 그리고 interrupt enable, . cs 값을 ds 와 동일하 게 설정. 그리고 signature를(setup.ld에 정의)를 비교함. bss 영역을 초기화. 이후 main function(arch/x86/boot/main.c)을 call. 
+
+-arch/x86/boot/main.c
+main: arch/x86/boot/pm.c의 go_to_protected_mode() 호출함. 
+copy_boot_params() : header.S의 hdr데이터를 boot_param struct로 copy. old boot protocol을 따르는 경우, command line으로의 pointer정보를 설정함.
+console_init() : console/serial을 초기화함. kernel cmdline에 주어진 earlyprintk, console 옵션을 처리하고, i/o address instruction을 통해 setting을 수행.
+init_heap() : heap영역(end)을 설정함.
+validata_cpu() : cpu를 check함. 이슈가 있는 경우, 부팅 실패함.
+set_bios_mode() : BIOS mode를 설정함. 64bit에서만 동작함. 32bit의 경우 아무것도 안함.
+detect_memory() : BIOS를 통해서 memory를 detection함.
+keyboard_init() : BIOS를 통해서 keyboard를 설정함.
+query_ist() : BIOS를 통해서 IST(Intel SpeedStep)정보를 얻어옴
+set_video() : video card관련 초기화를 수행.
+go_to_protected_mode() : realmode switch hook function을 실행 후, A20 gate를 enable함. 이후 coprecessor를 reset하고 PIC의 인터럽트를 마스킹. 이후 IDT, GDT를 셋업후 protected_mode_jump를 call.(arch/x86/boot/pmjump.S)
+
+validate_cpu() :
+  check_cpu() call :
+    EFLGAS reg의 AC bit가 setting되어있 는지 확인 후 level 설정
+    get_cpuflags() call :
+      has_fpu() call : fpu기능 을가지고있는 지 확인
+      fpu기능을 가지고있다면, cpu.flags의 bit를 setting
+      EFLAGS reg의 ID field를 check(has_eflag)
+      ID filed가 set인 경우, cpuid(eax = 0x00)으로 cpu정보를 조회하여 cpu level, family, model, flags정보를 setting함.
+    check_cpuflags() call : cpu.flag가 세팅되어있는 지 확인.
+    cpu.flags 와 MSR reg의 정보를 사용해서 CPU의 feature를 재설정하고, cpu.flags정보도 재설정수행.
+    check_knl_erratum() call : Xeon Phi x200 processor관련 check를 수행함.
+    err_flags_ptr, cpu_level_ptr, req_level_ptr 에 구해진 값을 copy.
+    정상적인 경우 0, 아닌경우 -1 return
+  cpu_level, req_level을 비교.
+  err_flags가 setting되어있는 지 확인 및 check_knl_errautm() call하여 return을 확인.
+
+set_bios_mode() :
+  intcall() call :
+    BIOS call. 
+    1st argument의 값을 3f(interrupt number)에 setting.
+    기존 reg정보들을 stack에 push.
+    인자로 넘어온 reg정보(struct biosreg)를 stack에 setting. (해당 구조체의 첫번째 field부터 stack top에 위치하는 형태로 저장됨.)
+    stack으로부터 biosreg정보를 다시 각 레지스터 에 load
+    INT call 수행.(BIOS call)
+    BIOS call의 결과를 얻기위해 레지스터정보들을 다시 stack에 저장.
+    sp, ds, es정보를 재설정.
+    output reg(struct biosreg, %esp+68 offset)로 stack의 데이터(BIOS output)을 copy 후 stack pointer를 rewind.
+    기존 reg정보들을 다시 pop후 return.
+
+detect_memory() :
+  detect_memory_e820 call:
+    BIOS e820 call후, memory map정보를 boot_params.e820_table에 copy.
+  detect_memory_e801 call : 
+    extended memory map 정보를 boot_params.alt_mem_k 에 copy. (1~16MB 사이에 사용가능한 memory size)
+  detect_memory_88 call : 
+    extended memory map 정보를 boot_params.screen_info.ext_mem_k 에 copy.(1MB 이후로 사용가능한 memory size)
+
+keyboard_init() : 
+  BIOS call GET SHIFT FLAGS하여 boot_params.kbd_status에 copy.
+  BIOS call SET TYPEMATIC RATE AND DELAY 호출하여 repeat rate를 설정.
+
+query_ist() : 
+  BIOS로부터 SpeedStep(IST) info를 얻어옴.
+
+set_video() : 
+  RESET_HEAP() call : HEAP var에 _end 값을 copy
+  store_mode_params() call : 
+    video관련 값을 BIOS로부터 query하여 setting(screen_info.orig_x, orig_y, orig_video_mode, orig_video_page)
+    video_segment 값을 설정.
+    BIOS영역으로부터 screen_info.orig_video_points, screen_info.orig_video_cols, orig_video_lines를 설정.
+  save_screen() call : 
+    store_mode_params()에서 구한 일부값을 copy.
+    video memory를 위한 heap영역을 확보함. 이후 video_segment로부터 값을 copy함.
+  probe_cards() call :
+    등록된 videocard정보들에 대해서 probe()를 수행.(마찬가지로 BIOS call 사용함.)
+    __videocard 로 search하면 관련 코드 확인 가능.
+  videocard 의 mode를 설정함.
+  vesa_store_edid() call : 
+    edid관련 정보를 설정/조회.
+  store_mode_params() call : 
+    위와 동일 
+  restore가 필요한 경우 restore_screen() call : 
+    screen 정보를 restore함.
+
+go_to_protected_mode() call :
+  
+-arch/x86/boot/pm.c
+go_to_proected_mode: idt, gdt를 설정함. arch/x86/boot/pmjump.S의 protected_mode_jump() 호출.
+
+go_to_protected_mode() call :
+  realmode_switch_hook() call :
+    realmode swicth hook들을 수행.
+
+  enable_a20() call : 
+    아래 로직을 일정횟수(255) 반복수행함.
+
+    a20_test_short() call : 
+      a20_test() call :
+        a20이 on되어있는 지 확인수행.
+
+    enable_a20_bios() call : 
+      BIOS call을 수행하여 a20 pin을 on.
+    이후 a20_test_short() call을 수행.
+
+    empty_8042() call : 
+      0x64 IO port로부터 status를 read.
+      status를 기반으로 return을 수행함.
+    이후 a20_test_short() call을 수행. 
+
+    keyboard controller를 통해 a20을 enable수행함.
+    enable_a20_kbc() call:
+      empty_8042() call을 수행하며, IO port에(0x60, 0x64) 값(0xd1, 0xdf, 0xff) 을write
+    이후 a20_test_long() call을 수행.
+
+    enable_a20_fast() call :
+      io port 0x92를 통해 a20을 enable.
+    이후 a20_test_long() call을 수행.
+  실패한 경우, die()를 call.
+
+  reset_coprocessor() call : 
+    io port 0xf0, 0xf1에 0x00값을 write하여 coprocessor를 reset.
+  
+  mask_all_interrupts() call : 
+    io port 0xa1, 0x21에 값(각각 0xff, 0xfb)를 write하여 interrupt를 masking.
+
+  setup_idt() call :
+    baseaddr = 0, limit = 0 정보를 idtr에 load.
+
+  setup_gdt() call :
+    gdtr에 baseaddr = boot_gdt, limit = sizeof(boot_gdt)정보를 load.  
+    boot_gdt : gdt entry정보를 가지고있음.
+      CS : 0~4GB mapping
+      DS : CS와 동일
+      TSS : tss segment를 설정. (4096 ~ 4096+103)의 영역을 가짐.
+
+  protected_mode_jump() call : 
+    
+-arch/x86/boot/pmjump.S
+protected_mode_jump : protected mode로 전환하고, 32bit instruction으로 jump(.Lin_pm32 label). 32bit instruction이 실행되며, segment descriptor를 사용함. 
+.Lin_pm32 label의 address는 변경됨.(addl %ebx, 2f 코드 참고)
+.Lin_pm32 : cs와 나머지 segment register의 값을 동일하게 설정함. general purpose register를 0으로 초기화함. task register, ldtr을 설정. 이후,0x00100000으로(x86/kernel/boot/compressed/head_64.S startup_32) jump.
+
+protected_mode_jump() call :
+  boot param의 addr 를esi reg 에copy
+  .Lin_pm32의 addr을 구함.
+  __BOOT_DS, __BOOT_TSS값을 cx, di reg에 copy
+  cr0 reg를 조작하여 PE  를 enable.
+  far jump를 통해 .Lin_pm32를 call. cs reg에 __BOOT_CS값이 load됨.
+  
+.Lin_pm32 : 
+  ds,es,fs,gs,ss reg를 ecx reg값(__BOOT_DS)으로 설정.
+  esp reg 에 ebx reg(cs의 physical addr)의 값을 add.
+  task register 를 load
+  ecx, edx, ebx, ebp, edi reg를 0으로 초기화.
+  ldtr을 load.
+  0x100000 으로 jump수행.(compressed kernel img)
+
+-x86/kernel/boot/compressed/head_64.S
+startup_32
+-boot_params.hdr의 loadflags 값을 확인 후(segment를 재설정하는 지를 확인) segment register값(__BOOT_DS로 ,ds,es,ss)을 설정함.
+-4바이트 stack(BP_scratch코드 참조)을 사용하도록 esp를 설정. 이후 컴파일된 주소값과 실제실행 주소값의 차이를 구함.(ebp = runnigaddr - compileaddr)
+-새로운 스택영역을 설정함(boot_stack_end 참조). 이 때, 위에서 구한 주소값차이를 offset으로 사용함.
+-verify_cpu 를 call하여 longmode를 지원하는 지 확인. longmode지원하지 않는경우, 더이상 실행을 하지않고 hlt loop를 수행함.
+  verify_cpu
+    cpuid, msr을 setting/조회하여 cpu 가 longmode/sse를 지원하는 지를 확인함.
+-커널 decomp를 수행할 address를 계산
+  LOAD_PHYSICAL_ADDR값(kernel config시 설정 됨.)을 ebx reg에 copy.
+  boot param(setup header)의 init_size 값(compile시 계산 됨.)을 eax reg에 copy.
+  eax reg = init_size - _end 를 수행.
+  ebx = ebx + eax 를 수행.(kernel을 임시로 copy할 메모리에 대해서 보정을 수행함. why?)
+-global descriptor table을 load함.
+  gdt의 address값 에 offset(ebp)를 더해줌
+  lgdt 로 gdtr load수행.
+-PAE mode를 enable.
+-SEV(AMD관련 기능으로 보임) 관련 설정을 확인 후, (memory encryption 관련 설정이 on인경우)
+-pagetable 설정. pagtable의 첫 4096*6 bytes를 0으로 초기화. P4ML은 1개의 엔트리(실제load될주소(pgtable+offset(ebx))+0x1007(0x1000(pdpt addr) + 0x0007(flag bit)), PDPT는 4개의 엔트리, PD(2MB page를 사용함)는 2048개의 엔트리 각각을 초기화후, pgtable address를 cr3에 설정. 즉 4GB linear addr를 physical addr와 동일한 주소로 매핑되되록 함.
+참고. edi : pgtable entry의 주소, eax : pgtable entry의 값, edx : pgtable entry최상위 XD bit.
+참고. pgtable(offset에 대한 값이며 실제 pgtable의 값은 아님.)
+pgtable:
+0x00000000 : 0x00000000 0x00001007 level4
+0x00001000 : 0x00000000 0x00002007 level3 (하나의 table은 1GB를 담당)
+0x00001008 : 0x00000000 0x00003007 
+0x00001010 : 0x00000000 0x00004007 
+0x00001018 : 0x00000000 0x00005007
+0x00002000 : 0x00000000 0x00000183 level2 (하나의 table은 2MB를 담당. 2048 entries)
+0x00002008 : 0x00000000 0x00200183
+...
+  pgtable 의  첫 24KBytes 를 0으로 초기화함.
+  level4 page table setting
+  level3 page table setting
+  level2 page table setting
+  cr3 = pgtable physical addr 수행
+  EFER long mode를 setting.
+
+-ldtr를 0, tr register을 __BOOT_TSS로 설정함.
+-__KERNEL_CS(kernel code segment, L bit set)와, startup_64의 offset을 stack에 push함.
+-paging active 이후,(즉 IA32e 64bit mode로 processor를 설정). startup_64 로 far-jump함.
+
+startup_64
+-ds,es,ss,fs,gs register를 0으로 초기화. (IA-32e 64bit mode에서는 segmentation을 사용하지 않음.)
+-kernel decomp를 할 target addr를 구함(rbx reg). startup_32에서도 동일 로직 존재. 바로 startup_64 진입하는 경우도 있기때문에 다시 계산하여야 함.
+  rbx = rbp(LOAD_PHYSICAL_ADDR) + rbx(init_size - _end).
+-stack을 설정
+  rsp = boot_stack_end + rbx
+-compile된 주소와 load된 주소의 offset을 구함(rdi reg)
+-.Ladjust_got를 call
+-64bit gdt를 load함(32bit에 사용하던 거랑 동일)
+  
+-paging_prepare()를 호출
+  5-level-paging관련 check를 수행.
+  trampoline code를 copy 할 addr를 find.(paging_config.trampoline_start)
+  trampoline_start를 0으로 초기화
+  trampoline_start로 trampoline_32bit_src 를 copy
+  필요한 경우, pagetable 정보를 copy.
+  paging_config 정보를 return.
+
+-trampoline_start addr를 rcx로 copy.
+-trampoline_return의 주소 를rdi로 copy.
+-stack에 __KERNEL32_CS와(IA-32e comp mode) rax(trampoline_start)+TRAMPOLLINE_32BIT_CODE_OFFSET 를 push.
+-trampoline(trampoline_32bit_src)으로 jump.
+
+-trampoline_32bit_src
+  ds, ss reg 를 __KERNEL_DS로 setting.
+  esp에 stack을 설정(ecx + TRAMPOLINE_32BIT_STACK_END)
+  cr0 reg를 재설정하 여paging을 disable
+  EFER.LME = 1로 setting.
+  cr4 = eax 를 수행.
+  eax = .Lpaging_enabled + offset을 수행
+  __KERNEL_CS와 eax reg를 stack에 push
+  cr0를 설정하여 paging enable.
+  return 수행. .Lpaging_enabled로 jump.
+
+  .Lpaing_enabled
+    jmp *%rdi 호출.(trampoline_return으 로jmp)
+  
+-trampoline_return
+  stack(rsp reg)을 재설정.
+  cleanup_trampoline을 call
+    trampoline을 위해 사용했던 pgtable addr를 구함.(trampoline_pgtable)
+    필요한 경우, 기존 pgtable에 trampoline_pgtable을 copy 후 cr3 reg를 pgtable phyaddr로 reload.
+    trampoline_save에 copy되었던 데이터를 trampoline_32bit로 restore.
+
+-eflags를 0으로 초기화
+-rax = loadaddr - compileaddr 수행.
+-.Ladjust_got를 call : prev adjustment를 원복후, 새로운 adjustment로 got를 설정.
+
+-compressed kernel을 copy. 현재 이미지(vmlinux.bin)가 로드 되어있는 주소로부터 target address(rbx reg)를 기준으로하여 _bss영역 이전까지 copy를 수행함. 즉 target address로 vmlinux.bin의 일부(_bss section이전)을 copy함.
+-.Lrelocated로(copy된 이미지에 존재하는) jmp
+  
+.Ladjust_got : global offset table를 adjust. 각 got entry에 대해 rax(previous adjustment)를 minus 이후 rdi(new adjustment) 를 plus함.
+
+.Lrelocated
+-_bss ~ _ebss 영역(copy된 영역에 존재)를 0으로 초기화함.
+-extract_kernel()을 위한 parameter를 설정.
+  rsi = boot_heap(heap addr)
+  rdx = input_data(compressed kernel img addr)
+  ecx = z_input_len(input_data len)
+  r8 = rbp(output target addr)
+  r9 = z_output_len(decompressed kernel len)
+
+extract_kernel : 커널압축해제를 함. 이후 parse_elf를 호출하여 LMA(linker script에 의해 지정됨. 첫번째 프로그램헤더의 LMA는 0x1000000 임.) 로 커널이미지를 load함. 
+  KASLR_FlAG clear.
+
+  sanitize_boot_params() call : 
+    scratch 영역에 boot param정보를 copy.
+    boot param영역에 scratch영역의 정보를 copy.
+
+  video 관련 boot param정보를 copy.
+
+  console_init() call
+ 
+  acpi_rsdp_addr를 구함(get_rsdp_addr() call)
+
+  heap영역설정
+    free_mem_ptr = heap
+    free_mem_end_ptr = heap+ BOOT_HEAP_SIZE
+
+  needed_size 설정.
+    
+  choose_random_location() call : 
+    CONFIG_RANDOMIZE_BASE option에 의한 로직. random load address 를 구함.
+
+  address check.
+    alignment check
+    img size check
+    address check
+
+  __decompress() call :
+    compresssed kernel img에대한 decompress 수행.
+
+  parse_elf() call : 
+    decomp kernel img에 대한 elf validation check.
+    elf program header entry를 copy.
+    각entry에 대해 다음을 수행.
+      PT_LOAD type에 대해서, paddr로 data copy를 진행.
+
+  handle_relocations() call : 
+    CONFIG_X86_NEED_RELOCS option on시 포함되는 logic.
+  
+  output 을 return.
+
+jmp *%rax 수행(output addr = 0x1000000) 으로 jmp
+
+-arch/x86/kernel/head_64.S
+startup_64
+  verify_cpu를 위한 stack 영역을 설정.
+  verify_cpu를 call
+  .text section의 제일 첫 주소를 rdi reg에 copy 후, __startup_64를 call
+  rax reg(SME mask가 return됨 by __startup_64) 에 early_top_pgt의 phyaddr을 copy
+  jmp 1f 수행
+  pae, paging enable수행.
+  phys_base 값을 rax reg에 더함.
+  cr3에 rax reg값을 copy.
+  movq $1f, %rax수행
+  jmp *%rax 수행.(kernel virtual address가 Instruction pointer에 load됨.)
+  EFER(msr)을 조작하여 enable system call 수 행및, NX 지원확인. 이 후 early_pmd_flags에 NX bit flag를 set.
+  cr0 register를 CR0_STATE로 설정.
+  rsp = initial_stack 수행.
+  eflags reg 를 0으로 초기화.
+  새로운 gdt를 load하고(lgdt early_gdt_descr), data segment reg(ex. ds, ss 등) 값을 0으로 setting.
+  gs 관련 설정을 함.
+  boot parameter주소(physical addr)를 rdi reg에 copy.
+
+__startup_64 () :
+  5-level paging관련 초기화 수행.(필요시)
+  physaddr(kernel img 첫 시작 addr) 이 physical address 범위를 넘는 지 확인.
+  load_delta = physaddr - (_text - __START_KERNEL_map) 수행. 
+  SME enable수행(필요시)
+  __START_KERNEL_map mapping하는 p4ml entry index를 구함.(p = pgd_index_of(__START_KERNEL_map))
+  *p = level3_kernel_pgt(physical addr) 수행. (page flag(_PAGE_TABLE_NOENC) 및 load_delta offset(__START_KERNEL_map + load_delta)을 조정함)
+  level3_kernel_pgt의 510, 511 idx에 load_delta offset을 보정.
+  level2_fixmap_pgt 에 load_delta offset을 보정.
+  pud = phyaddr of early_dynamic_pgts[0] 수행.
+  pmd = phyaddr of early_dynamic_pgts[1] 수행.
+  page flag설정
+  i = pgd index of physaddr 수행.
+  pgd[i+0] = pud 수행.(page flag도 설정)
+  pgd[i+1] = pud 수행.(page flag도 설정)
+  i = pud index of physaddr 수행.
+  pud[i+0] = pmd 수행.(page flag도 설정)
+  pud[i+1] = pmd 수행.(page flag도 설정)
+  pmd_entry = physaddr 수행.(page flag 도 설정)  
+  pmd의 각 entry를 kernel img주소범위에 대해서(_end - _text) 설정.(pmd_entry + i*PMD_SIZE)
+  pmd = phy addr of level2_kernel_pgt 수행.
+  kernel image이전의 pmd entry들에 대해서(i < pmd_index(_text)) page present flag를 clear.
+  kernel image에서 present flag set인 pmd에 대해서 load_delta offset을 보정.
+  kernel image이후 영역인 pmd에 대해서 page present flag clear.
+  phys_base += load_delta - sme_get_me_mask() 수행.
+  sme_encrypt_kernel() 수행(필요시)
+  SME/SEV(memory encryption) 관련 처리로직 수행.
+  return sme_get_me_mask() 수행.
+
+  level3_kernel_pgt
+    8bytes 510개의 entry는 0으로 초기화
+    idx 510 = level2_kernel_pgt 의 physical address(+ page flag설정)
+    idx 511 = level2_fixmap_pgt의 physical address(+ page flag설정)
+    으로 초기화.
+
+  early_dynamic_pgts
+    512*64개의 8bytes entry를 0으로 초기화.
+
+  참고. 아래의 pagetable 구성을 만듦.
+  early_top_pgt[indexofpgd(__START_KERNEL_map) = 1 1111 1111] = level3_kernel_pgt
+  level3_kernel_pgt[510 = 1 1111 1110] = level2_kernel_pgt
+  level3_kernel_pgt[511 = 1 1111 1111] = level2_fixmap_pgt
+  level2_kernel_pgt = 
+    kernel img size만큼(2MB align 갯수) 
+    idx 0(0 0000 0000) = 0   ( 00 0000 0000 0000 0000 0000)
+    idx 1(0 0000 0001) = 2MB ( 10 0000 0000 0000 0000 0000)
+    idx 2 =  4MB,            (100 0000 0000 0000 0000 0000)
+    ... mapping.
+  level2_fixmap_pgt = 
+    512 - 4 - FIXMAP_PMD_NUM 개 entry는 8bytes 0으로 초기화
+    FIXMAP_PMD_NUM 개의 entry 는 level1_fixmap_pgt + 0 ~ FIXMAP_PMD_NUM-1 으로초기화
+  level1_fixmap_pgt = 
+    512개의 entry가 8bytes 0으로 초기화.
+  다음처럼 mapping이 됨
+    0xffff80000000 -> 0x000000000000 
+    0xffff80200000 -> 0x000000000000 + 0x200000
+    ....
+
+  physaddr = physicaladdr of _text(kernel start addr) (0x1000000)
+  early_top_pgt[indexofpgd(physaddr) = 0 0000 0000] =  early_dynamic_pgts[0][0]
+  early_top_pgt[indexofpgd(physaddr)+1 = 0 0000 0001] = early_dynamic_pgts[0][0]
+  early_dynamic_pgts[0][indexofpud(physaddr) = 0 0000 0000] = early_dynamic_pgts[1][0]
+  early_dynamic_pgts[0][indexofpud(physaddr)+1 = 0 0000 0001] = early_dybamic_pgts[1][0]
+  pmd_entry = physaddr, i=0 to countof2MBalign(_end - _text)
+    idx = i + indexofpmd(physaddr)
+    early_dynamic_pgts[1][idx] = pmd_entry + i*PMD_SIZE(2MB)
+    
+    early_dynamic_pgts[1][0 0000 1000] = phyaddr(physaddr)
+    early_dynamic_pgts[1][0 0000 1001] = phyaddr(physaddr) + 2MB
+    ...
+  다음처럼 mapping 이됨.(identity-mapped)
+    0x000001000000 -> 0x000001000000
+    0x000001200000 -> 0x000001000000 + 0x200000
+    ...
+  
+early_top_pgt의 physaddr을 구해서 rax reg에 copy
+jmp 1f 수행
+  
+.Ljump_to_C_doe : 
+    .Lafter_lret 의 주소를 stack에 push.
+    ebp reg를 0으로 초기화
+    initial_code가 가리키는 메모리의 값을 rax에 copy
+    __KERNEL_CS 값(segment selector)과, rax를 stack에 push
+    lretq 수행. 즉, rax로 jump.(x86_64_start_kernel()로 jump함.)
+
+  UNWIND_HINT_* : objtool과 관련있는 코드를 삽입?
+  verify_cpu : cpu 정보를 check함...
+  l4_index macro : 4level paging에서 pm4l의 index를 구함
+  pud_index macro : 4level paging에서 pud(pdp)의 index를 구함
+  __startup_64 :
+    check_la57_support()로 level5 paging 지원 확인. cr4 reg를 check함.
+    physaddr이 이용가능한 메모리의 max size를 넘는지 확인
+    실제 실행중인 img의 첫번째 addr와 compile/link 된img의 첫번 째 addr에 대한 차이를 구함.
+    addr차이값(load_delta)가 2M aligned되어있는 지 확인.
+    SME feature지원여부 확인 후 기능을 enable함(sme_enable())
+    SME관련 mask값을 load_delta에 더함.
+    kernel memory space의 page table정보를 설정      
+
+-arch/x86/kernel/head64.c
+x86_64_start_kernel() : 
+  cr4 reg 의 값을 cpu_tlbstate.cr4에 읽어옴.(cr4_init_shadow())
+  설정된 page table의 pgd 마지막 entry를(kernel virtual address range) 제외한 남은 entry를 clear. cr3 reg에 page table 값을 다시 write(reset_early_page_tables())
+  bss영역 초기화(clear_bss())
+  init_top_pgt영역 초기화(clear_page())
+  sme 기능 관련 초기화 수행.(sme_early_init())
+  kasan 기능 관 련초기화 수행.(kasan_early_init())
+  idt를 초기화하고 load함.(idt_setup_early_handler())
+  boot parameter를 copy(copy_bootdata())
+  ucode를 load(load_ucode_bsp())
+  init_top_pgt[511] = early_top_pgt[511] 수행.
+  x86_64_start_reservation() 호출.
+
+x86_64_start_reservation() : 
+  boot param이 copy되어있지 않다면 copy를 수행(copy_bootdata())
+  x86_early_init_platform_quirks() 호출하여 x86관련 정보들을 설정함.
+  intel mid관련 초기화 진행(x86_intel_mid_early_setup())
+  start_kernel() 호출
+
+asm 관련(gnu as doc 참조)
+-syntax
+symbol, space, comment, statement, constant들로 구성
+symbol : 심볼(keyword, label 등)
+space : 공백
+comment : /**/ 이나 다른 형태로 구성
+statement : 코드(?)라고 보면 됨
+constant : 상수값.
+
+-section / relocation
+text, data, bss section 기본적으로 구성. 다른 section도 생성될 수 있음.
+각 섹션에 subsection구성되며, subsection은 하나의 코드상 분산되어있어도 하나의 section으로 합쳐짐.
+location counter : 각 섹션은 location counter라는 값을 가짐. 어셈블되는 데이터만큼 증가함. 현재 어셈블되는 위치의 location counter를 active location counter라고 함. 
+실제 as가 사용하는 주소는 section + offset into section 임. 
+
+-symbol
+label : active location counter 값을 가짐. (ex. label1:). 
+value : symbol에 값 설정가능(ex. symbol = 1). symbol에 가능한 value는 32bit값임. symbol의 value는 ld에 의해서 변경되며, absolute symbol의 경우에는 ld에 의해서 값이 변경되지 않음. 외부심볼의 경우 symbol value는 0임.
+외부심볼의 경우, 어셈블리 소스에 심볼을 정의하지 않고 사용하면 됨. 이 경우, ld에 의해서 link시에 값이 설정 됨.
+local label : 숫자 콜론으로 구성 ex(1:). 동일한 label이 중복되서 나타날 수 잇음 1b(현재위치에서 바로이전 1 label을 의미), 1f(현재 위치에 다음의 1 label을 의미)
+.(dot symbol) : 현재 어셈블되는 crruent address 값을 가짐
+모든 symbol들은(local이든 global이든) relocation, link를 통해 output이 addr정보를 나타낸다고 보면 될 듯함.(실제 ld에서 처리되면서 symbol값이 변경됨) 즉, addr(or symbol) == location counter라고 보면 될 듯함.
+
+-expression
+addr, numeric value를 의미.
+argument, operator로 구성됨.
+argument : expression의 argument. 각종 symbol이 될 수 있음
+operator : 제공되는 연산자 의미(ex. +.- 등)
+
+-intel syntax specific
+% : at&t 구문. 레지스터를 의미하기 위해 레지스터이름 앞에 %가붙음(ex. %eax). 옵션에 따라 %가 있을수도없을수도있음.
+operand 순서 : at&t구문의 경우, left source, right dest임.
+constant/immediata value 참조 : 모든 constant, immediate value에는 $가 붙음. 
+$ : immediate value 앞에 붙음. 즉, constant characters앞에 $(ex. $BOOTSEG인 경우 해당 값을의미.), label앞에 $(ex. $label인 경우 location counter value를 의미)
+=>즉, $var, var 차이는 var 의 값에 $가 붙고 안 붙고의 차이임. $가붙으면 immediate값으로 해석할것이고 없으면 immediate가 아닌 값으로 해석.( e.g.: movl $var, %eax (this means take an address of var label and put it into %eax register). If you don't use dollar sign that would mean "take the value from var label and put it to register".) => jmp, call, addressing 에서는 $가 붙지않고 label symbol만 사용 가능한듯?
+
+rip relative : asm 컴파일/링크할 때 relative address로 offset계산해서 코드로 변경하는 case가 있는 것으로 확인 됨. ex(leaq (__end_init_task-SIZEOF_PTREGS))(%rip), %rsp => __end_init_task-SIZEOF_PTREGS의 값을 rip relative로 처리하여 effective address를 계산하고 rsp 에 copy.)
+The x86-64 architecture adds an RIP (instruction pointer relative) addressing. This addressing mode is specified by using ‘rip’ as a base register. Only constant offsets are valid. For example:
+AT&T: ‘1234(%rip)’, Intel: ‘[rip + 1234]’
+Points to the address 1234 bytes past the end of the current instruction.
+AT&T: ‘symbol(%rip)’, Intel: ‘[rip + symbol]’
+Points to the symbol in RIP relative way, this is shorter than the default absolute addressing.
+
+absolute jump(ex. jmp *%eax) : 해당 addr로의 jump를 ip relative가 아닌 해당 주소로 jump하라는 것을 의미함. 아마 jmp/call syntax가 이렇게 해석하나봄.
+
+linker(ld)관련
+-input obj file -> ld -> output obj file을 수행함. 이 과정에서 ld는 linker script를 사용.
+
+-linker script
+linker가 링크를 하기위해 사용하는 파일. 디폴트 script가 있으며, 직접 script를 지정하지 않았을 경우에는 무조건 디폴트 script가 사용 됨.
+
+-symbol
+linker script에 사용된 symbol과 소스파일에 사용된 symbol은 서로 참조가능함.
+linker script에 사용된 symbol의 경우 실제 메모리공간은 할당되지 않기때문에, C소스파일에서 참조하기 위해서는 & 연산자를 symbol앞에 붙여야 함.
+참고로 소스파일에서 컴파일 될 때 symbol name은 소스에 정의된 것과 달라질 수 있음.
+
+absolute symbol(address) : link과정에서 symbol value가 변경되지 않음.
+relative symbol(address) : link과정에서 symbol value가 변경가능.
+위 symbol에 대한 expression(ex. +, - ...)들은 다음과 같이 처리함
+  absolute symbol(address) 값들에 대해서는 그냥 처리.
+  동일 section 내 relative symbol(address) 값들에 대해서는 그냥 처리.
+  이 외(다른 section 내 relative symbol, abs, rel sym 사이)에 대해서는 relative symbol(addr)의 값을 absolute로 변환 후 처리함.
+
+-SECTION command
+input section, output section 매핑관련 정보를 기술하기 위한 linker script에서 사용되는 comamnd.
+output section에 배치되는 input section의 order는 linker의 input, or INPUT command에 주어진 순서임.(ex. gcc ~ a.o b.o 인 경우, 동일 section에 대해서 a.o 가 먼저 위치함. 그 다음 b.o)
+
+-location counter
+  . 으로 나타냄.
+  SECTION command 내에서만 사용 됨.
+  section desc 외부에서는 absolute value를 의미함. (absolute type 즉, absoulte symbol).
+  section desc 내부에서는 해당 section을 base로한 offset을 의미함. (relocatable type, 즉, relative symbol.) 내부에서 absolute value사용을 위해서는, ABSOLUTE function 사용필요함.
+  
+-MEMORY command
+사용하는 memory 관련 정보를 기술하기위한 linker script command.
+
+-PHDRS command
+프로그램헤더 관련 정보를 기술하기 위한 linker script command. ELF의 경우 segment header와 관련된 command임. 명시되지 않았다면 default 값을 사용함.(뭔지는 모름.)
+
+-VERSION command
+symbol의 버전정보 관련한 정보를 기술하기 위한 linker script command.
+
+-LMA vs VMA
+VMA(Virtual Memory Address) : section 이 가지는 address. 즉, 실제 프로그램이 실행될 때 사용하게 되는 주소.
+LMA(Loadable Memory Address) : section 이 로드되는 address. 즉, 실제 프로그램이 로드되는 주소.
+
+-ELF 관련
+elf header, program header(segment header), section header, 그리고 header가 참조하는 data로 구성.
+elf header : 중요. ELF 포맷의 정보, ABI나 프로세서 정보, 각 header의 위치 크기 항목수 등을 나타냄.
+program header : 중요. 프로세스를 로드하기 위해 사용되는 segment의 정보를 나타냄. 각 segment별 파일내 위치/크기, 메모리내 위치/크기 등이 명시. linker에 의해서 생성가능.
+section header : 중요. 링크를 하기 위해 사용되는 section의 정보를 나타냄. 각 section별 파일내 위치/크기 등이 명시.
+segment : run time에 사용되는 정보. 프로세스 이미지를 의미함. 각 segment는 0개이상의 section을 포함. 
+section : link time에 사용되는 정보. section들을 링크하면서 symbol resolution이 발생함. 즉 실제 code에서의 해당 symbol에 대한 address가 됨.
+section - segment mapping : linker script에 의해서 결정됨. default 값이 있음.(ld document PHDR command 참조)
+최종 addr은 ELF 포맷 로드/파싱하여 memory에 mapping될 때 이루어짐.
+일반적으로 elf format내의 virtual addr로 매핑됨, 안 그런 경우(ex. position independant code, 이 경우 offset으로 계산하나봄. 즉 ELF가 의미하는 virtual addr과 동일하지만 base addr가 다른?)가 있는 듯함.
+position independant code : virtual addr의 어디든지 로드되어 실행될 수 있는 코드. shared library는 대부분 PIC임. absolute addr code나 load-time locatable code와는 다름.(특정 위치에서 실행되어야 하는 코드.)
+PT_LOAD type segment만 pvaddr순서(virtual address)로 명시되어야하고, 동일 섹션이 1번이상 나올 수 없음. 즉 다른 type segemnt에는 동일 섹션이 등장가능함.(ex. .interp section). ELF spec참조필요.
+segment 구성 및 elf load는 ABI영역. 즉 프로세서/시스템 마다 다를 수 있음.
+elf 파일을 기반으로 linux process 의 memory map정보가 만들어짐. 즉, elf의 segment정보를 memory segment로 mapping이 필요함. ABI 문서 참조 필요.(ELF, SystemV 등.)
+
+
+-x86프로세서 관련
+-제일 초기 프로세서는 real mode임. 
+address translation : Descriptor Table이나 Pagetable을 사용하지 않고, 20bit address를 나타냄.
+interrupt : protected모드랑 달리 IDT를 사용하지는 않음. 벡터테이블이 있으며 초기는 physical address 0 ~ 3f0에 위치함. 8086 프로세서의 경우는 해당 주소 변경 안되지만, IA32등은 IDTR을 통해 시작주소 변경가능함.
+
+-memory management
+ia32 arch는 무조건 Segmentation 은 사용됨.(disable방법이 제공되지 않음) paging은 optional임.
+logical addr(CPU) ->(segmentation) linear addr ->(paging) -> physical addr. paging이 사용되지 않으면 linear addr이 physical addr이 됨
+instruction의 경우 code segement에서 fetch됨.(cs)
+stack영역 참조의 경우 stack segemnt에서 fetch.(ss)
+일반적으로, data영역 참조의 경우 data segment에서 fetch(ds). 특정 조건? 에 따라서 ds외의 다른 segment(ex, es)를 사용가능해보임.
+
+ia32e모드의 경우 segmnetation 은 다음과 같이 사용 됨.
+compatibility mode : 16/32bit protected mode에서와 똑같이 사용 됨.
+64bit mode : 일반적으로 flat 64-bit linear-address space를 사용함. 방식은 32bit와 동일한데 gdtr, ldtr의 address 또는 일부 descriptor정보는 64bit addr을 다룰 수 있도록 expansion 됨. 그리고 일부 동작에서 차이가 있음.(ex, es,ds,ss register는 사용되지 않음 등)
+
+-instruction format
+prefix opcode modr/m sib disp imm 로 구성됨. opcode만 필수며 이외에는 optional.
+prefix : instruction에 대한 prefix. 4개의 그룹으로 구성. 각 그룹당 1개의 prefix만 사용가능. REX prefix도 존재.
+opcode : instruction을 나타냄. 1,2,3 bytes로 구성가능.
+modr/m, sib : operand를 의미함.
+  modr/m 필드는 3가지 항목이 존재. operand가 reg인지, memory인지(addressing-form에 따라서)를 결정함.
+    mod : r/m 필드와 같이 인코딩. reg나 addressing-form을 구성
+    reg/opcode : opcode와 같이 인코딩되거나, reg number로 인코딩 됨.
+    r/m : mod필드와 같이 인코딩. reg 나 addressing-form을 구성
+  sib : modr/m 인코딩시 sib 정보가 필요한 경우에 사용 됨.
+disp : addressing-form이 disp정보가 필요할 때 사용 됨. 
+imm : instruction이 immediate operand를 사용하는 경우 사용 됨.
+
+16/32/64 bit에 관계없이 format은 동일함.
+instruction format을 어떻게 forming하고 어떻게 encoding하느냐에 따라서 instruction의 동작(ex. operand size, addressing mode, register etc...)이 결정됨
+
+effiective address : 지원하는 addressing mode들의 결과값을 의미.
+
+operandie size/address size
+processor mode, code segment descriptor의 D(L, 64bit)flag값에 따라서 default operand/address size attribue가 결정됨. 
+real mode인 경우는 default는 16bit임.
+instruction prefix 등으로 해당 instruction에 대해서만 operand/address size attribue 변경(overriding)가능.
+3.6, Chapter3, intel64 ia-32 architecture manual volume1 참조
+
+참조. Chapter2, Appendix A, Appendix B, intel64 ia-32 architecture manual volume2. 
+instruction format 구조, encoding에 대한 정보가 있음.
+
+operand/addressing mode
+addressing mode
+  instruction 이 어떻게 operand를 결정할 것인지를 정의함.(The various addressing modes that are defined in a given instruction set architecture define how the machine language instructions in that architecture identify the operand(s) of each instruction)
+  effective memory address를 어떻게 계산할 것인지를 명시.(An addressing mode specifies how to calculate the effective memory address of an operand by using information held in registers and/or constants contained within a machine instruction or elsewhere.)
+
+operand
+  instruction에 처리해야하는 데이터를 정의. 즉 데이터 자체를 의미함.(In computing, an operand is the part of a computer instruction which specifies what data is to be manipulated or operated on, while at the same time representing the data itself.[5])
+
+-control instruction 관련
+near jump : segment내에서의 jmp를 의미. 
+short jump : Instruction Pointer 기준의 상대 jmp를 의미.
+far jump : 다른 segment로의 jmp를 의미.
+task switch : 다른 task에 존재하는 instruction으로의 jmp를 의미.
+
+-stack
+esp register가 스택의 current position을 나타내며, x86 stack은 low address로 growth함. 즉 push할때 addr가 decrement. pop은 반대. 
+
+-segmententation
+x86은 segmentation을 무조건 사용함. 그렇기 떄문에 segment resister/segemnt selector가 명시적/암시적으로든 사용되어짐.
+암시적으로 사용될때는 다음과 같음
+cs : instruction fetch시 사용됨
+ss : stack(push/pop)시 사용됨
+ds : string data를 제외한 대부분 data 참조에 사용 됨.
+es : string instruction의 dest 참조에 사용 됨.
+
+ia-32e 64bit mode 인경우 fs,gs를 제외하고는 segmentation은 disable. baseaddr를 0으로 처리하고 limit check는 하지않음.
+그러나 일부 segment descriptor의 flag들은 사용하는 것으로 보임.(ex. L bit)
+
+segment register
+visible part, hidden part로 구성되어 있음.
+visible part : segment seleoctr, hidden part : base addr, limit, access info.
+cs,ss,ds,es,fs,gs 각각에 대해 visiple-hidden part pair가 존재함.
+실제 memory segment에 접근을 위해서는 segment register에 값이 load가 되어야 함. 해당 값이 변경되지 않으면 old info정보를 가지고 segment 접근함.
+segment selector가 segment register로 load될 때, visible-hidden part pair값이 설정됨.
+segment register load는 다음의 경우 발생됨.
+  MOV, POP, LDS, LES, LSS, LGS, and LFS instructions. 명시적으로 load함.
+  far pointer versions of the CALL, JMP, and RET instructions, the SYSENTER and SYSEXIT instructions, and the IRET, INTn, INTO and INT3 instructions.
+
+-paging
+cr0, cr4, EFER레지스터 설정에 따라서 3가지 mode 존재하며, 사용하지 않을 수 있음.
+none
+32bit paging
+PAE paging
+4level paging.
+
+모든 page table은 4KBs size. 
+32bit의 경우, 4bytes entry가 1024개, 64bit의 경우 8bytes entry가 512개가 포함됨.
+
+cr3 reg에 top page table의 physical address가 저장.
+
+-processor mode
+real address mode : processor 제일 초기 모드.
+protected mode : CR0 reg의 PE enable시 protected mode가 사용됨. GDT, LDT등을 사용함.
+ia32e mode : protected mode에서 enabling paging and setting the LME bit
+(IA32_EFER.LME[bit 8]) 하면 ia32e mode가 사용됨. efer의 lma bit로 프로세서의 ia32e mode여부를 확인함.. code segment(cs regsiter가 참조하는 descriptor table entry)의 L bit에 의해 compatability mode/64bit mode 를 구분함.
+virtual 8086 mode : 
+system management mode
+
+-MSR(model specific register)
+intel processor family에서 제공하는 레지스터들. rdmsr, wrmsr instruction을 통해서 해당 레지스터의 read/write가 가능.
+
+calling convention 관련
+파라미터를 어떻게 전달해야할지(레지스터 or 스택), 파라미터 전달시 레지스터는 보존되어야 하는 지, 리턴값은 어떻게 전달할 것인지, stack frame layout 등에 대해 명시함.
+ABI에 정의되어 있음.
+다음과 같은 것들이 있음.
+caller clean-up : cdecl, syscall, optlink 
+callee clean-up : pascal, stdcall, fastcall ...
+linux의 경우 systemv amd64 abi 참고필요.
+
+-추가확인 필요사항
+ process memory layout(stack/heap 영역, elf load) - ABI문서 참고필요.
+ gnu as(symbol type)
+ gnu ld
+ x86 asm(inline asm, asm to instruction(machine code))
+ got
+ location counter(gnu as, ld ...)
+ 
