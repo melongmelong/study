@@ -1,11 +1,279 @@
+first.S
+  _main 
+    start label 로 jmp.
+
+  start
+    ss = BOOTSEG(0x7c00)
+    sp = SETUP_STACKSIZE(2048)
+
+    dx,bx,es,si reg값을 push
+
+    ds = BOOTSEG(0x7c00)
+    bp = 0
+
+    video관련 설정을 수행.
+
+    ah = dl 수행  후 call bout 수행
+    al = 'L' 이후 call display수행.(화면에 L을 출력)
+
+  lagain
+    pusha
+    
+    es = ds(0x7c00 maybe)
+    
+    cmp dl, EX_DL_MAG(0xfe). magic number를 비교
+    if(dl != EX_DL_MAG)
+      jmp boot_in_dl
+    dl = dh
+
+  boot_in_dl
+    bx = map2(first.S의 마지막 위치.)
+    dh = d_dev의 값(0x80)
+    
+    ax = dx (ah = dh, al = dl)
+    ax 값에 대해 조건을 비교하여 use_installed 로 jmp수행.
+
+    if(prompt != FLAG_MAP_ON_BOOT)
+      jmp use_boot
+    
+  use_installed
+    dl = dh
+    esi = map_serial_no
+    if(esi == 0)
+      jmp done_search
+
+    push dx
+
+    int 0x13(ah=0x8, dl=0x80 수행. 하드디스크의 number를 dl에 저장)
+    if(fail)
+      jmp error
+
+    cx = dl(0x13 bioscall을 통해 hard drive number를 얻어옴)
+    
+    dx = device, flag 정보를 copy
+
+  vagain
+    call disk_read
+
+    if(map_serial_no == map2[PART_TABLE_OFFSET-6])
+      jmp vol_found
+    else
+      jmp vagain
+
+    pop dx
+    
+  vol_found, done_search, use_boot
+    push bx (map2)
+
+    dh, si 에 disk 관련 flag/addr정보를 setting
+    call pread
+    *2nd bootloader sector로부터 데이터를 read.
+
+    if(bx-4 != "LILO")
+      jmp error
+
+    pop si (si = map2)
+    
+    es = SETUP_STACKSIZE/16 + BOOTSEG + SECTOR_SIZE/16*2
+    
+  sload
+    call pread(2nd stage loader를 load)
+    jnz sload
+
+    1st, 2nd signature를 서로 비교.
+  
+    push es
+    push bp
+    
+    'I'를 출력
+
+    retf(jump to ES:BP) 
+
+  disk_read
+    stack에 register data를 push
+ 
+    if(dh == LINEAR_FLAG | LBA32_FLAG)
+      jmp disk_gemetric
+    else if(dh == LBA32_FLAG)
+      jmp disk_convert
+
+    int 0x13(ah=0x41, bx=0x55AA, disk extension정보를 조회)
+    if(disk extension not present)
+      jmp disk_convert
+    else
+      if(bx != 0xAA55)
+        jmp disk_convert
+      if(cl != EDD_PACKET)
+        jmp disk_edd
+
+    *즉, disk_convert, disk_geometric, disk_edd 중 어디에 jmp를 할지를 결정
+
+  disk_convert
+    push dx, es
+    int 0x13(ah = 8, drive parameter를 읽음.)
+    pop es
+
+  disk_error3
+    if(CF == 1)
+      jmp error
+
+    di = number of cylinder(disk_convert에서 int0x13의 결과인 cx reg로부터 구함)
+    ax = number of heads(disk_convert에서 int0x13의 결과인 dx reg로부터 구함)
+
+    cx = number of sectors(disk_convert에서 int0x13의 결과인 cx reg로 부터구함)
+
+    ax = al(number of heads) * cx(number of sectors)
+    bx = ax
+
+    ax = si[edd_d_addr]
+    dx = si[edd_d_addr+2]
+
+    if(dx >= bx)
+      jmp disk_error2
+
+    div bx(al = ax/bx, ah = ax%bx)
+
+    if(ax > di)
+      jmp disk_error2
+
+    jmp disk_read2
+
+  disk_read2
+    ax = 0x201 
+    jmp disk_int13
+
+  disk_int13
+    pop bx
+
+    bp = 5
+  disk_retry
+    pusha
+    int 0x13
+    if(CF == 0)
+      jmp disk_okay
+  bp--
+  if(bp == 0)
+    jmp disk_error3
+
+  int 0x13(ah=0, disk초기화수행)
+  popa
+  bp--
+  jmp disk_retry
+
+  disk_okay
+    ret
+
+  pread
+    al = ds:si
+
+    if (eax == 0)
+      jmp done
+
+    eax = eax + raid
+    call disk_read
+
+    bh = bh + SECTOR_SIZE/256
+
+  done
+    ret
+      
+  bout, nout : hex value를 출력하는 듯.
+
+  display
+    bioscall(0x10)을 사용하여 al reg의 값을 출력.
+    NOVGA(LCF_NOVGA 가 정의되어있는 경우)인 경우는 아무것도 수행하 지않음.
+
 bootsect.S
   _main
-    ds reg에 #BOOTSEG (0x07c0) copy
+    ds = #BOOTSEG (0x07c0).
     
     int 0x12 수행.(ax=total low-memory(<=1MB) in KBytes)
     ax=ax-STK_SIZE수행.
     ax=ax<<6 수행
     bx=#INITSEG 수행
     ax=ax>bx ? bx : ax 수행. 일반적으로 bx값이 작을 것으로 보임.
+
+    es = INITSEG 수행.
     BOOTSEG(0x07c0) -> INITSEG(0x9000) 로 512 bytes를 copy.
+
+    ds = ss = ax(INITSEG. 0x9000) 수행.
+    di = STK_SIZE-12 수행.
+    sp = STK_SIZE-12 수행.
+    INITSEG:go label로 far jump수행.(cs = INITSEG 가 됨.)
+
+  go
+    ax=ax+0x20 수행. 즉, 0x9020.
+    setupseg(jmpi    0,SETUPSEG instruction의 operand에 대한 주소로 보임) = 0x9020수행.
     
+    new parameter tables 정보를 setting함.
+      ds, cx 를 stack에 push
+      pop ds 수행.(cx가 pop 됨.)
+      physaddr 0x78로부터 ds, si를 load.
+      cl = 6 
+      push di.(STK_SIZE-12)
+      from ds:si to 0x9000:STK_SIZE-12로 12bytes copy수행.
+      STK_SIZE+4에 36값을 설정.(patch sector count)
+      pop di, pop ds 수행.
+      fs reg를 설정.
+
+  load_setup
+    bios call을 사용하여, disk로부터 setup-sector를 read함.
+      0x9000:0x0200(0x90000+0x200 = 0x90200)으로 SETUPSECS개의 sector들을 read.
+    read실패했을 경우 jmp load_setup하여 계속 read를 시도.
+    read성공시, ok_load_setup으로 jmp
+
+  ok_load_setup
+    si = disksizes address 수행.
+
+  probe_loop
+    36, 18, 15, 9 번째 각 sector에 대해 read try수행함.(최대 몇개의 sector를 읽을 수 있는 지 test를 하기 위해서 인 듯)
+    sectors = disksizes를 수행(read성공 시의 sector number(36, 18, 15, 9)
+    bh = setup_sects+1 << 1, bl = 0 을 dest addr 지정.(즉, load_setup에서 읽어들인 sector의 다음 load할 address(ex. setup_sects=1인경우, 0x90200~0x90400(by load_setup), bx=0x90400~(by probe_loop)))
+    read성공한 경우, loop를 종료.
+
+  got_sectors
+    bios call사용하여 "Loading" msg를 출력
+    
+    es = SYSSEG수행(0x1000)
+
+    call read_it 수행
+    
+    SETUPSEG(0x9020:0x0000)로 jmp. linux의 경우, arch/x86/boot/header.s의 _start label을 수행하게 되 는듯.
+
+  read_it
+    sread = setup_sects + 1
+    es 가 64KB boundary인지 확인. 실패시, die를 수행.
+    
+    bx = 0 수행.
+
+  rp_read
+    ax = INITSEG-SYSSEG
+    cmp ax, syssize(default 0x8000, build옵션에따라 달라짐)비교하여 ax<=syssize인경우 ok1_read수행. 아니라면 ret 수행.
+
+  ok1_read
+    ax = sectors - sread
+    cx = ax
+
+  ok2_read
+    call read_track
+        
+  ok4_read
+      
+
+  ok3_read
+      
+
+  read_track
+    msg 출력.
+
+    dx = head
+    dh = dl
+    dx = dx & 0x0100 
+
+    dh = hea
+
+    int 0x13 수행
+    실 패시 bad_rt 로 jmp. 성공시 ret.
+    
+  die:
+    jne die를 수행.
