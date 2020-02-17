@@ -19,7 +19,7 @@ first.S
   lagain
     pusha
     
-    es = ds(0x7c00 maybe)
+    es = ds(0x7c00)
     
     cmp dl, EX_DL_MAG(0xfe). magic number를 비교
     if(dl != EX_DL_MAG)
@@ -44,16 +44,16 @@ first.S
 
     push dx
 
-    int 0x13(ah=0x8, dl=0x80 수행. 하드디스크의 number를 dl에 저장)
+    int 0x13(ah=0x8, dl=0x80 수행. 하드디스크의 수를 dl에 저장)
     if(fail)
       jmp error
 
     cx = dl(0x13 bioscall을 통해 hard drive number를 얻어옴)
     
-    dx = device, flag 정보를 copy
+    dx = device, flag 정보를 copy(0x80 - 1)
 
   vagain
-    call disk_read
+    call disk_read(ax = 1(read할 sector정보), es = ds(0x7c00), bx = map2, dx = (dh = 0x00, dl = 0x80)). hdd 에서 CHS(0/0/1) sector정보를 0x7c00:map2로 읽어옴.
 
     if(map_serial_no == map2[PART_TABLE_OFFSET-6])
       jmp vol_found
@@ -65,9 +65,9 @@ first.S
   vol_found, done_search, use_boot
     push bx (map2)
 
-    dh, si 에 disk 관련 flag/addr정보를 setting
-    call pread
-    *2nd bootloader sector로부터 데이터를 read.
+    dh, si(d_addr, sector address를 가지고 있는 address) 에 disk 관련 flag/addr정보를 setting
+    call pread(2nd bootloader 과련 데이터 1sector를 read)
+    *d_addr로부터 CHS address를 가져온 후, es(0x7c00):bx(map2)에 1 sector를 read?
 
     if(bx-4 != "LILO")
       jmp error
@@ -77,24 +77,26 @@ first.S
     es = SETUP_STACKSIZE/16 + BOOTSEG + SECTOR_SIZE/16*2
     
   sload
-    call pread(2nd stage loader를 load)
+    call pread(ds:si, 즉 map2 에서 sector address를 read이후, 1개의 sector를 es(위에서 설정된 값):bx(0)로 읽음. 이후 bx+512수행)
     jnz sload
 
-    1st, 2nd signature를 서로 비교.
+    1st, 2nd signature를 서로 비교.(es(위에서 설정된 값):di(sig), ds(0x7c00):si(sig))
+    if(fail)
+      jmp error
   
     push es
     push bp
     
     'I'를 출력
 
-    retf(jump to ES:BP) 
+    retf(jump to ES:BP). second.S 코드가 실행 됨. 
 
   disk_read
     stack에 register data를 push
  
-    if(dh == LINEAR_FLAG | LBA32_FLAG)
-      jmp disk_gemetric
-    else if(dh == LBA32_FLAG)
+    if(!(dh == LINEAR_FLAG | LBA32_FLAG))
+      jmp disk_geometric
+    else if(!(dh == LBA32_FLAG))
       jmp disk_convert
 
     int 0x13(ah=0x41, bx=0x55AA, disk extension정보를 조회)
@@ -107,6 +109,13 @@ first.S
         jmp disk_edd
 
     *즉, disk_convert, disk_geometric, disk_edd 중 어디에 jmp를 할지를 결정
+
+  disk_geometric
+    eax reg를 이용하여 cx, dh 설정. 즉, eax를 파라미터로 받아서, CHS address를 구함.
+
+  disk_read2
+    ax = 0x201. 즉, 1개의 sector를 read.
+    jmp disk_int13
 
   disk_convert
     push dx, es
@@ -138,29 +147,26 @@ first.S
 
     jmp disk_read2
 
-  disk_read2
-    ax = 0x201 
-    jmp disk_int13
-
   disk_int13
-    pop bx
-
+    pop bx(target address to read)
     bp = 5
+
   disk_retry
     pusha
     int 0x13
     if(CF == 0)
       jmp disk_okay
-  bp--
-  if(bp == 0)
-    jmp disk_error3
+    bp--
+    if(bp == 0)
+      jmp disk_error3
 
-  int 0x13(ah=0, disk초기화수행)
-  popa
-  bp--
-  jmp disk_retry
+    int 0x13(ah=0, disk초기화수행)
+    popa
+    bp--
+    jmp disk_retry
 
   disk_okay
+    stack 에 대해 pop수행.
     ret
 
   pread
@@ -169,10 +175,11 @@ first.S
     if (eax == 0)
       jmp done
 
-    eax = eax + raid
+    eax = eax + raid (read할 CHS address를 구함.)
     call disk_read
 
-    bh = bh + SECTOR_SIZE/256
+    bh = bh + SECTOR_SIZE/256 (bx = bx+512)
+    *ds:si로부터 read할 CHS addr정보를 가져온 후 1개의 sector를 read하고 bx를 512byte 증가
 
   done
     ret
@@ -182,6 +189,9 @@ first.S
   display
     bioscall(0x10)을 사용하여 al reg의 값을 출력.
     NOVGA(LCF_NOVGA 가 정의되어있는 경우)인 경우는 아무것도 수행하 지않음.
+
+second.S
+
 
 bootsect.S
   _main
@@ -277,3 +287,33 @@ bootsect.S
     
   die:
     jne die를 수행.
+    
+  
+CHS 관련
+chs는 hdd의 데이터에 addressing을 하는 방법. 예전에 사용되던 방법임.
+head, cylinder, sector로 addressing.
+
+sector : chs addressing에서 sector number는 1부터 시작함. 6bits로 encoding되며 track당 63개의 sector를 가지게 됨.
+
+cylinder : hdd에서의 데이터의 영역. hdd의 모든 platter의 track을 의미함.
+0부터 counting됨.
+10bit(1024개)  로 cylinder를 addressing함.
+
+head : 실제데이터를 read/write하는 device.
+일반적으로 platter당 2개의 head(앞/뒤)를 가짐.
+8bits 를 사용. 0~255(256개)를 가짐. 하지만 버그가 있어서 255개(0~254)를 사용함.
+
+24bits로 CHS addressing이 됨.
+cylinder(10)/head(8)/sector(6)
+
+ATA spec에서는 28 bits로 addressing을 수행함.
+cylinder(16)/head(4)/sector(8)
+
+CHS addressing to LBA addressing
+아래 공식을 따라서 변환.
+CHS tuples can be mapped onto LBA addresses using the following formula:
+A = (c ⋅ Nheads + h) ⋅ Nsectors + (s − 1),
+where A is the LBA address, Nheads is the number of heads on the disk, Nsectors is the maximum number of sectors per track, and (c, h, s) is the CHS address.
+    
+MBR관련
+    
