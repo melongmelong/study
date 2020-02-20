@@ -315,5 +315,119 @@ CHS tuples can be mapped onto LBA addresses using the following formula:
 A = (c ⋅ Nheads + h) ⋅ Nsectors + (s − 1),
 where A is the LBA address, Nheads is the number of heads on the disk, Nsectors is the maximum number of sectors per track, and (c, h, s) is the CHS address.
     
-MBR관련
+bootsector관련
+  computer의 firmware에(일반적으로 BIOS) 의해 memory에 load되어 실행되는 코드. persistent disk에 포함되어있음. 
+  IBC-PC compatible machine의 경우, BIOS가 disk 의 첫번째 sector를 boot sector로 사용함. 해 boot sector은 0x7c00에 load됨. 다른 시스템은 다른 spec을 가짐.
+
+  partition table
+    disk는 여러 partition으 로나뉘어질 수 있음.
+    정보를 어떻 게저장하는 지에 따라 MBR, VBR 로나뉘어짐.
+    MBR : partition된 disk의 첫번째 sector. active partition을 찾고 VBR를 실행하는 코드 를가지고 있음
+    VBR : 파티션되지않은 disk의 첫번째 sector, 또는 파티션 된각 파티션의 첫번째 sector. OS를 load하기 위한 code를 포함함.
+    IBM-PC compatible boot loader 의경우, 0x55AA라는 signature 값을 가지고있음.
+    signature는 대부분 BIOS에 의해서 check되며, MBR boot loader에서도 boot sector로 control을 넘기기 전 check됨.(foloppy는 다른 방법으로 check를 수행함)
+    BIOS 또는 MBR이 valid boot sector 를 찾지못하는 경우, 다음 device에 대해서 boot을 시도함. 그리고 모든 device에 대해 실패 시, error msg를 띄우거나, fallback routing을 실행하거나 reboot을 하거나 함.
+
+  IBM-PC compatible system BIOS의 경우,
+  첫 번째 sector를 무조건 load하며, device type에따라 MBR(hard disk), VBR(floppy/usb flash drive)인지를 구분함.
+  해당 sector는 disk partitiong을 이해하고, active partition(boot 을위해 설정된 primary partition 을 의미)의 VBR을 load/run 을수행하는 코드임.
+  VBR은 2nd-stage bootloader를 disk의 다른 영역에서 로드함.
+  
+VBR관련
+  bootsector의 종류. 
+  IBM PC에서 소개됨.
+  파티션된 device 또는(각 파티션 첫번째 sector, 이 경우 disk의 첫번째 sector는 MBR임.) 파티션되지않은 deivce에(device의 첫번째 sector) 존재.
+  bootstrapping program의 code를 포함.
+  VBR code는 firmware 또는 MBR 코드 또는 boot manager(known as chainloading)에 의해서 직/간접적으로 실행됨.
+  
+  Signature
+    IBM PC compatible system에서는 0xAA55라는 signature가가 boot sector의 끝부분에 위치함.
+    signature는 대부분 BIOS에 의해서 check되며, MBR boot loader에서도 boot sector로 control을 넘기기 전 check됨.(foloppy는 다른 방법으로 check를 수행함)
+    BIOS 또는 MBR이 valid boot sector 를 찾지못하는 경우, 다음 device에 대해서 boot을 시도함. 그리고 모든 device에 대해 실패 시, error msg를 띄우거나, fallback routing을 실행하거나 reboot을 하거나 함.
+
+  Invocation
+    VBR의 boot code는 BIOS가 data, interrupt, hardware초기화를 했다고 가정할 수 있음.
+    32KB 이상 memory를 사용하기 위해서는 int 12h 를 통해 query가 필요.
+    CPU가 8088/8086 이상이라거나, 하드웨어, 인터럽트, 스택 등의 상태에 대해서 정확한 상태를 예측할 수는 없음.
+    일부 register는 BIOS 또는 MBR code에 의해서 초기화되며, 대략 아래와 같음
+      cs:ip : 0000h:7c00h
+        VBR 은 0000h:7c00h 에 로드 되며(BIOS/MBR code에 따라 서7c00h:0000h 를 사용할 수도 있음), BIOS/MBR code에 의해 해당 위치로 jmp함.
+
+      dl : boot drive unit
+        floppy 00h, 01h, ...
+        fixed/removable disk 80h, 81h ...
+        BIOS종류에 따라 다른 값으로 설정하는 경우도 있음. 
+
+      dh : int 13h를 통해 지원되는 evice 정보.
+
+      es:di : "$PnP" installation check structure
+        PnP BIOS 가 PnP Data를 제공할 경우
+
+      ds:si : MBR partition table 정보.
+        VBR이 MBR에 의해 실행되었을 경우 제공 되 정보
+
+      등등 특정 feature들이 제공되는 경우 추가적으로 레지스터에 제공되는 정보들이 있음...
+
+MBR관련    
+  bootsector의 종류. partition된 디스크의 첫번째 boot sector임. partition되어있지 않는 disk에는 존재하지 않음.
+  MBR은 다음 정보들을 가지고 있음.
+    partition/filesystem이 어떻게 구성되어있는 지에 대한 정보를 가지고 있음.
+    loader로써 동작하는 code.(2nd stage를 로드하거나 VBR을 사용함.)
+  partition마다 2TB의 제약사항이있음. 이를 해결하기 위한 방법이있지만 호환성이 없음. GPT가 MBR을 대체하고있으며, MBR 과 일부 호환성을 가짐.
+
+  MBR은 다음의 데이터들로 구성되어있음.
+    MBR size는 512bytes보 다 클 수있음.
+    partiton table : disk의 partition정보
+    Bootstrap code : bootable partition과 VBR를 load하는 code들.
+    32bit disk timestamp(optional)
+    32bit disk signature(optional)
+
+  disk partitionig
+    MBR에는 partition 정보들이 있음.(partition table)
+    각 partition들은 다양한 정보들을 포함함
+    MBR은 disk의 첫 번째 sector에 위치함.
+    
+    sector layout
+      4개의 primary partition을 사용할 수 있음.
+      MBR구조는 wiki참조필요.
+
+    partition table entries
+      CHS -> LBA -> GPT 로 발전해옴.
+      capacity, MBR 제약 등의 이유로 발전함. ㅎ.ㅎ;
+
+  System bootstrapping
+    IBM PC-compatible BIOS의 경우,
+    BIOS가 MBR을 load하여 실행.
+    MBR은 partition table등의 정보와 boot code를 함께가지 고있으므로, boot code는 일반적으 로 VBR code을 load하고 실행함.(chain-loading이라고 함. active partition으로부터 VBR을 load)
+    MBR code는 x86의 경우, real-mode로 실행 됨.
+    MBR말고 다른 방식도 존재함.(ex. EFI, 또는 x86이 아닌 다른 architecture...)
+ 
+  Disk Identity
+    MBR은 boot code 와 partition table말고도 disk signature정보를 가지고 있음.
+    disk medium을 구분하기 위한 32bit value임.
+    주로 windows에서 사용하며 linux에서도 어느 disk 를부팅해야되는 지를 알기 위해서 사용함.
+
+  Programming Consideration
+    MBR 은 IBM-PC compatible하며, IMB-pc compatible한 시스템은 Little Endian방식을 사용함. 즉, MBR도 Little endian 으로 데이터를 저장함.
+    
+    BIOS는 disk의 첫번째 sector인 MBR을 0x0000:0x7c00 으로 load한 후, signature를 확인하고나서, 해당 address로 jump.
+    
+    BIOS의 경우 removable disk(ex. floppy), fixed disk 를 구분하지 않고 동작함. 즉, removable disk의 VBR 코드나, fixed disk의 MBR 코드나 OS에대한 chainn loading을 수행함.
+    
+    MBR의 마지막 66bytes는 partition table이 위치하므로, MBR에 포함된 code는 446bytes보다 작아야함.
+    
+    MBR은 partition table을 check하고 active partition으로부터 VBR을 load하고(일반적으로 1sector, 512bytes) run함.
+    VBR도 0x0000:0x7c00 에 load가되며, memory에 존재하는 MBR코드는 다른 영역(0x0000:0x0600)으로 relocated 됨.
+    
+    partition table의 status field를 통해 active partition을 구분함.
+    0x00(not active), 0x80(active)이 아닌 값은 invalid함.
+    
+    BIOS to MBR interface
+      BIOS -> MBR 실행시, 어떤 레지스터에 어떤 값 이들어가는 지 등에 대한 설명.
+      MBR wikipedia 참조
+
+    MBR to VBR interface
+      MBR->VBR 실행시, 어떤 레지스터에 어떤 값 이들어가는 지 등에 대한 설명.
+      MBR wikipedia 참조
+    
     
