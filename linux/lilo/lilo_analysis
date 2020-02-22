@@ -21,7 +21,7 @@ first.S
     
     es = ds(0x7c00)
     
-    cmp dl, EX_DL_MAG(0xfe). magic number를 비교
+    cmp dl, EX_DL_MAG(0xfe). magic number를 비교. *BIOS에서 dl에 넘겨준 drive로 load할지말지를 결정.
     if(dl != EX_DL_MAG)
       jmp boot_in_dl
     dl = dh
@@ -44,7 +44,7 @@ first.S
 
     push dx
 
-    int 0x13(ah=0x8, dl=0x80 수행. 하드디스크의 수를 dl에 저장)
+    int 0x13(ah=0x8, dl=0x80 수행. drive parameter를 read. 하드디스크의 수를 dl에 저장)
     if(fail)
       jmp error
 
@@ -52,22 +52,25 @@ first.S
     
     dx = device, flag 정보를 copy(0x80 - 1)
 
-  vagain
-    call disk_read(ax = 1(read할 sector정보), es = ds(0x7c00), bx = map2, dx = (dh = 0x00, dl = 0x80)). hdd 에서 CHS(0/0/1) sector정보를 0x7c00:map2로 읽어옴.
+  vagain (각 disk drive의 첫번째 sector를 read/check하여 load할 disk drive를 찾음.)
+    drive개수만큼 아래 task를 반복함.
 
-    if(map_serial_no == map2[PART_TABLE_OFFSET-6])
+    dx = dx+1;(다음 drive number)
+    call disk_read(ax = 1(read할 sector address), es = ds(0x7c00), bx = map2, dx = (dh = 0x00, dl = 0x80)). hdd 에서 CHS(0/0/1) sector정보를 0x7c00:map2로 읽어옴.
+
+    if(map_serial_no == map2[PART_TABLE_OFFSET-6]). disk signature를 비교.
       jmp vol_found
     else
       jmp vagain
 
     pop dx
     
-  vol_found, done_search, use_boot
+  vol_found, done_search, use_boot. (2nd stage를 loading하기 위한 정보를 (2nd stage index sector) load함.)
     push bx (map2)
 
     dh, si(d_addr, sector address를 가지고 있는 address) 에 disk 관련 flag/addr정보를 setting
-    call pread(2nd bootloader 과련 데이터 1sector를 read)
-    *d_addr로부터 CHS address를 가져온 후, es(0x7c00):bx(map2)에 1 sector를 read?
+    call pread (disk address(ds(0x7c00):d_addr)로부터 1개의 sector를 0x7c00:map2 로 read)
+      *ax = (read할 sector address. d_addr), es = 0x7c00, bx = map2, dx = (dh = d_flag), dl = drive
 
     if(bx-4 != "LILO")
       jmp error
@@ -75,9 +78,12 @@ first.S
     pop si (si = map2)
     
     es = SETUP_STACKSIZE/16 + BOOTSEG + SECTOR_SIZE/16*2
+    bx = 0
     
-  sload
-    call pread(ds:si, 즉 map2 에서 sector address를 read이후, 1개의 sector를 es(위에서 설정된 값):bx(0)로 읽음. 이후 bx+512수행)
+  sload (vol_found에서 load한 정보를 통해(read할 sector addres), 2nd stage를 load함.)
+    call pread
+      *ax = (read할 sector address. ds(0x7c00):si(map2)), es = (SETUP_STACKSIZE/16 + BOOTSEG + SECTOR_SIZE/16*2), bx = 0, dx = (dh = d_flag), dl = drive
+      *bx는 pread에 의해 512bytes씩 증가함.
     jnz sload
 
     1st, 2nd signature를 서로 비교.(es(위에서 설정된 값):di(sig), ds(0x7c00):si(sig))
@@ -92,8 +98,26 @@ first.S
     retf(jump to ES:BP). second.S 코드가 실행 됨. 
 
   disk_read
+    input : dh : disk flag(ex. disk addressing(CHS, LBA, Linear....))
+            dl : disk drive
+            eax: CHS addr
+            es : destination buffer
+            bx : destination buffer
+    *disk_read -> disk_geometric -> disk_int13 -> disk_okay(CHS addressing read시 흐름.). disk_read 에 전달된 input 값들을 각 label에서 사용함.
+
     stack에 register data를 push
+      pusha
+      push bp
+      push bp
+      push eax
+      push es
+      push bx
+      push 1
+      push 16
+    si = sp
  
+    push bx
+
     if(!(dh == LINEAR_FLAG | LBA32_FLAG))
       jmp disk_geometric
     else if(!(dh == LBA32_FLAG))
@@ -111,6 +135,7 @@ first.S
     *즉, disk_convert, disk_geometric, disk_edd 중 어디에 jmp를 할지를 결정
 
   disk_geometric
+    input : disk_read 참조
     eax reg를 이용하여 cx, dh 설정. 즉, eax를 파라미터로 받아서, CHS address를 구함.
 
   disk_read2
@@ -148,6 +173,7 @@ first.S
     jmp disk_read2
 
   disk_int13
+    input : disk_geometric 참조
     pop bx(target address to read)
     bp = 5
 
@@ -170,8 +196,15 @@ first.S
     ret
 
   pread
-    al = ds:si
+    *input : ds : read할 sector addr을 가지고있는 memoy location
+            si : read할 sector addr을 가지고있는 memoy location
+    *disk_read로 jmp하므로, pread 이전 disk_read에 필요한 input들이 설정되어야 함.
 
+    lodsb
+      *다음 2개의 instruction으로 생각하면 됨.
+         al = ds:si
+         si = si+1
+ 
     if (eax == 0)
       jmp done
 
@@ -288,6 +321,10 @@ bootsect.S
   die:
     jne die를 수행.
     
+*주요흐름정리
+vagain : 적절한 disk를 find하기 위해 각 disk의 1번째 sector를 map2(MBR 이후 memory영역)에 load하여 check 수행
+vol_found : 해당 disk로부터 d_addr(2nd stage index sector)를 map2(MBR 이후 memory영역) 에 load.
+sload : 2nd stage index sector정보로부터 2nd stage가 존재하는 disk sector addr를 read하여, 해당 sector들을 vagain에서 찾은 disk로부터 memory로 읽어들임(es:0x0000 ~)
   
 CHS 관련
 chs는 hdd의 데이터에 addressing을 하는 방법. 예전에 사용되던 방법임.
