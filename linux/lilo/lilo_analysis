@@ -1,3 +1,4 @@
+ 
 first.S
   _main 
     start label 로 jmp.
@@ -224,7 +225,236 @@ first.S
     NOVGA(LCF_NOVGA 가 정의되어있는 경우)인 경우는 아무것도 수행하 지않음.
 
 second.S
+  jmp start
 
+  start:
+    firstseg = ds(즉, cs)
+
+    init_dx = dx(first.S로부터 설정된 boot device 정보?)
+    
+    int 0x12(avaliable memory 를 가져옴. AX = total number of KB(low memory))
+    
+    es = ax(segment of destination address)
+    ds = cs
+    si, di, ax = 0
+    cx = max_secondary/2 (copy할 size in word)
+    rep movsw(cs:si -> es:di 로 cx word만큼 copy. 2nd stage를 copy)
+    di = di+ BSSstart-max_secondary
+    cx = BSSsize/2
+    rep stosw(es:di를 cx word만큼 ax(0)으로 filling. bss영역을 초기화)
+    continue로 far jmp(es:continue)
+
+  continue:
+    video, serial, keybord 등을 초기화(buffer를 비우거나,, 등등 .. 하는 듯?)
+
+  comcom:
+    'L' 출력
+    ds:si = pointer to disk parameter table
+    disk parameter table 값을 검증. 성공하면 jmp to dskok
+    
+    es:di 설정(es = cs, di : dskprm)
+    cx = 6
+    cs:si -> es:di 로 12bytes copy
+    (di-8) 값을 update.
+
+    0x78 = dskprm, 0x7a = es 수행
+
+  dskok:
+    break = 0 (break flag을 초기화)
+    call instto
+
+  instto:
+    timer 관련 설정...
+    eax = ds(0x0000):0x0070
+    cs:int1c_l = eax
+    cs:0x1c*4 = tick
+    cs:0x1c*4+2  = cs
+
+  restrt:
+    ds = es = bx = cs
+
+    bx = bx - (MAX_SETUPSECS(63)*32+32=0x800)
+
+    cx = INITSEG(0x9000)
+
+    if(bx > cx)
+      bx = cx
+
+  restrt1:
+    map = #MAP
+    initseg = bx.   initseg를 설정(0x9000)
+
+    cx = bx+0x20 (setupseg, 일반적으로? 0x9000+0x20을 설정)
+    setupseg = cx
+
+    cx=cs      ss, sp를 설정
+    cx=cx-bx
+    cx=cx<<4
+    ss=bx
+    sp=cx
+
+    sig와 "LILO"를 비교. 같지않으면 부팅을 종료(jmp crshbrn2)
+    mcmdbeg+6과 "MAGE"를 비교. 같지않으면 부팅을 종료(jmp crshbrn2)
+    stage와 STAGE_SECOND를 비교. 같지않으면 부팅을 종료(jmp crshbrn)
+    version과 VERSION을 비교. 같지않으면 부팅을 종료(jmp crshbrn)
+
+  crshbrn2:
+    cmp결과가 not equal이면 부팅을 종료(jne crshbrn)
+    
+    cmdbeg = acmdbeg
+
+    di = devmap
+
+    ax = init_dx를 통해서 device정보를 가져옴.   
+
+    stosw(ES:DI(devmap)) = AX
+
+  endtt:
+    ax = 0
+    stosw(ES:DI(devmap+1) = AX).
+
+  ldsc:
+    if(par1_mapstamp != par2_mapstamp)
+      jmp timeerr. 즉 부팅을 종료.
+
+    call kt_read (keyboard table관련 설정을 함)
+    
+    call build_vol_tab(volume ID table이 만들어짐)
+
+    bx=DESC(keyboard table관련 값?)
+    si=KEYTABLE+256+mt_descr(keyboard table 관련 값?)
+
+  descr_more:
+    cx,dx,ax reg를 ds:si(KEYTABLE+256+mt_descr)로부터 가져옴.(lods instruction)
+    call cread
+    if (fail to cread)
+      jmp fdnok (retry를 시도함.)
+
+    bh+=2
+    if(si < KEYTABLE+256+mt_descr+sa_size*MAX_DESCR_SECS_asm)
+      jmp descr_more
+
+    si=DESCR
+    di=SECTOR_SIZE*MAX_DESCR_SECS-4
+    call crc32(DESCR ~ DESCR+di 데이터에 대한 crc32를 구함)
+    di+=si
+    if(eax == *di)  crc값이 동일하다면, nochkerr로 jmp
+      jmp nochkerr
+    
+  timeerr:
+    jmp zz (부팅을 종료(hlt))
+
+  nochkerr:
+    virtual mode(ex VMware) booting을 지원하는 경우(#ifdef LCF_VIRTUAL)
+    call vmtest으로 virtual mode에 진입되었는 지를 확인.
+    virtual mode라면, ds:DESCR0+id_size es:DESCR0+id_size 로 data를 copy.(vir_loop: label)
+    virtual mode(ex VMware) booting을 지원하는 경우(#endif LCF_VIRTUAL)
+  
+    #ifdef LCF_NOKEYBOARD(IBM PC/AT keyboard 지원하는 경우)
+    call kbtest로 IBM PC/AT keyboard지원여부를 확인.
+    지원한다면,  ds:DESCR0+id_size es:DESCR0+id_size 로 data를 copy(kbd_loop: label)
+    #endif LCF_NOKEYBOARD
+
+    MENU, BITMAP featuer가 #define되어있는 경우, menu, bitmap 디스크립터 정보에 대한 처리도 수행함.
+
+    DFLCMD(default command) address에 default command line정보를 disk로부터 read함.
+    DC_MAGIC(default command magic number)를 비교하여, call cmd_write를 호출 할 지를 결정. cmd_write를 통해 default command를 disk에 write함(#ifndef LCD_READOnLy인 경우)
+
+  dokay:
+    'O' 를 출력
+     각 memory영역에 부팅에 필요한 파라미터/플래그 정보들을 copy.(vgaovr, old_del, par2_delay, nodfl)
+    
+    #ifdef LCF_NOKEYBOARD
+    keyboard가 시스템에 연결되었는지 아닌지를 확인 후, 연결되지 않은경우, serial이 연결되어있는 지 확인.
+    keyboard / serial 둘 중 하나라도 연결 되어있다면, jmp kbd_present, 이 외는 jmp skip_prompt
+    #endif LCF_NOKEYBOARD
+
+  kbd_present:
+    FLAG_PROMPT가 세팅되어있는 지 확인 후
+    세팅되어 있다면 jmp extp
+
+  skip_prompt:
+    nodfl = bfirst의 address
+    call waitsh(kbd input을 기다림)
+    kbd input이 있다면, jmp iloop(input processor로 점프)
+    없다면 jmp를 수행하지 않고 다음 instruction을 수행함.
+
+  extp:
+    external paramter 정보의 signature(EX_DL_MAG, "LILO")를 check수행하여, signature 잘못되었다면, jmp noex.
+    external paramter가 존재하는 경우, command line이 empty라면, jmp iloop. 아니라면 jmp niloop.
+    
+  noex:
+    default command line이 존재하는 지를 check함.
+    존재한다면 jmp niloop, 아니라면 jmp nodfl(nodfl은 이전에 setting됨)
+
+  iloop:
+
+
+  niloop:
+         
+  kt_read:
+    call kt_set
+    call cread
+    error발생한 경우, 부팅을 종료(jc keyerr)
+
+    es:si(KEYTABLE)로부터 SECTOR_SIZE-8 크기만큼 crc32를 구함
+    if(*(di+si) == eax(crc32))
+      jmp nokeyerr(return)
+
+  keyerr:
+    br zz(부팅을 종료함)
+
+  nokeyerr:
+    ret
+    
+
+  kt_set:
+    cx,dx,al,bx reg에 keyboard translation table관련 정보를 setting
+    
+  cread:
+    call map_device
+
+  cread_physical:
+    cread에 전달된 parameter를 기반으로 int0x13 call을 하여 데이터를 read함.(CHS addressing mode인 듯)
+
+  waitsh:
+    timeout을 설정.
+    BIOS int0x16 을 사용하여 kbd(또는 serial)로부터 특정 키(?) 입력을 read.
+    입력이 있다면, carry flag를 set함. 없다면(ex 타임아웃 발생), carry flag clear.(timeout handler에서 처리함. instto: label 참조)
+
+  instto:
+    timer interrupt handler를 설정(tick label)
+    
+  setto:
+    timer interrupt handler의 cntdown값을 설정.
+    timeout flag를 clear(timeout = 0)
+
+  tick:
+    timer interrupt handler.
+    cntdown 값을 1씩 감소.
+    cntdown이 0이되면, timeout flag를 setting(timeout = 0xFF)
+
+  map_device:
+
+  *seg cs
+    ds = cs 를 의미하는 것으로 보임
+
+  *disk parameter table
+    0x0078에 dpt(disk parameter table)정보가 위치함. 
+offset	설명
+00H	Bit 0~3까지 4bit는 Head의 지연시간을 가집니다. Bit 4~7까지 4bit는 Head가 자유로워지는에 걸리는 시간입니다.
+01H	Bit 0은 DMA의 사용가능 여부입니다. Bit 1~7까지 7Bit는 Head의 접근시간에 대하여 2를 나누어 1을 뺀 값의 시간을 뜻합니다.
+02H	Motor의 전원이 완전히 꺼지기까지의 Clock tick수를 의미합니다.
+03H	FM 또는 MFM모드에 대하여 각각 내용이 다른데 그냥 섹터당 바이트수를 128로 나눈값으로 생각하시면 무난할듯.
+04H	Track당 Sector수 (본래 의미는 Track에서 마지막 섹터번호입니다.)
+05H	Sector당 byte수 (본래 의미는 Sector간격입니다.)
+06H	Format을 결정하는 값 (0x80이면 섹터당 128byte이고 그 외의 값은 필자도 정확히 모르며 정확하지 않아도 잘 되네요.)
+07H	Format간격 (포맷시에 하나의 그룹을 단위로 포맷을 하게 되는데 이때 이 그룹간격)
+08H	위와 비슷한데 Data형식 지정자라고 해야 할까? (필자는 이것에 대해서도 잘 모르겠습니다.)
+09H	Head가 접근후에 준비까지의 시간
+0AH	Motor가 기동되어 준비될때까지의 시간
+0BH	Motor가 중지될때까지의 시간 (디스켓 빼려면 이것이 정지될때까지는 빼지 말라고 할수 있겠죠?)
+    https://wiki.kldp.org/wiki.php/DiskParameterTable
 
 bootsect.S
   _main
@@ -466,5 +696,4 @@ MBR관련
     MBR to VBR interface
       MBR->VBR 실행시, 어떤 레지스터에 어떤 값 이들어가는 지 등에 대한 설명.
       MBR wikipedia 참조
-    
     
