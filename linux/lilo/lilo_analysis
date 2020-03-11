@@ -388,10 +388,175 @@ second.S
     존재한다면 jmp niloop, 아니라면 jmp nodfl(nodfl은 이전에 setting됨)
 
   iloop:
-
+    msg file을 load.(?)
+    
+  nomsg:
+    cmdbeg, usrimpm을 값을 copy함.    
 
   niloop:
-         
+    booting msg출력
+    cmdline address를 bx에 copy
+    
+  clend:
+    cmdline 정보를 display함.
+
+  cledne:
+    prechr = 32(ASCII space)
+
+  input:
+    UI_MAGIC과 usrimpm 값을 비교하여 interactive mode인지를 확인
+    interactive mode인 경우, jmp kbinp
+    아닌경우, jmp gotinp      
+
+  kbinp:
+    keyboard입력을 받음.(al reg)
+
+  gotinp:
+    keyboard입력에 따른 처리를 수행.
+    (tolist : booting image를 list, todelch : character를 delete, todell : line을 delete etc... 처리후 input: 으로 jmp. input이 NULL또는 CR(아마 엔터인듯?)인 경우 jmp nul / jmp cr 수행)
+
+  noblnk:
+    처리허용 된 keyboard input인 경우, cmdline 에 입력값을 write 이후 display
+
+  sklp:
+    single key entry관련 처리를 수행하고 input으로 jmp함.
+
+  nul:
+    input:에서 NUL 입력시 진입됨.
+    keyboard입력을 일정시간 기다림.
+    타임아웃 발생한다면, jnp crnul, 키보드 입력이있다면, cmdline을 초기화하고 jmp iloop
+    
+  cr:
+    cmdbeg = mcmdbeg
+    
+  crnul:
+    cmdline 마지막 위치에 NULL byte write
+    si = cmdline, di = lkcbuf, dolock = 0
+
+  cpsav:
+    from DS:SI to ES:DI 로 data copy. 즉 cmdline을 lkcbuf로 copy
+
+  notrspc:
+    si = di = cmdline
+  
+  chkvga:
+    nobd, vga=, kbd=, lock, 등 cmdline 을 파싱해서 처리를 수행함(vsktv, vsktk, vsktl, vsknb label 등...)
+
+  emptyl:
+    cmdline 파싱에 따라서 bfirst / bcmd로 jmp
+
+  bcmd:
+    boot image를 찾아서(call find_image)
+    boot 로 jmp(jc boot.)
+    image를 찾지못했다면, jmp iloop
+
+  bfirst:
+    각 booting 상태(in virtual, no keyboard 등등)에 따라서 필요한 정보를 read함.
+  
+  boot:
+    timeout을 제거(par2_timeout = 0xffff)
+    
+  locopt:
+    cmdline으로부터 option을 read함.
+  optfnd:
+    locopt에서 찾은 옵션정보를 options 에 저장.
+  
+    password 입력이 필요한 지 flag(FLAG_PASSWORD)를 check. 필요없다면 jmp toboot
+    FLAG_RESTR을 체크 후, password 처리를 위해 jmp dopw
+
+  toboot:
+    jmp doboot
+
+  dopw:
+    keyboard로부터 pw를 입력받아 처리 후, jmp doobot수행.
+
+  doboot:
+    message 및 img name을 출력
+    
+    first map sector를 read.
+    default command line을 read
+    option을 read
+
+  cpnocl:
+    si reg값이 cmdline 또는 options addr과 같은 지 확인.
+    같다면 jmp cpnodn, 같지않으면 데이터 copy를 수행(?). 이후 cpovfl로 jmp(특정 조건 만족 시..)
+    
+  cpnodn:
+    constant option인 지를 check. 아닌 경우, jmp nocopt
+    constant option이 존재하는 경우, space 를 write하고, character 를 counting함. character 갯수가 0이라면 jmp cpovfl
+
+  cpcodsp:
+    memory관련 command option처리를 하는 듯.
+
+  nocopt:
+  cpvalp:
+    options를 copy함.
+
+  cpovfl:
+    di = cl(0)
+
+  cpdone:
+    boot sector를 load.
+
+    flag, parameter를 copy함.
+
+    vga관련 flag를 check하여, vganorm, vgaset으로 jmp함.
+
+  vganorm:
+    FLAG_VGA를 check하여, 세팅되지 않은 경우, jmp novga
+
+  vgaset:
+    VGA_SET에 ax의 값(vgaovr)을 set
+
+  novga:
+    FLAG_LOCK을 check.
+    lock이 필요한 경우, jmp lockit, 아닌경우 jmp nolock
+
+  lockit:
+    command line을 disk에 write.
+
+  nolock:
+    로드할 섹터 갯수를 설정.(?)
+
+  lsetup:    
+    es = setupseg
+
+    #ifdef MEMORY_CHECK
+    memory check를 수행함. memory가 부족하다고 판단되는 경우, message만 출력하며 부팅은 계속 진행함.
+    #endif MEMORY_CHECK
+
+  lsloop:
+    disk에서 sector을 read함(call loadopt)
+
+    FLAG를 확인(FLAG_MODKRN, FLAG_LOADHI) 후, 만족하지 않는 경우, jmp loadlow / jmp nohigh 수행
+
+  nohigh:
+    NEW_HDR_VERSION 을 비교하여, jmp noheap을 수행
+    memory 특정영역에 FLAG값을 copy 함.
+
+  noheap:
+    initrd load(call load_initrd)
+    
+    loadlow로 jmp해야하는 지 check후, 해야한다면 jmp loadlow
+
+    call lfile
+    jmp launch2
+
+  loadlow:
+    call loadfile(system을 load)
+
+  launch2:
+    jmp launch
+
+  loadfile:
+    load할 address를 설정
+
+  lfile:
+    call load를 무한으로 수행(???)
+   
+  launch:
+     
+    
   kt_read:
     call kt_set
     call cread
