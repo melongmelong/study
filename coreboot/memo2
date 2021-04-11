@@ -1,0 +1,20 @@
+LinuxBoot
+
+-----------------------------------------------------------------------------------
+LinuxBoot 개요
+  firmware의 일부기능을 Linux kernel과 runtime기반으로 대체 목적.(firmware의 역할을 최소화)
+  *참고 : https://github.com/linuxboot/book/blob/master/intro/README.md
+
+LinuxBoot는 다음 componet들로 구성됨
+  BIOS : BIOS / UEFI. 또는 coreboot.(종류는 상관없음), LinuxBoot Project의 범위는 아님.
+  linux kernel : 일반 linux kernel이지만, 주 목적은 firmware의 일부기능 대체가 목적임. kernel역시 LinuxBoot Project범위는 아님.
+  initramfs : initramfs(u-root 기반, u-root역시 LinuxBoot Proejct범위는 아님.(https://u-root.org)
+  => 즉, firmware, kernel, initramfs를 대체하도록 기존 다른 프로젝트들을 응용 + 응용하기위한 코드로 구성된다고 보면 될 듯함.
+  *참고 : https://github.com/linuxboot/book/blob/master/components/README.md
+
+----------------------------------------------------------------------------------------
+LinuxBoot in coreboot
+
+LinuxBoot 빌드 in coreboot
+
+

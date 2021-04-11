@@ -1,5 +1,6 @@
 memo
 다음에할거 : 대강 큰 흐름은 다본듯함. tutorial qemu기반 실행도 해봄.(잘됨).
+          LinuxBoox coreboot에서 빌드하는 과정..
           qemu기반으로 coreboot으로 payload(LinuxBoot)띄우는 실습하면서, coreboot 상세히 봐야할 부분 및 커널부팅과정(review수준) 보면 될 듯함.
           *LinuxBoot는 일반적인 linux kernel은 아니고, 또다른 OS부팅을 위한 linux kernel로 생각하면 됨.(LinuxBoot자체로도 필요기능이 있다면 해당 커널을 그대로 사용해돋 되긴하겠지만, rom size제약 땜시 그렇게 하지는 않을 듯함.)
           *LinuxBoot도 어쨋든 linux kernel 이므로, 띄워보면서 linux kernel booting확인해보면 좋을 듯 함. 
