@@ -16,5 +16,66 @@ LinuxBoot는 다음 componet들로 구성됨
 LinuxBoot in coreboot
 
 LinuxBoot 빌드 in coreboot
+*cbfstool add-payload command에 linux specific한 옵션(cmdline, initrd)가 있음.빌드따로해서 해당 옵션으로 CBFS에 추가함.
+  add-payload [-r image,regions] -f FILE -n NAME [-A hash] \
+        [-c compression] [-b base-address] \
+        (linux specific: [-C cmdline] [-I initrd]) Add a payload to the ROM
 
+LinuxBoot load in coreboot
+*cbfstool add-payload시, 커널이미지 및 initrd, cmdline등의 데이터를 payload CBFS component에 cbfs_paylaod_segment header및 data형태로 추가함.(cbfstool 분석한 코드 참조)
+*ramstage에서 위 payload component 내 각 cbfs_payload_segment를 정해진 위치(cbfs_payload_segment header정보에 기술되어있음)에 copy후 entry point로 jump(linux_trampoline.c 의 trampoline코드가 entry point임)
 
+./payloads/external/Makefile.inc
+45-53
+  cbfs_files-y variable 및 -file, -type등 payload 속성 정의
+
+260-294
+  LinuxBoot build를 위한 rule정의
+  CONFIG_* variable에 payload filepath를 설정(config시), 이 후 각 variable(payload-file or prebuilt-files)에 설정.(이후 해당 variable참조하여 rule 실행)
+
+payloads/external/LinuxBoot/Makefile
+kernel, initramfs 빌드 실행.
+12
+  default rule
+
+14-15
+  u-root rule
+
+17-29
+  initramfs rule
+
+31-34
+  initramfs_compressed rule
+
+36-54
+  kernel rule
+
+56
+  default rule
+
+payloads/external/LinuxBoot/targets/linux.mk
+필요한 경우 kernel source를 다운받고 해당 kernel을 빌드수행함.
+58-67
+  kernel 원본 source를 가져옴(curl)
+
+69-78
+  빌드를 위해 kernel 원본 source를 특정경로에 extraction.
+
+80-87
+  kernel build config 생성 rule.
+
+89-97
+  kernel build core rule(실제 빌드를 수행)
+
+99-119
+  빌드된 kernel img를 특정경로에 copy
+
+payloads/external/LinuxBoot/targets/u-root.mk
+55-56
+  uroot pkg source를 다운받음.
+
+58-59
+  u-root pkg를 빌드
+
+61-63
+  uroot기반으로 initramfs 이미지 생성 룰

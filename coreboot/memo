@@ -1,6 +1,8 @@
 memo
 다음에할거 : 대강 큰 흐름은 다본듯함. tutorial qemu기반 실행도 해봄.(잘됨).
-          LinuxBoox coreboot에서 빌드하는 과정..
+          LinuxBoot coreboot에서 빌드하는 과정다봄. 실행도 해봄.
+          payload가 CBFS에 추가되고, 어떻게 load되는 지 큰 흐름 분석완료함.
+          LinuxBoot payload 부팅하는 거 분석.(linux_trampoline.c 의 trampoline코드가 entry point임. 여기부터 보면 될 듯. 이후는 linux랑 동일한 과정 거칠것임)
           qemu기반으로 coreboot으로 payload(LinuxBoot)띄우는 실습하면서, coreboot 상세히 봐야할 부분 및 커널부팅과정(review수준) 보면 될 듯함.
           *LinuxBoot는 일반적인 linux kernel은 아니고, 또다른 OS부팅을 위한 linux kernel로 생각하면 됨.(LinuxBoot자체로도 필요기능이 있다면 해당 커널을 그대로 사용해돋 되긴하겠지만, rom size제약 땜시 그렇게 하지는 않을 듯함.)
           *LinuxBoot도 어쨋든 linux kernel 이므로, 띄워보면서 linux kernel booting확인해보면 좋을 듯 함. 
@@ -473,8 +475,29 @@ cbfstool
 
 430-566
   cbfs_add_component()
+  CBFS component를 cbfs img에 추가.
+  455
+    cbfs image를 load(cbfs_image_from_buffer())
+  458
+    cbfs image에 name을 가진 component가 있는지 확인(cbfs_get_entry())
+  463-467
+    file을 read(buffer_from_file())
+  477-478
+    cbfs file header를 생성(cbfs_create_file_header())
+  480-484
+    convert function을 call.(function pointer 인자로 넘어옴)
   556
     cbfs_add_entry() call
+
+733-769
+  cbfstool_convert_mkpayload()
+  739-755
+    input된 struct buffer데이터를 사용하여 CBFS payload를 생성  
+    753-756
+      linux kernel의 payload img를 생성(parse_bzImage_to_payload())
+  764-767
+     기존 input struct buffer정보를 해제(불필요하므로)
+    payload정보를 input된 struct buffer에 copy
 
 788-826
   cbfs_add()
@@ -486,7 +509,6 @@ cbfstool
   917
     param.image_region의 buffer를 slice(buffer_clone())
   flashmap file이 존재하면, cbfs_image_create() call
-    
 
 1328-1377
   dispatch_command()
@@ -516,6 +538,52 @@ cbfstool
   1821-1834
     각 region별 data를 firmware img에 write(partitioned_file_write_region())
    
+-cbfs-payload-linux.c
+27-42
+  strcut bzpayload 정의
+
+44-61
+  bzp_init()
+  struct bzpayload 초기화.
+
+63-76
+  bzp_add_initrd()
+  initrd load하여 bzpayload->initrd buffer를 세팅
+
+78-83
+  bzp_add_segment()
+  input된 struct buffer에 data, size를 사용하여 초기화(buffer_init())
+  bzpayload->num_segment++수행
+
+85-90
+  bzp_add_trampoline()
+  trampoline관련 데이터 버퍼를 설정
+
+120-139
+  bzp_init_output()
+  bzpayload->out buffer를 설정(buffer_create())
+
+141-172
+  bzp_output_segment()
+  bzpayload->out buffer에 input된 segment data를(CBFS payload data) 추가
+
+187-321
+  parse_bzImage_to_payload()
+  입력된 kernel img관련 파일(bzImgae, initrd, cmdline, parameter...) 정보를 각각의 CBFS payload segment로 변환하여 CBFS rom에 데이터 추가
+  196-212
+    bzpayload 초기화(bzp_init())
+    trampoline, initrd, cmdline 등 초기화(bzp_add_*())
+  214-266
+    bzImage의 setup section정보 기반으로 linux_params정보 설정
+  268-269
+    kernel img(bzImage) 초기화(bzp_add_kernel())
+  284-285
+    linux_params 초기화(bzp_add_params())
+  287-288
+    bzpayload->out buffer초기화(bzp_init_output())
+  290-319
+    kernel img를 bzpayload->out에 추가(bzp_output_segment())
+  
 -cbfs_image.c
 80-84
   cbfs_calculate_file_header_size()
@@ -525,6 +593,10 @@ cbfstool
   cbfs_image_create()
   255
     return cbfs_create_empty_entry() call
+  
+352-378
+  cbfs_image_from_buffer()
+  input된 struct buffer를 struct cbfs_image에 copy후, 유효한 CBFS img인지 확인.
 
 642-732
   cbfs_add_entry_at()
@@ -535,6 +607,14 @@ cbfstool
   cbfs_add_entry()
   810
     cbfs_add_entry_at() call
+
+822-834
+  cbfs_get_entry()
+  struct cbfs_image에서 cbfs_file->filename이 name이랑 동일한 entry를 찾아서 return
+
+850-858
+  cbfs_add_payload()
+  call cbfs_add_component() 
 
 1793-1806
   cbfs_create_file_header()
@@ -1008,6 +1088,16 @@ src/lib/prog_loaders.c
   146-148
     argument 설정(prog_set_arg()) 및 ramstage run(prog_run())
 
+159-186
+  payload_load()
+  payload를 load함.
+  165-166
+    CBFS rom img에서 payload compnent를 load
+  168-181
+    payload load를 수행(selfload_check())
+  184-185
+    payload entry가 설정되었는 지 check(prog_entry())
+
 src/include/bootstate.h
 77-90
   boot_state_t 정의
@@ -1017,6 +1107,40 @@ src/include/bootstate.h
 
 164-168
   struct boot_state_init_entry 정의
+
+src/lib/selfboot.c
+49-119
+  load_one_segment()
+  64-91
+    cbfs payload segment를 load address에 copy
+  
+150-221
+  load_payload_segments()
+  158-218
+    각 cbfs_payload_segment에 대해서 다음을 수행함
+    161-165
+      cbfs_payload_segment header정보를 read
+    167-210
+      cbfs_payload_segment type별로 필요 variable설정
+    216
+      cbfs_payload_segment data를 load(load_one_segment())
+
+235-264
+  _selfload()
+  241-243
+    CBFS payload component data를 return(selfprepare())
+  245
+    cbfs_payload_segment header의 첫번째 pointer 설정
+  247-248
+    cbfs_payload_segment check수행
+  250-251
+    cbfs_payload_segment load수행(load_payload_segments())
+  258
+    struct prog에 entry point설정(prog_set_entry)
+
+266-269
+  selfload_check()
+  call _selfload()
 
 src/lib/cbfs.c
 26-58
