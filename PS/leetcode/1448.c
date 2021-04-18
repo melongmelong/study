@@ -7,33 +7,22 @@
  * };
  */
 
-int arr[100000], i, flag, ans;
+int ans;
 
-void trav(struct TreeNode *root, int depth){
+void trav(struct TreeNode *root, int max){
     if(root == NULL){
         return;
     }
-    if(depth > 0){
-        flag = 1;
-        for(i=depth-1; i>=0; i--){
-            if(arr[i] > root->val){
-                flag = 0;
-            }
-        }
-        if(flag){
-            ans++;
-        }
-    }
-    else{
+    if(max <= root->val){
+        max = root->val;
         ans++;
     }
-    arr[depth] = root->val;
-    trav(root->left, depth+1);
-    trav(root->right, depth+1);
+    trav(root->left, max);
+    trav(root->right, max);
 }
 
 int goodNodes(struct TreeNode* root){
     ans = 0;
-    trav(root, 0);
+    trav(root, -100000);
     return ans;
 }
