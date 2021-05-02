@@ -2,7 +2,7 @@ memo
 다음에할거 : 대강 큰 흐름은 다본듯함. tutorial qemu기반 실행도 해봄.(잘됨).
           LinuxBoot coreboot에서 빌드하는 과정다봄. 실행도 해봄.
           payload가 CBFS에 추가되고, 어떻게 load되는 지 큰 흐름 분석완료함.
-          LinuxBoot payload 부팅하는 거 분석.(linux_trampoline.c 의 trampoline코드가 entry point임. 여기부터 보면 될 듯.(linux_trampoline.c는 linux_trampoline.S로부터 생성됨. Makefile참조) 이후는 linux랑 동일한 과정 거칠것임)
+          LinuxBoot payload 부팅하는 거 분석.(coreboot->linux kernel연관은 어느정도 확인 되었음. 바로 구현프로젝트 넘어갈까??.. coreboot header, linux kernel boot interface위주로 확인 필요함. linux_trampoline.c 의 trampoline코드가 entry point임. 좀 더 자세히 보면 될 듯.(linux_trampoline.c는 linux_trampoline.S로부터 생성됨. Makefile참조) 이후는 linux랑 동일한 과정 거칠것임)
           qemu기반으로 coreboot으로 payload(LinuxBoot)띄우는 실습하면서, coreboot 상세히 봐야할 부분 및 커널부팅과정(review수준) 보면 될 듯함.
           *LinuxBoot는 일반적인 linux kernel은 아니고, 또다른 OS부팅을 위한 linux kernel로 생각하면 됨.(LinuxBoot자체로도 필요기능이 있다면 해당 커널을 그대로 사용해돋 되긴하겠지만, rom size제약 땜시 그렇게 하지는 않을 듯함.)
           *LinuxBoot도 어쨋든 linux kernel 이므로, 띄워보면서 linux kernel booting확인해보면 좋을 듯 함. 
@@ -539,6 +539,12 @@ cbfstool
     각 region별 data를 firmware img에 write(partitioned_file_write_region())
    
 -cbfs-payload-linux.c
+kernel의 x86 boot protocol(kernel src tree참조)에 따라서 아래와 같이 CBFS payload img를 생성함.(bootloader가 하는 일을 비슷하게 수행하함)
+  bzImage의 bootsect+setup 부분은 LINUX_PARAM_LOC에 load되도록,
+  bzImage의 compressed kernel(bootsect+setup을 제외한 나머지부분)은 kernel_base(일반적으로 compressed kernel의 head 시작부분 0x100000) lood되도록,
+  trampoline(coreboot이 kernel을 최초 시작하는 부분)은 TRAMPOLINE_ENTRY_LOC load되도록,
+  kernel cmdline COMMAND_LINE_LOC load되도록
+  initrd는 initrd_base(kernel이미지와 겹치지 않는 영역) load되도록
 27-42
   strcut bzpayload 정의
 
@@ -579,6 +585,7 @@ cbfstool
     kernel img(bzImage) 초기화(bzp_add_kernel())
   284-285
     linux_params 초기화(bzp_add_params())
+    *linux_params는 빌드된 bzImage파일의 bootsect+setup부분을 read하여 설정해서 cbfs payload에 추가됨.
   287-288
     bzpayload->out buffer초기화(bzp_init_output())
   290-319

@@ -25,6 +25,29 @@ LinuxBoot load in coreboot
 *cbfstool add-payload시, 커널이미지 및 initrd, cmdline등의 데이터를 payload CBFS component에 cbfs_paylaod_segment header및 data형태로 추가함.(cbfstool 분석한 코드 참조)
 *ramstage에서 위 payload component 내 각 cbfs_payload_segment를 정해진 위치(cbfs_payload_segment header정보에 기술되어있음)에 copy후 entry point로 jump(linux_trampoline.c 의 trampoline코드가 entry point임)
 
+
+./util/cbfstool/linux_trampoline.S
+LinuxBoot booting을 위한 최초 실행 코드.(빌드과정에서 cbfs rom img에 추가 됨(Makefile 참조))
+21-24
+  .trampoline_start
+   entry point
+26-34
+  .headerSearch
+  coreboot table을 찾음
+36-43
+  .headerSearchDone
+  coreboot table에서 정보를 가져옴. coreboot table을 못 찾은 경우 부팅중단
+45-52
+  .tableScan
+   coreboot table로부터 정보를 가져와서 관련 처리 수행
+53-75
+  .testMemory
+   coreboot table로부터 정보를 가져와서 관련 처리 수행
+82-114
+  .endScan
+  103-114
+     커널실행환경 세팅후 커널시작주소로 jump(cbfstool에서(cbfs-payload-linux.c parse_bzImage_to_payload 참조) 설정 됨(default : 0x100000, 일반적인 bzImage load주소(bootsect+setup이아닌 compressed kernel의 head코드가 바로 실행됨.)))
+    
 ./payloads/external/Makefile.inc
 45-53
   cbfs_files-y variable 및 -file, -type등 payload 속성 정의
