@@ -28,6 +28,7 @@ LinuxBoot load in coreboot
 
 ./util/cbfstool/linux_trampoline.S
 LinuxBoot booting을 위한 최초 실행 코드.(빌드과정에서 cbfs rom img에 추가 됨(Makefile 참조))
+*coreboot table관련 정보는 코드보는 게 좋을 듯함.(./src/commonlib/include/commonlib/coreboot_tables.h)
 21-24
   .trampoline_start
    entry point
