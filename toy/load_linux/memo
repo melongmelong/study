@@ -6,13 +6,14 @@ qemu의 경우 64k boundary size로 rom img(bios)가 아니면 실행되지 않�
   아닐경우 qemu: could not load PC BIOS 이슈 발생.
   qemu만의 문제인 지는 확인필요하긴 해보임.
 
-실제 실행시키기 위해서는 qemu에서 사용하는 bios img는 256k로 가정(?) 해야하나봄.
+실제 실행시키기 위해서는 qemu에서 사용하는 bios img는 256k로해야하나봄.
   왜이런지는 봐야할듯, 아마 qemu 스펙?일지도?(https://martin.uy/blog/bios-execution-in-qemu-where-it-all-starts/ 참조.)
 
 reset addr에 간단한 instruction입력후 레지스터 값 변경 및 system hlt상태 확인됨.(qemu monitor, info cpu, info registers 로 확인)
 
 -milestone2. 여러개의 소스파일로 구성된 rom이미지 생성
   빌드스크립트(Makefile, linker script) 제작이 필요할 듯.
+  C source file 링크하면 objcopy나.. 이런것들이 먼가 잘 안됨. 확인필요해보임.
 
 -miestone3. kernel load(?)
 

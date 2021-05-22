@@ -1,5 +1,4 @@
-.section ".head.reset", "ax", %progbits
+.section ".head.start", "ax", %progbits
 .code16
-
-movb $0x12, %al;
-hlt;
+_start:
+	hlt;
