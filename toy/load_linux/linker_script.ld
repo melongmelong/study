@@ -1,3 +1,7 @@
+PHDRS {
+	text PT_LOAD;
+}
+
 SECTIONS {
 	rom_start = 0xFFFC0000;
 	rom_end = 0xFFFFFFFF;
@@ -14,12 +18,9 @@ SECTIONS {
 	*/
 	.text : {
 		*(.text);
-	}
+	} :text
 	.head.start : {
 		*(.head.start);
-	}
-	.eh_frame : {
-		*(.eh_frame);
 	}
 	offset = reset_start - .;
 	.dummy : {
@@ -34,4 +35,9 @@ SECTIONS {
 		. = offset;
 	 }
 	. = rom_end;
+
+	/DISCARD/ : {
+		*(.eh_frame);
+	}
+	
 }
