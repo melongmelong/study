@@ -1,0 +1,3 @@
+.section ".dummy", "ax", %progbits
+.code16
+.byte 0xff; //for dummy, now...

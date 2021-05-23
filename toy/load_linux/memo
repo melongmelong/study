@@ -1,11 +1,10 @@
 -next할거
-  milestone1 왜 되었는 지 원인 확인 필요, milestone2.
+  milestone1 왜 되었는 지 원인 확인 필요, milestone2 왜 되었는 지 원인 확인 필요.
 
 -milestone1. reset vector 코드실행(완료)
 qemu의 경우 64k boundary size로 rom img(bios)가 아니면 실행되지 않음.(qemu코드 참조)
   아닐경우 qemu: could not load PC BIOS 이슈 발생.
   qemu만의 문제인 지는 확인필요하긴 해보임.
-
 실제 실행시키기 위해서는 qemu에서 사용하는 bios img는 256k로해야하나봄.
   왜이런지는 봐야할듯, 아마 qemu 스펙?일지도?(https://martin.uy/blog/bios-execution-in-qemu-where-it-all-starts/ 참조.)
 
@@ -16,12 +15,18 @@ reset addr에 간단한 instruction입력후 레지스터 값 변경 및 system 
   변수할당 / call / jmp 사용.
   C source file 링크하면 objcopy나.. 이런것들이 먼가 잘 안됨. 확인필요해보임.
     .text.__x86.get_pc_thunk.ax section 문제로 확인 됨
-    -fno-pic 옵션주니 위 section없이 컴파일됨...
+    gcc compile 시, -fno-pic 옵션주니 위 section없이 컴파일됨...
+  reset.S -> start.S로 jmp안되는 이슈
+    첫번째로, real address mode인 경우 jmp범위 고려가 필요해보임.(기억으로는 범위가 있음(64k?))
+    두번째로, 버그가 있나봄. 다음과 같은 코드로 처리필요함(왜인지는 모르겠지만, coreboot reset16.inc 코드 참조함)
+      5 .byte 0xe9
+      6 .int _start - (. + 2); #from coreboot reset16.inc...
+  start.S -> main.c로 call
+    call main 명령어로 이슈없이 됨.(real address mode jmp범위 고려되었을 경우일 듯함.)
+  reset.S ~ main.c까지 동작 확인됨.(qemu monitor, info registers의 흐름별 소스파일에서 세팅하는 레지스터 값으로 확인)
 
 -miestone3. kernel load(?)
 
 -참고
   qemu띄울때 -monitor stdio 옵션지정하면 terminal로 qemu상태확인가능함.(qemu정상동작할경우만)
   qemu monitor에서 info cpu, info registers로 상태 확인 가능
-
-

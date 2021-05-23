@@ -7,15 +7,17 @@ SECTIONS {
 	rom_end = 0xFFFFFFFF;
 	reset_start = 0xFFFFFFF0;
 	reset_end = 0xFFFFFFFF; /*== rom_end*/
+	prog_start = 0xFFFF0000;
+	prog_end = 0xFFFFFFF0; /*== reset_start*/
 
 	. = rom_start;
-	/*. = 0x00000000;*/ /*ok now(not relates to address location)*/
-	/*
-	.dummy : {
-		BYTE(0xff);
-		. = 0x3fff0;
-	} =0xffffffff
-	*/
+	offset = prog_start - rom_start;
+	.dummy1 : {
+		*(.dummy); /*for dummy data*/
+		FILL(0xff);
+		. = offset;
+	}
+	. = prog_start;
 	.text : {
 		*(.text);
 	} :text
@@ -23,7 +25,8 @@ SECTIONS {
 		*(.head.start);
 	}
 	offset = reset_start - .;
-	.dummy : {
+	.dummy2 : {
+		*(.dummy); /*for dummy data*/
 		FILL(0xff);
 		. = offset;
 	}
@@ -39,5 +42,4 @@ SECTIONS {
 	/DISCARD/ : {
 		*(.eh_frame);
 	}
-	
 }

@@ -1,5 +1,5 @@
-SRCS=reset.S start.S main.c 
-OBJS=reset.o start.o main.o
+SRCS=reset.S start.S main.c dummy.S
+OBJS=reset.o start.o main.o dummy.o
 LINKER_SCRIPT=linker_script.ld
 IMG_ELF=img.elf
 IMG_BIN=img.bin
