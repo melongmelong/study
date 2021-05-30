@@ -16,11 +16,13 @@ reset addr에 간단한 instruction입력후 레지스터 값 변경 및 system 
   C source file 링크하면 objcopy나.. 이런것들이 먼가 잘 안됨. 확인필요해보임.
     .text.__x86.get_pc_thunk.ax section 문제로 확인 됨
     gcc compile 시, -fno-pic 옵션주니 위 section없이 컴파일됨...
+    pic 관련 내용으로 확인 됨.(https://stackoverflow.com/questions/50105581/how-do-i-get-rid-of-call-x86-get-pc-thunk-ax)
   reset.S -> start.S로 jmp안되는 이슈
     첫번째로, real address mode인 경우 jmp범위 고려가 필요해보임.(기억으로는 범위가 있음(64k?))
     두번째로, 버그가 있나봄. 다음과 같은 코드로 처리필요함(왜인지는 모르겠지만, coreboot reset16.inc 코드 참조함)
       5 .byte 0xe9
       6 .int _start - (. + 2); #from coreboot reset16.inc...
+      *이건 이렇게 안해도 잘 됨.
   start.S -> main.c로 call
     call main 명령어로 이슈없이 됨.(real address mode jmp범위 고려되었을 경우일 듯함.)
   reset.S ~ main.c까지 동작 확인됨.(qemu monitor, info registers의 흐름별 소스파일에서 세팅하는 레지스터 값으로 확인)
