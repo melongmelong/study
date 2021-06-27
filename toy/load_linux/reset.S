@@ -1,4 +1,4 @@
-.section ".head.reset"
+.section ".head.reset", "ax", @progbits
 .code16
 
 _reset:

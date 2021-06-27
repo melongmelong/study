@@ -41,9 +41,10 @@ SECTIONS {
 		. = offset;
 	 }
 	. = rom_end;
-	gdtptr_offset = gdtptr & 0xffff;
 
 	/DISCARD/ : {
 		*(.eh_frame);
 	}
+	
+	gdtptr_offset = gdtptr & 0xffff;
 }
