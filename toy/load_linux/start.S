@@ -1,4 +1,4 @@
-.section ".head.start", "ax", %progbits
+.section ".head.start"
 .code16
 .global _start
 _start:

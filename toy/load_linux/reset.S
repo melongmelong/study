@@ -1,7 +1,7 @@
-.section ".head.reset", "ax", %progbits
+.section ".head.reset"
 .code16
 
-movb $0x12, %cl;
+_reset:
 #.byte 0xe9
 #.int _start - (. + 2); #from coreboot reset16.inc...
 jmp _start;
