@@ -1,5 +1,4 @@
-.section ".dummy", "ax", %progbits
-.code16
+.section ".dummy"
 .ascii "test1\n"
 .ascii "test2\n"
 .ascii "test3\n"
