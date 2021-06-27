@@ -18,12 +18,9 @@ SECTIONS {
 		. = offset;
 	}
 	. = prog_start;
-	.gdt : {
-		*(.gdt);
-	} : text
 	.text : {
 		*(.text);
-	}
+	} : text
 	.head.start : {
 		*(.head.start);
 	}
@@ -46,5 +43,5 @@ SECTIONS {
 		*(.eh_frame);
 	}
 	
-	gdtptr_offset = gdtptr & 0xffff;
+	/*gdtptr_offset = gdtptr & 0xffff;*/
 }

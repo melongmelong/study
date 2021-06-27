@@ -2,16 +2,18 @@
 .code16
 .global _start
 _start:
-	movb $0x34, %al;
-
 	cli;
 
+/*
 	//load gdtr. from coreboot ./src/cpu/x86/16bit/entry16.inc
 	movw %cs, %ax;
 	shlw $4, %ax;
 	movw $gdtptr_offset, %bx;
 	subw %ax, %bx;
 	lgdtl %cs:(%bx);
+*/
+	movl $gdtptr, %eax;
+	lgdtl (%eax);
 
 	movl %cr0, %eax;
 	andl $0x7ffaffd1, %eax;
@@ -38,6 +40,7 @@ _protected_start:
 	call main;
 
 	hlt;
+
 .global gdtptr
 gdtptr:
 	.word gdt_end-gdt-1
