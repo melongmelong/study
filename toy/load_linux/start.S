@@ -39,6 +39,8 @@ _protected_start:
 	movl $0x10000000, %esp
 	call main;
 
+	
+
 	hlt;
 
 .global gdtptr
