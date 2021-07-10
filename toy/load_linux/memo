@@ -39,13 +39,26 @@ reset addr에 간단한 instruction입력후 레지스터 값 변경 및 system 
       2. xxd -i [infile] (1과 동일)
       3. ld -r -b binary -o some_file.o some_file.jpg 로 object file생성.
   3. kernel boot protocol에 맞게 관련 코드 추가.
-    16bit 전환필요한가?(coreboot은 32bit에서 걍 jmp하는 듯)
-     가상머신 memsize 4g이고 rom영역도아닌데 데이터 copy시 특정 메모리영역에는 copy가 안됨.
+    16bit 전환필요한가?(coreboot은 32bit에서 걍 jmp하는 듯) => coreboot은 32bit protocol사용해서 굳이 16bit는 불필요함.
+     가상머신 memsize 4g이고 rom영역도아닌데 데이터 copy시 특정 메모리영역에는 copy가 안됨.(???) => 필요없음
   4. kernel booting 확인
+    32bit jmp하는 걸로 대충하고 했는데 안 됨... 원인 / 프로토콜 등 확인 필요함.
+     우선 16bit 가 젤 명확하니 16bit로 도전...???..(차라리 32bit로 하는 게 나을지도) => 32bit실패했음. 16bit로해봐야할듯. ㅜㅜ
+     해야할것들
+       16bit memory segment에서 동작하는 16bit linux boot code 구현
+       32bit code -> 16bit로 전환 및 16bit linux boot code로 jmp
+       Documentation/x86/boot.rst참조하여 16bit boot 프로토콜 구현
+          이미지 로딩, 
+         parameter 세팅, 
+         cmdline세팅, 
+         jmp to kernel entry point
     
-
   main() function call 및 bios데이터 memory copy 후 처리하는 것까진 됨.
     qemu pmemsave addr size file cmd로 memory dump가능.
+
+  커널코드 실행은 되는데(32bit로 진입후, 64bit mode로 변경된 거 확인(info register cmd)) qemu화면에서도 안보이고 어느시점에서 rip값 변경없음.
+    kernel code vmlinux(boot, compressed코드말고, 메인코드이미지) 확인시에는 delay_tsc 와 관련있는 것으로 보임.
+    코드 실행시 jmp *(PARAM_START+0x214)로 하면 되는데, movl PARAM_START+0x214, %eax후 jmpl *(%eax)하면 안됨. -> jmpl %eax하면 됨. 메모리오퍼랜드 참조하는 '()' 관련인 듯..
     
   *x86의 경우, instruction 최초 실행 시에는, real address mode의 실제 일반적인 addressing rule이 아닌 다른 rule사용.(x86 cpu manual 9.1.4 section참조)
   *rom img의 경우 4GB 바로 밑 address space에 존재. (x86 case)

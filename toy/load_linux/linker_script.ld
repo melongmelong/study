@@ -18,7 +18,14 @@ SECTIONS {
 	} : text
 	kernel_end = .;
 
-	offset = prog_start - kernel_end;
+	tmp_start = .;
+	.main.text : {
+		*(.main.text);
+	}
+	tmp_end = .;
+
+	offset = prog_start - tmp_end;
+	/*offset = prog_start - kernel_end;*/
 	.dummy1 : {
 		*(.dummy); /*for dummy data*/
 		FILL(0xff);
