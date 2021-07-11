@@ -1,5 +1,6 @@
 #define PARAM_START 0x90000
 #define KERNEL_GDT_START 0x40000
+#define RUN_START 0x00000100
 
 .section ".head.start", "ax", @progbits
 .code16
@@ -42,6 +43,11 @@ _protected_start:
 	movl $0x10000000, %esp
 	call main;
 
+	//for 16bit boot protocol code
+	movl $RUN_START, %eax;
+	jmp *%eax;
+
+	//for 32bit boot potocol code
 	mov  $KERNEL_GDT_START, %eax
 	movl  $0x0000ffff, 16(%eax)             // Set up the 2 new descriptors
 	movl  $0x00cf9b00, 20(%eax)
@@ -62,9 +68,10 @@ _protected_start:
 
 	movl $PARAM_START, %esi;
 
-	xorl %ebp, %ebp
-	xorl %edi, %edi
-	xorl %ebx, %ebx
+	movl $(PARAM_START+0x10000-0x0200), %esp;
+	xorl %ebp, %ebp;
+	xorl %edi, %edi;
+	xorl %ebx, %ebx;
 
 	ljmpl $0x10, $_running_kernel;
 

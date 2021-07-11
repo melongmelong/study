@@ -24,7 +24,15 @@ SECTIONS {
 	}
 	tmp_end = .;
 
-	offset = prog_start - tmp_end;
+	run_start = .;
+	.head.run : {
+		*(.head.run);
+	}
+	run_end = .;
+	run_offset = _run - run_start;
+	runidt_offset = null16idt - run_start;
+
+	offset = prog_start - run_end;
 	/*offset = prog_start - kernel_end;*/
 	.dummy1 : {
 		*(.dummy); /*for dummy data*/

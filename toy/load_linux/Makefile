@@ -1,5 +1,5 @@
-SRCS=reset.S start.S main.c dummy.S bzImage.c initramfs.c bzImage_tmp.S
-OBJS=reset.o start.o main.o dummy.o bzImage.o initramfs.o bzImage_tmp.o
+SRCS=reset.S start.S main.c dummy.S bzImage.c initramfs.c bzImage_tmp.S run.S
+OBJS=reset.o start.o main.o dummy.o bzImage.o initramfs.o bzImage_tmp.o run.o
 LINKER_SCRIPT=linker_script.ld
 IMG_ELF=img.elf
 IMG_BIN=img.bin

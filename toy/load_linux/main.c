@@ -177,6 +177,8 @@ extern char *kernel_gdt, *kernel_gdtend;
 #define CMDLINE_START PARAM_START+0x10000
 #define PROTECTED_MODE_KERNEL_START 0x100000
 #define RAMDISK_START 0x40000000
+
+#define RUN_START 0x00000100
 #define DEBUG_START 0xA0000000
 
 void debug(int offset, char *addr, int size)
@@ -208,6 +210,7 @@ void memset(char *dst, char val, int size)
 }
 
 //extern char tmp_start, tmp_end;
+extern char run_start, run_end;
 
 int main(void)
 {
@@ -216,6 +219,7 @@ int main(void)
 	char setup_sects;
 	short version;
 	char cmdline='\0';
+	int runlen;
 //	int tmplen;
 
 	setup_sects = bzImage[0x1f1];
@@ -238,6 +242,9 @@ int main(void)
 */
 
 	memcpy((char*)RAMDISK_START, &initramfs_cpio_xz[0], initramfs_cpio_xz_len);
+	
+	runlen = &run_end - &run_start;
+	memcpy((char*)RUN_START, &run_start, runlen);
 
 	linux_params = (struct linux_params*)PARAM_START;
 	linux_header = (struct linux_header*)PARAM_START;
@@ -256,6 +263,12 @@ int main(void)
 	linux_header->heap_end_ptr = 0x10000-0x200;
 	
 	linux_params->cmd_line_ptr = CMDLINE_START;
+
+	linux_params->orig_video_mode = 3;
+	linux_params->orig_video_cols = 80;
+	linux_params->orig_video_lines = 25;
+	linux_params->orig_video_isVGA = 1;
+	linux_params->orig_video_points = 16;
 	
 	return 0;
 }
