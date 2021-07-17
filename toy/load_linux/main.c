@@ -68,8 +68,6 @@ struct e820entry {
 
 /* Parameters passed to 32-bit part of Linux
  * This is another view of the structure above.. */
-
-
 struct linux_params {
 	u8 orig_x;		/* 0x00 */
 	u8 orig_y;		/* 0x01 */
@@ -220,7 +218,6 @@ int main(void)
 	short version;
 	char cmdline='\0';
 	int runlen;
-//	int tmplen;
 
 	setup_sects = bzImage_img[0x1f1];
 	if(setup_sects == 0){
@@ -233,13 +230,6 @@ int main(void)
 	memcpy((char*)CMDLINE_START, &cmdline, 1);
 
 	memcpy((char*)PROTECTED_MODE_KERNEL_START, &bzImage_img[(setup_sects+1)*512], bzImage_img_len-((setup_sects+1)*512));
-/*
-	tmplen = &tmp_end - &tmp_start;
-	debug(0, (char*)&tmplen, 4);
-	debug(4, &tmp_start, 4);
-	debug(8, &tmp_end, 4);
-//	memcpy((char*)PROTECTED_MODE_KERNEL_START, &tmp_start, tmplen);
-*/
 
 	memcpy((char*)RAMDISK_START, &initramfs_cpio_xz[0], initramfs_cpio_xz_len);
 	

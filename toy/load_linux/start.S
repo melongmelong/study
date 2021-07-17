@@ -8,14 +8,6 @@
 _start:
 	cli;
 
-/*
-	//load gdtr. from coreboot ./src/cpu/x86/16bit/entry16.inc
-	movw %cs, %ax;
-	shlw $4, %ax;
-	movw $gdtptr_offset, %bx;
-	subw %ax, %bx;
-	lgdtl %cs:(%bx);
-*/
 	movl $gdtptr, %eax;
 	lgdtl (%eax);
 
@@ -47,6 +39,7 @@ _protected_start:
 	movl $RUN_START, %eax;
 	jmp *%eax;
 
+/*
 	//for 32bit boot potocol code
 	mov  $KERNEL_GDT_START, %eax
 	movl  $0x0000ffff, 16(%eax)             // Set up the 2 new descriptors
@@ -78,8 +71,7 @@ _protected_start:
 _running_kernel:
 	movl PARAM_START+0x214, %eax;
 	jmpl *%eax;
-//	jmpl *(PARAM_START+0x214);
-
+*/
 .global gdtptr
 gdtptr:
 	.word gdt_end-gdt-1
