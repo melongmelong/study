@@ -27,7 +27,6 @@ SECTIONS {
 
 	offset = prog_start - run_end;
 	.dummy1 : {
-		*(.dummy); /*for dummy data*/
 		FILL(0xff);
 		. = offset;
 	}
@@ -42,7 +41,6 @@ SECTIONS {
 
 	offset = reset_start - .;
 	.dummy2 : {
-		*(.dummy); /*for dummy data*/
 		FILL(0xff);
 		. = offset;
 	}
