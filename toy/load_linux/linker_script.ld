@@ -6,23 +6,16 @@ SECTIONS {
 	rom_start = 0xFF7FFFFF;
 	rom_end = 0xFFFFFFFF;
 	reset_start = 0xFFFFFFF0;
-	reset_end = 0xFFFFFFFF; /*== rom_end*/
+	reset_end = 0xFFFFFFFF; 
 	prog_start = 0xFFFFF000;
-	prog_end = 0xFFFFFFF0; /*== reset_start*/
-	kernel_start = rom_start;
-	kernel_end = 0x00000000; /*init*/
+	prog_end = 0xFFFFFFF0; 
 
-	. = kernel_start;
+	. = rom_start;
+	kernel_start = rom_start;
 	.kernel : {
 		*(.data);
 	} : text
 	kernel_end = .;
-
-	tmp_start = .;
-	.main.text : {
-		*(.main.text);
-	}
-	tmp_end = .;
 
 	run_start = .;
 	.head.run : {
@@ -33,7 +26,6 @@ SECTIONS {
 	runidt_offset = null16idt - run_start;
 
 	offset = prog_start - run_end;
-	/*offset = prog_start - kernel_end;*/
 	.dummy1 : {
 		*(.dummy); /*for dummy data*/
 		FILL(0xff);
@@ -67,6 +59,4 @@ SECTIONS {
 	/DISCARD/ : {
 		*(.eh_frame);
 	}
-	
-	/*gdtptr_offset = gdtptr & 0xffff;*/
 }

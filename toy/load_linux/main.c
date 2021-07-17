@@ -166,8 +166,8 @@ struct linux_params {
 	u8 reserved17[1792];	/* 0x900 - 0x1000 */
 };
 
-extern char bzImage[];
-extern unsigned int bzImage_len;
+extern char bzImage_img[];
+extern unsigned int bzImage_img_len;
 extern char initramfs_cpio_xz[];
 extern unsigned int initramfs_cpio_xz_len;
 extern char *kernel_gdt, *kernel_gdtend;
@@ -222,17 +222,17 @@ int main(void)
 	int runlen;
 //	int tmplen;
 
-	setup_sects = bzImage[0x1f1];
+	setup_sects = bzImage_img[0x1f1];
 	if(setup_sects == 0){
 		setup_sects = 4;
 	}
 
 	memset((char*)PARAM_START, 0, 512*(setup_sects+1));
-	memcpy((char*)PARAM_START, &bzImage[0], 512*(setup_sects+1));
+	memcpy((char*)PARAM_START, &bzImage_img[0], 512*(setup_sects+1));
 
 	memcpy((char*)CMDLINE_START, &cmdline, 1);
 
-	memcpy((char*)PROTECTED_MODE_KERNEL_START, &bzImage[(setup_sects+1)*512], bzImage_len-((setup_sects+1)*512));
+	memcpy((char*)PROTECTED_MODE_KERNEL_START, &bzImage_img[(setup_sects+1)*512], bzImage_img_len-((setup_sects+1)*512));
 /*
 	tmplen = &tmp_end - &tmp_start;
 	debug(0, (char*)&tmplen, 4);
