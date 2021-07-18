@@ -55,6 +55,7 @@ struct linux_header {
 	u32 init_size;          /* 0x260 */
 };
 
+#if 0
 #define E820MAX 32              /* number of entries in E820MAP */
 struct e820entry {
 	u64 addr;               /* start of memory segment */
@@ -163,6 +164,7 @@ struct linux_params {
 	u8 command_line[COMMAND_LINE_SIZE];	/* 0x800 */
 	u8 reserved17[1792];	/* 0x900 - 0x1000 */
 };
+#endif
 
 extern char bzImage_img[];
 extern unsigned int bzImage_img_len;
@@ -170,7 +172,7 @@ extern char initramfs_cpio_xz[];
 extern unsigned int initramfs_cpio_xz_len;
 extern char *kernel_gdt, *kernel_gdtend;
 
-#define PARAM_START 0x90000
+#define PARAM_START 0x80000
 #define STACK_HEAP_START PARAM_START+0x08000
 #define CMDLINE_START PARAM_START+0x10000
 #define PROTECTED_MODE_KERNEL_START 0x100000
@@ -207,12 +209,11 @@ void memset(char *dst, char val, int size)
 	}
 }
 
-//extern char tmp_start, tmp_end;
 extern char run_start, run_end;
 
 int main(void)
 {
-	struct linux_params *linux_params;
+//	struct linux_params *linux_params;
 	struct linux_header *linux_header;
 	char setup_sects;
 	short version;
@@ -229,36 +230,38 @@ int main(void)
 
 	memcpy((char*)CMDLINE_START, &cmdline, 1);
 
-	memcpy((char*)PROTECTED_MODE_KERNEL_START, &bzImage_img[(setup_sects+1)*512], bzImage_img_len-((setup_sects+1)*512));
+	memcpy((char*)PROTECTED_MODE_KERNEL_START, &bzImage_img[512*(setup_sects+1)], bzImage_img_len-(512*(setup_sects+1)));
 
 	memcpy((char*)RAMDISK_START, &initramfs_cpio_xz[0], initramfs_cpio_xz_len);
 	
 	runlen = &run_end - &run_start;
 	memcpy((char*)RUN_START, &run_start, runlen);
 
-	linux_params = (struct linux_params*)PARAM_START;
+//	linux_params = (struct linux_params*)PARAM_START;
 	linux_header = (struct linux_header*)PARAM_START;
 
-	version = linux_params->param_block_version;
+	version = linux_header->protocol_version;
 
 	linux_header->vid_mode = 0xffff;
 
-	linux_params->loader_type = 0xff;
+	linux_header->type_of_loader = 0xff;
 	
-	linux_params->loader_flags = linux_params->loader_flags | 0x01 | 0x10 | 0x80 ;
+	linux_header->loadflags = linux_header->loadflags | 0x80 & 0xdf;
 
-	linux_params->initrd_start = RAMDISK_START;
-	linux_params->initrd_size = initramfs_cpio_xz_len;
+	linux_header->ramdisk_image = RAMDISK_START;
+	linux_header->ramdisk_size = initramfs_cpio_xz_len;
 
-	linux_header->heap_end_ptr = 0x10000-0x200;
+	linux_header->heap_end_ptr = 0x9800-0x200;
 	
-	linux_params->cmd_line_ptr = CMDLINE_START;
+	linux_header->cmd_line_ptr = CMDLINE_START;
 
+#if 0
 	linux_params->orig_video_mode = 3;
 	linux_params->orig_video_cols = 80;
 	linux_params->orig_video_lines = 25;
 	linux_params->orig_video_isVGA = 1;
 	linux_params->orig_video_points = 16;
+#endif
 	
 	return 0;
 }

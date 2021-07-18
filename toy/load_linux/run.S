@@ -5,9 +5,13 @@
 _to16:
 	cli;
 
-	movl $gdt16ptr, %eax;
+	//load 16bit gdt and jmp to use 16bit cs segment
+	movl $(RUN_START+gdt16ptr-_to16), %eax;
 	lgdtl (%eax);
 
+	ljmp $0x08, $(RUN_START+1f-_to16);
+1:
+.code16
 	movw $0x10, %ax;
 	movw %ax, %ds;
 	movw %ax, %es;
@@ -18,17 +22,15 @@ _to16:
 	movl $(RUN_START+runidt_offset), %eax;
 	lidtl (%eax);
 
-	movw $0x9000, %bx;
-	movw $(0x10000-0x200), %cx;
-
 	movl %cr0, %eax;
 	andl $0x7ffffffe, %eax;
 	movl %eax, %cr0;
 
+	//jmp to real mode
 	ljmp $0x0000, $(RUN_START+run_offset);
 
 .code16
-.global _run
+.global _run //real mode
 _run:
 	xorw %ax, %ax;
 	movw %ax, %ds;
@@ -41,6 +43,9 @@ _run:
 
 	//run kernel
 	cli;
+
+	movw $0x8000, %bx;
+	movw $(0x9800-0x200), %cx;
 
 	movw %bx, %ss;
 	movw %cx, %sp;
@@ -59,11 +64,7 @@ _run:
 	xorw %bp, %bp;
 	xorw %sp, %sp;
 
-	.byte 0xea
-	.long 0x00000000
-	.word 0x9020	
-
-//	ljmp $0x9020, $0;
+	ljmp $0x8020, $0x0000;
 
 	hlt;
 
@@ -74,14 +75,14 @@ null16idt:
 	.word 0
 gdt16ptr:
 	.word gdt16_end-gdt16-1
-	.long gdt16
+	.long RUN_START+gdt16-_to16
 gdt16:
 	.word 0x0000, 0x0000 //dummy
 	.word 0x0000, 0x0000
 
-	.word 0xffff, 0x0000 //flat 4g segment for code
-	.byte 0x00, 0x9b, 0xcf, 0x00
+	.word 0xffff, 0x0000 //flat 64k segment for code 
+	.byte 0x00, 0x9b, 0x00, 0x00
 
-	.word 0xffff, 0x0000 //flat 4g segment for data 
-	.byte 0x00, 0x93, 0x40, 0x00
+	.word 0xffff, 0x0000 //flat 64k segment for data 
+	.byte 0x00, 0x93, 0x00, 0x00
 gdt16_end:

@@ -63,7 +63,10 @@ reset addr에 간단한 instruction입력후 레지스터 값 변경 및 system 
   16bit 시도했는데 전환이 잘 안 됨... 16bit전환까지는 됬는데 이후 instruction들 실행이 비정상...ㅜ
     https://www.sudleyplace.com/pmtorm.html 참고해보고 재시도 해봐야할 듯...
      헐... 어셈블리 막 쓰면 안되고 지원되는 것만 써야하나봄
-      movw $0x00, %ax 같은 명령어는 real mode에서 지원안해서 안되는 거였음...(movl $0x00, %eax는 가능...). x86 매뉴얼참조.
+      movw $0x00, %ax 같은 명령어는 real mode에서 지원안해서 안되는 거였음...(movl $0x00, %eax는 가능...). x86 매뉴얼참조. 
+         아님, 다시봐야함... 16bit 넘어갈때 잘못넘어가서 그런것으로 확인 됨...(.code32, .code16 directive에 따라 어셈블되는 instruction이 차이가 있음(ex. opcode에 prefix 가 없다거나 그럼..). 16bit cmd실행해야하는 곳에는 .code16해주니 잘 됨...) 
+         즉, 어셈블되는 코드가 16bit인지, 32bit인지 고려필요하며, segment descriptor도 16bit인지 32bit인지 중요... 
+        real mode 전환 시 16bit segment descript로 전환하는 step 필요해보임
      어쨋든 했는데 안 됨...ㅜ 커널로 넘어갔으나, die label에서 hlt당한듯
      console도 안나오고.. 하여간 좀 그럼...
     
