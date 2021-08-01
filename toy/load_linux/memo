@@ -69,7 +69,53 @@ reset addr에 간단한 instruction입력후 레지스터 값 변경 및 system 
         real mode 전환 시 16bit segment descript로 전환하는 step 필요해보임
      어쨋든 했는데 안 됨...ㅜ 커널로 넘어갔으나, die label에서 hlt당한듯
      console도 안나오고.. 하여간 좀 그럼...
+     문제지점은 다음과 같음
+         main()
+           set_bios_mode()
+             intcall()
+               int instruction! => 이때 사용할 인터럽트가 설정된 게 없음... 16bit booting은 힘들듯(bios call다 구현해야할 듯함;) coreboot은 어케 부팅하는 지 함 더 봐야할 듯.
+     coreboot linux booting
+       32bit boot protocol사용하므로, linux kernel의 header.S 코드는 실행하지 않고, 바로 32bit 진입코드 실행함.
     
+  32bit로 다시 시도해야할 듯함. 32bit로 실행하는 경우, bioscall은 필요없는 것으로 보여짐...; 
+     했는데 여전히 실패함.(kernel실행해서 64bit 코드는 실행되지만, delay_tsc()수행중 pause되는 듯) 좀 더 검토 필요해보임.
+    coreboot에서 설정하는 linux parameter들
+      *x86 boot protocol명시된것처럼 linux parameter는 모두 0으로 세팅 후 설정함.
+       *아래 이름은 coreboot에서 사용하는 linux_params의 필드이름
+      * *runtime은 커널로드시 설정, 이 외는 coreboot rom img생성 시 설정.
+      mount_root_rdonly,
+      orig_root_dev
+      init_size,
+      orig_video_mode
+      orig_video_cols
+      orig_video_lines
+      orig_video_isVGA
+      orig_video_points
+      loader_type
+      cmd_line_ptr
+      relocatable_kernel
+      kernel_alignment
+      kernel_start
+      initrd_start
+      initrd_size
+      e820_map_nr *runtime
+      e820_map    *runtime
+       => 나머지는 copy&paste하거나 boot protocol보면 될 듯한데 e820이 문제인듯함.
+      => e820 정보의 경우, coreboot runtime시, 실제 hw정보를 읽어와서 해당 정보를 coreboot table형태로 기록됨. (bs_write_tables(), bootmem_write_memory_table() 해당 함수 확인해봐야할 듯.)
+      아래는 coreboot실행시, e820 coreboot table정보(e820관련해서는 RAM, RESERVED type만 사용하는 듯함.)
+Writing coreboot table at 0xbffa7000
+ 0. 0000000000000000-0000000000000fff: CONFIGURATION TABLES
+ 1. 0000000000001000-000000000009ffff: RAM
+ 2. 00000000000a0000-00000000000fffff: RESERVED
+ 3. 0000000000100000-00000000bff80fff: RAM
+ 4. 00000000bff81000-00000000bffaffff: CONFIGURATION TABLES
+ 5. 00000000bffb0000-00000000bffd2fff: RAMSTAGE
+ 6. 00000000bffd3000-00000000bfffffff: CONFIGURATION TABLES
+ 7. 00000000ff800000-00000000ffffffff: RESERVED
+ 8. 0000000100000000-000000013fffffff: RAM
+
+    linux kernel arch/x86/boot/main.c main() function에 parameter설정하는 코드들임... 참조필요할 듯.
+
   *x86의 경우, instruction 최초 실행 시에는, real address mode의 실제 일반적인 addressing rule이 아닌 다른 rule사용.(x86 cpu manual 9.1.4 section참조)
   *rom img의 경우 4GB 바로 밑 address space에 존재. (x86 case)
   *[kernel]/[src]/[dir]/x86/boot.rst 참조(x86 kernel boot protocol)

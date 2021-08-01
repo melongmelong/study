@@ -1,3 +1,5 @@
+#include "main.h"
+
  /* The header of Linux/i386 kernel (from coreboot source code)*/
 
 typedef unsigned char u8;
@@ -55,7 +57,6 @@ struct linux_header {
 	u32 init_size;          /* 0x260 */
 };
 
-#if 0
 #define E820MAX 32              /* number of entries in E820MAP */
 struct e820entry {
 	u64 addr;               /* start of memory segment */
@@ -65,7 +66,7 @@ struct e820entry {
 	#define E820_RESERVED   2  
 	#define E820_ACPI       3       /* usable as RAM once ACPI tables have been read */
 	#define E820_NVS        4
-};      
+};
 
 /* Parameters passed to 32-bit part of Linux
  * This is another view of the structure above.. */
@@ -164,22 +165,12 @@ struct linux_params {
 	u8 command_line[COMMAND_LINE_SIZE];	/* 0x800 */
 	u8 reserved17[1792];	/* 0x900 - 0x1000 */
 };
-#endif
 
 extern char bzImage_img[];
 extern unsigned int bzImage_img_len;
 extern char initramfs_cpio_xz[];
 extern unsigned int initramfs_cpio_xz_len;
 extern char *kernel_gdt, *kernel_gdtend;
-
-#define PARAM_START 0x80000
-#define STACK_HEAP_START PARAM_START+0x08000
-#define CMDLINE_START PARAM_START+0x10000
-#define PROTECTED_MODE_KERNEL_START 0x100000
-#define RAMDISK_START 0x40000000
-
-#define RUN_START 0x00000100
-#define DEBUG_START 0xA0000000
 
 void debug(int offset, char *addr, int size)
 {
@@ -209,16 +200,15 @@ void memset(char *dst, char val, int size)
 	}
 }
 
-extern char run_start, run_end;
+//extern char run_start, run_end;
 
 int main(void)
 {
-//	struct linux_params *linux_params;
+	struct linux_params *linux_params;
 	struct linux_header *linux_header;
 	char setup_sects;
 	short version;
 	char cmdline='\0';
-	int runlen;
 
 	setup_sects = bzImage_img[0x1f1];
 	if(setup_sects == 0){
@@ -234,10 +224,7 @@ int main(void)
 
 	memcpy((char*)RAMDISK_START, &initramfs_cpio_xz[0], initramfs_cpio_xz_len);
 	
-	runlen = &run_end - &run_start;
-	memcpy((char*)RUN_START, &run_start, runlen);
-
-//	linux_params = (struct linux_params*)PARAM_START;
+	linux_params = (struct linux_params*)PARAM_START;
 	linux_header = (struct linux_header*)PARAM_START;
 
 	version = linux_header->protocol_version;
@@ -255,13 +242,28 @@ int main(void)
 	
 	linux_header->cmd_line_ptr = CMDLINE_START;
 
-#if 0
 	linux_params->orig_video_mode = 3;
 	linux_params->orig_video_cols = 80;
 	linux_params->orig_video_lines = 25;
 	linux_params->orig_video_isVGA = 1;
 	linux_params->orig_video_points = 16;
-#endif
+	
+	linux_params->e820_map_nr = 25;
+	linux_params->e820_map[0].addr = 0x00001000;
+	linux_params->e820_map[0].size = 0x9EFFF;
+	linux_params->e820_map[0].type = E820_RAM;
+	linux_params->e820_map[1].addr = 0x000a0000;
+	linux_params->e820_map[1].size = 0x5FFFF;
+	linux_params->e820_map[1].type = E820_RESERVED;	
+	linux_params->e820_map[2].addr = 0x00100000;
+	linux_params->e820_map[2].size = 0xBFE80FFF;
+	linux_params->e820_map[2].type = E820_RAM;
+	linux_params->e820_map[3].addr = 0xff800000;
+	linux_params->e820_map[3].size = 0x7FFFFF;
+	linux_params->e820_map[3].type = E820_RESERVED;
+	linux_params->e820_map[4].addr = 0x100000000;
+	linux_params->e820_map[4].size = 0x3FFFFFFF;
+	linux_params->e820_map[4].type = E820_RAM;
 	
 	return 0;
 }
