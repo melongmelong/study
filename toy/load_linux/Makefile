@@ -1,4 +1,4 @@
-SRCS:=reset.S start.S main.c bzImage.c initramfs.c run.S
+SRCS:=reset.S start.S main.c bzImage.c initramfs.c
 OBJS:=$(subst .c,.o,$(subst .S,.o,${SRCS}))
 LINKER_SCRIPT=linker_script.ld
 IMG_ELF=img.elf

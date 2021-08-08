@@ -200,8 +200,6 @@ void memset(char *dst, char val, int size)
 	}
 }
 
-//extern char run_start, run_end;
-
 int main(void)
 {
 	struct linux_params *linux_params;
@@ -248,7 +246,8 @@ int main(void)
 	linux_params->orig_video_isVGA = 1;
 	linux_params->orig_video_points = 16;
 	
-	linux_params->e820_map_nr = 25;
+	linux_params->e820_map_nr = 5;
+
 	linux_params->e820_map[0].addr = 0x00001000;
 	linux_params->e820_map[0].size = 0x9EFFF;
 	linux_params->e820_map[0].type = E820_RAM;
