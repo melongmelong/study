@@ -35,12 +35,6 @@ _protected_start:
 	movl $0x10000000, %esp
 	call main;
 
-	//for 16bit boot protocol code
-/*
-	movl $RUN_START, %eax;
-	jmp *%eax;
-*/
-
 	//for 32bit boot potocol code
 	mov  $KERNEL_GDT_START, %eax
 	movl  $0x0000ffff, 16(%eax)             // Set up the 2 new descriptors

@@ -78,7 +78,7 @@ reset addr에 간단한 instruction입력후 레지스터 값 변경 및 system 
        32bit boot protocol사용하므로, linux kernel의 header.S 코드는 실행하지 않고, 바로 32bit 진입코드 실행함.
     
   32bit로 다시 시도해야할 듯함. 32bit로 실행하는 경우, bioscall은 필요없는 것으로 보여짐...; 
-     했는데 여전히 실패함.(kernel실행해서 64bit 코드는 실행되지만, delay_tsc()수행중 pause되는 듯) 좀 더 검토 필요해보임.
+     했는데 여전히 실패함.(kernel실행해서 64bit 코드는 실행되지만, delay_tsc()수행중 pause되는 듯) 좀 더 검토 필요해보임.(memsave 로 stack영역 확보해서 call trace보는것도 도움 될듯함.)
     coreboot에서 설정하는 linux parameter들
       *x86 boot protocol명시된것처럼 linux parameter는 모두 0으로 세팅 후 설정함.
        *아래 이름은 coreboot에서 사용하는 linux_params의 필드이름
@@ -113,6 +113,12 @@ Writing coreboot table at 0xbffa7000
  6. 00000000bffd3000-00000000bfffffff: CONFIGURATION TABLES
  7. 00000000ff800000-00000000ffffffff: RESERVED
  8. 0000000100000000-000000013fffffff: RAM
+
+    start_kernel()->late_time_init()->x86_init.timers.timer_init()(*hpet_time_init())->setup_default_timer_irq()->request_irq()...->default_idle()에서 hlt됨.
+    *late_time_init()은 x86의 경우 x86_late_time_init() 함수 호출함.
+    
+    아마도 하드웨어 리소스 세팅랑 관련있보임. coreboot은 하드웨어초기화하지만 내꺼는 안되어있음..;; 이거랑 관련있을것같음
+      우선 해당 프로젝트 실패로 해야할듯?ㅠ
 
     linux kernel arch/x86/boot/main.c main() function에 parameter설정하는 코드들임... 참조필요할 듯.
 
