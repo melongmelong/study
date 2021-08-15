@@ -140,3 +140,41 @@ Writing coreboot table at 0xbffa7000
     동일 global symbol(label)(x86의 경우, .global [symbol name])이 2개이상인 경우 링크에러나며, 1개이하인 경우에는 링크에러 나지 않음.
     branch instruction(jmp, call)에서 사용되는 jmp 종류(near, short, far, etc...)는 gas가 알아서 선택하는 듯(?). *x86 case(https://stackoverflow.com/questions/34911142/why-is-the-start-small-algorithm-for-branch-displacement-not-optimal)
     *gas document 참조
+
+-결과
+기간 : 2021.05 ~ 2021.08
+
+인원 : 1
+
+목표
+  x86, qemu를 활용한 가상환경에서 linux kernel 로드.
+
+사용기술
+  Linux
+  gnu ld
+  gnu cc
+  C
+  x86 asm
+  shell script
+  git
+
+구현사항
+  *coreboot 소스코드 참조하였음
+  make build script
+  rom img구성을 위한 linker script.
+  x86 16bit -> 32bit mode 전환
+  linux 32bit boot protocol
+
+이슈사항
+    start_kernel()->late_time_init()->x86_init.timers.timer_init()(*hpet_time_init())->setup_default_timer_irq()->request_irq()...->default_idle()에서 hlt됨.
+    *late_time_init()은 x86의 경우 x86_late_time_init() 함수 호출함.
+     아마도 하드웨어 리소스 세팅랑 관련있어보임.
+
+결론
+  목표달성실패
+  linux kernel 및 initramfs 로드는 성공한 것으로 확인되었음(qemu info registers기반으로 확인진행함)
+  그러나, 이슈사항항목에 있는 것처럼 특정부분에서 hlt가 발생하였으며, 하드웨어 리소스 세팅 관련 이슈로 추측됨.
+  추측사유는 coreboot 코드참조 시에도 실제 커널로딩 전 각종 device를 초기화하는 작업들이 확인되었으며, 구현한 프로젝트에는 해당 하드웨어 초기화 구현은 없음.
+  또한, coreboot 하드웨어 초기화 코드 러프하게 확인 시, 각종 하드웨어(bus, cpu, device 등등)관련지식 확인이 필요하며 이는 리소스가 많이 들것으로 보여지며, 별도의 toy project로 진행하는 것이 더 좋을 것으로 생각하여, 더이상 진행하지 않는 것으로 결론내림.
+  해당 toy프로젝트진행하면서, low level 관련 지식, 특히 x86 asm, linker script, x86 architecture에 대해서 다소 알 수 있었음.
+
