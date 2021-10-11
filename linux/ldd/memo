@@ -1,0 +1,155 @@
+next : chap03 chrdev 디테일한 실습
+       major, minor number등록안하고 cdev_add만하면 안되는 지?
+        없는 major, minor 에 대해 systemcall시?
+        등등..
+
+목표
+  ldd책에 나오는 driver 구현 실습
+  실습하면서 kernel module 등에 대한 구체화.
+  qemu ubuntu기반으로 진행
+
+milestone 1. kernel module build방법 확인
+  (v)환경 설치
+
+  (v)module build 방법 확인 및 sample module build/test(kernel source 별)
+    distribution(ubuntu) kernel header 사용
+      *hwe* header, *generic* header 둘 다 있어야 커널헤더가 됨...(정확하게는 모르겠지만..)
+      hwe는 ubuntu의 커널릴리즈 관리땜에 나오는 패키지인 듯함.
+      knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/ldd/kernel$ ls -l /usr/src/linux-headers-5.11.0-27-generic/
+total 1732
+drwxr-xr-x 3 root root    4096  8월 22 16:52 arch
+lrwxrwxrwx 1 root root      41  8월 11 23:53 block -> ../linux-hwe-5.11-headers-5.11.0-27/block
+lrwxrwxrwx 1 root root      41  8월 11 23:53 certs -> ../linux-hwe-5.11-headers-5.11.0-27/certs
+lrwxrwxrwx 1 root root      42  8월 11 23:53 crypto -> ../linux-hwe-5.11-headers-5.11.0-27/crypto
+lrwxrwxrwx 1 root root      49  8월 11 23:53 Documentation -> ../linux-hwe-5.11-headers-5.11.0-27/Documentation
+lrwxrwxrwx 1 root root      43  8월 11 23:53 drivers -> ../linux-hwe-5.11-headers-5.11.0-27/drivers
+lrwxrwxrwx 1 root root      38  8월 11 23:53 fs -> ../linux-hwe-5.11-headers-5.11.0-27/fs
+drwxr-xr-x 4 root root    4096  8월 22 16:52 include
+lrwxrwxrwx 1 root root      40  8월 11 23:53 init -> ../linux-hwe-5.11-headers-5.11.0-27/init
+lrwxrwxrwx 1 root root      39  8월 11 23:53 ipc -> ../linux-hwe-5.11-headers-5.11.0-27/ipc
+lrwxrwxrwx 1 root root      42  8월 11 23:53 Kbuild -> ../linux-hwe-5.11-headers-5.11.0-27/Kbuild
+lrwxrwxrwx 1 root root      43  8월 11 23:53 Kconfig -> ../linux-hwe-5.11-headers-5.11.0-27/Kconfig
+drwxr-xr-x 2 root root    4096  8월 22 16:52 kernel
+lrwxrwxrwx 1 root root      39  8월 11 23:53 lib -> ../linux-hwe-5.11-headers-5.11.0-27/lib
+lrwxrwxrwx 1 root root      44  8월 11 23:53 Makefile -> ../linux-hwe-5.11-headers-5.11.0-27/Makefile
+lrwxrwxrwx 1 root root      38  8월 11 23:53 mm -> ../linux-hwe-5.11-headers-5.11.0-27/mm
+-rw-r--r-- 1 root root 1744664  8월 11 23:53 Module.symvers
+lrwxrwxrwx 1 root root      39  8월 11 23:53 net -> ../linux-hwe-5.11-headers-5.11.0-27/net
+lrwxrwxrwx 1 root root      43  8월 11 23:53 samples -> ../linux-hwe-5.11-headers-5.11.0-27/samples
+drwxr-xr-x 7 root root   12288  8월 22 16:52 scripts
+lrwxrwxrwx 1 root root      44  8월 11 23:53 security -> ../linux-hwe-5.11-headers-5.11.0-27/security
+lrwxrwxrwx 1 root root      41  8월 11 23:53 sound -> ../linux-hwe-5.11-headers-5.11.0-27/sound
+drwxr-xr-x 3 root root    4096  8월 22 16:52 tools
+lrwxrwxrwx 1 root root      42  8월 11 23:53 ubuntu -> ../linux-hwe-5.11-headers-5.11.0-27/ubuntu
+lrwxrwxrwx 1 root root      39  8월 11 23:53 usr -> ../linux-hwe-5.11-headers-5.11.0-27/usr
+lrwxrwxrwx 1 root root      40  8월 11 23:53 virt -> ../linux-hwe-5.11-headers-5.11.0-27/virt
+ 
+      빌드잘됨, insmod시 로드잘됨.
+
+    (v)distribution(ubuntu) kernel src 사용
+      https://wiki.ubuntu.com/Kernel/BuildYourOwnKernel(ubuntu kernel get, build방법)
+      실패
+        아마도 불가해보임.(ubuntu에서 빌드하는 방법으로는 build된 distribution kernel src tree얻는 것은 어려워보임, 얻을래면 방법은 있겠지만;)
+         
+    (v)original kernel src 사용
+      kernel module build 방법에 따라 빌드하면 빌드 됨.(module build해야 빌드가능함)
+       대신 커널버전이 달라서 module load는 불가능했음.
+    
+    (v)original kernel header 사용
+      make kernel_headers는 진짜 header만 있고, 모듈빌드를 위한 데이터들은 없음.
+      모듈빌드를 위해서는 kernel tree에서 pkg build(ex. make deb-pkg) 해서 생성된 커널헤더패키지 사용해야하나봄.(근데 빌드안됨. 모르게씀.)
+      make modules_prepare하면 가능한듯하지만. module versioning이 동작하지 않을 수 있음
+      
+  (v)origianl kernel makefile 분석(대략적 흐름정도)
+    (v)kernel module build Makefile 분석
+    (v)kernel pkg build Makefile 분석
+    (v)kernel header build Makefile 분석
+        불필요.
+
+  빌드산출물/insmod,rmmod,modprobe,modinfo/version 확인.
+    insmod
+      kernel module을 load
+      insmod시, module을 위한 메모리 공간확보, kernel symbol resolution, module 초기화 코드 실행 등을 수행.
+    modprobe
+     insmod와 같은 역할 + 다른 kernel module symbol이 필요한경우, 다른 kernel module도 찾아서 로딩수행.
+    rmmod
+      kernel module unload.
+       사용중이거나, unload불가한 모듈은 rmmod안될 수 있음.     
+
+    modules.order : module versioning을 위한 정보. kernel src(scripts/Makefile.modpost 최상단 주석 참조.)
+    Module.symvers : external module빌드시에는, 모듈에서 export된 symbol 정보존재(EXPORT_SYMBOL...), 정확히는 커널에는 없는 symbol정보. (또다른 externel module의 symbol 참조를 해결하기 위해 존재하는 듯.(Documentation/kbuild/modules.rst, 6.3 참조)
+    *.mod* : module versioning을 위한 정보. kernel src(scripts/Makefile.modpost 최상단 주석 참조.)
+    *.dwo* : ?
+
+    versionning
+      -linux device driver 3rd edition 내용(최신버전에서는 deprecated 인듯?)
+      kernel module은 커널 interface(function, data structure) 과 밀접하게 관련있으므로, 특정 커널을 위해서는 특정 커널소스를 사용해서 빌드되어야 함.
+      kernel module은 build 시, kernel src tree(or kernel header)의 vermagic.o를 링크함.
+        vermagic.o : 커널버전, 컴파일러버전, 프로세서정보, 각종 설정값들에 대한 정보를 포함.
+        *vermagic.o는 이전버전에만 사용하고 최신버전에는 다른방식인 듯 함.(?) => http://egloos.zum.com/studyfoss/v/5226996
+       모듈 로드시, vermagic.o 정보를 기반으로 체크를 수행해서 로드가 되거나 안되거나 할 수 있음.    
+       여러 커널버전에서 동작하게 하기 위해서는 linux/version.h의 #define 값들을 사용하여 대해 preprocessing할 필요가 있음.
+    
+      -커널소스(Documentation/kbuild/modules.rst, 6. Module Versioning) 내용
+       CONFIG_MODVERSIONS 옵션 enable되어야 함.
+       simple ABI consistency check 수행.
+        커널소스의 exported symbol의 prototype에 대한 crc 값과 모듈의 값을 비교해서 load할지말지를 결정함.
+
+       Module.symvers
+         kernel(kernel + 컴파일된 kernel module)의 exported symbol에 대한 crc정보 포함. 
+         CONFIG_MODVERSIONS enable된 경우만 crc값 세팅됨.
+       
+       external module
+         external module빌드 시, MODPOST단계를 수행하여 external module이 kernel의 exported symbol을 참조하는 지 체크수행함.
+
+       *kernel src(scripts/Makefile.modpost 최상단 주석 참조.)
+    
+  kernel module build방법
+  https://www.kernel.org/doc/html/latest/kbuild/modules.html
+    export symbol참조하는 kernel module build방법
+    foo.ko의 symbol foo_a를, bar.ko에서 참조하는 경우.
+    1. kernel doc(Documentation/kbuild/module.rst)에서 나오는 첫번째 방법 사용하면 됨.(모든 관련 모듈들을 빌드)
+    2. Module.symvers 카피해서 빌드하는 건 안되넹?
+    3. make variable KBUILD_EXTRA_SYMBOLS 변수에 foo.ko의 Module.symvers path 추가후 bar.ko빌드
+  *bzImage만 빌드하면(make bzImage) external module build는 불가해보임(full build하거나(make all), make modules_prepare만 하거나..)
+  An alternative is to use the “make” target “modules_prepare.” This will make sure the kernel contains the information required. The target exists solely as a simple way to prepare a kernel source tree for building external modules.
+  NOTE: “modules_prepare” will not build Module.symvers even if CONFIG_MODVERSIONS is set; therefore, a full kernel build needs to be executed to make module versioning work.
+
+  kernel build시, Documentation/Changes 보면 필요한 tool 버전정보 확인가능. 버전이 너무낮거나 하면 빌드이상하케 될 수 있음.
+
+  kernel src없이 kernel header만으로 빌드가능
+  kernel src는 빌드하지않는 경우 빌드불가능
+    즉, 빌드된 커널데이터들이 있어야 외부커널모듈 빌드 가능.
+
+milestone 2. kernel module 구현/동작확인
+
+device number
+dev_t(32bit)이며, 12bit major number, 20bit minor number를 표기.
+major : 전통적으로 하나의 driver를 의미
+minor : 하나의 driver에서 특정 device를 의미
+char, block device별로 device number 도메인이 별도존재
+
+char device number
+정적으로 device number 할당, 동적으로 device number할당방법 있음.
+동적 device number가 권고 됨(정적으로 사용하면 device number 충돌 등 발생가능하며 범용성 떨어짐)
+동적 device number의 경우 mknod전에 insmod가 필요하며, insmod후 mknod 생성이 필요함.
+
+device driver에서 중요한 커널 구조체들(driver 측면에서)
+file_operation : device driver의 operation을 kernel에 등록함.
+  file operation 구현시, 동시에 여러 device open 등의 여러상황 고려 필요함.
+  open
+  release : release는 마지막 1회만 호출됨.
+  read
+  write
+file : open file을 의미
+inode : 하나의 file을 의미.
+
+char device를 kernel에 등록하는 방법은 2가지.
+char device는 struct cdev 구조체로 나타냄.
+cdev(cdev_init(),cdev_add(),cdev_del())
+이전 방식(register_chrdev(),unregister_chrdev())
+
+
+  
+milestone 3. customizing(*필요시)
+ 

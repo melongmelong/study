@@ -1,0 +1,60 @@
+insmod시 sys_init_module or sys_finit_module systemcall 사용하여 kernel module load수행.
+일단... 봐지는 부분만 봄
+
+sys_init_module, sys_finit_module은 내부적으로 load_module() 호출함
+
+kernel/module.c
+566-581
+  find_exported_symbol_in_section()
+  symbol이 존재하는 지, 해당 symbol이 exported symbol확인
+
+585-607
+  find_symbol()
+  symbol이 존재하는 지 아닌 지 확인.
+  존재하는 경우, symbol의 owner(symbol을 포함하는 kernel module정보)와 crc값, struct kernel_symbol*를 return함.
+
+1297-1344
+  check_version()
+  1315-1343
+    symbol의 crc가 일치하는 지 check수행
+
+1346-1362
+  check_modstruct_version()
+  symbol "module_layout"의 version을 check(kernel에 현재 등록된 crc와, 모듈의 crc를 check 하는 듯?)
+
+1365-1373
+  same_magic
+    커널모듈과 커널의 vermagic 값이 같은 지 비교.
+    커널모듈의 vermagic은 kernel module elf로부터 읽어오고, 커널의 vermagic은 컴파일 때 결정되어 커널이미지에 포함됨.
+
+3008-3063
+  setup_load_info
+  section header 등 정보를 읽어서 struct load_info정보들을 채움.
+
+3065-3107
+  check_modinfo
+  3084-3089
+    tain를 check(?)
+  3091
+    kernel module이 retploine을 지원하는지 check(?)
+  3093-3097
+    kernel module이 staging 정보를 가지는 지 check
+  3099-3101
+    kernel module이 livepatch 정보를 가지는 지 check
+  3104
+    kernel module의 license 정보를 check
+
+3742-3934
+  load_module
+  3749-3751
+    kernel module이 valid한 elf인지 check
+  3753-3755
+    kernel module을 읽어서 필요한 정보들을 struct load_info에 채움.(setup_load_info())
+  3757-3760
+    kernel module이 blacklist인지 check
+  3762-3764
+    kernel module의 signature정보를 check
+  
+  3892-3933
+    예외처리를 위한 코드...
+

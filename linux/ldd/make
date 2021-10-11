@@ -1,0 +1,102 @@
+-module make
+build 방법 make -C [/path/to/kernel/header] M=[/path/to/module/src]
+linux-5.7-rc7 기준
+
+Makefile
+210-214
+  make command line option 으로 'M= [/path/to/module/src]' 가 있는 지 확인.
+  있으면 KBUIDL_EXTMOD := $(M) 세팅.
+
+597-602
+  KBUILD_EXTMOD값이 있는 경우, default target(_all:)의 prerequsite을 modules로, 아닌 경우 all로
+
+1043-1675
+  KBUILD_EXTMOD가 세팅되어있는 경우, 1609-1675 line 파싱. 아닌 경우 1043-1609 line 파싱
+  1609-1675
+    실제 외부모듈 빌드를 위한 룰이 세팅되어있음.
+    1641-1642
+      modules build rule.   
+  
+scripts/Makefile.modpost
+modpost수행
+49-57
+  modpost를 실행할 때 사용할 default 인자 설정
+
+59-99
+  kernel src build를 통해 해당 make실행된 경우 59-67 line파싱, external module build의 경우 67-99 line파싱.
+  59-67
+    modpost 실행 룰
+  93-99
+    modpost 실행 룰
+
+./script/mod/modpost.c
+116
+  struct module *modules 정의
+  modpost가 읽은 모든 kernel module정보에 대해 linked list로 표기
+
+382-402
+  sym_add_exported()
+  symbol정보를 만들어 symbol hash tbl에 추가 or 기존 존재하던 symbol정보를 update
+
+702-757
+  handle_symbol()
+  708-712
+    symbol의 export type을 check
+  714-756
+    745-755
+      symbol이 export되었다면(즉, __ksymtab section에 symtol 정보가 포함되면) symbol정보를 symbol table에 추가(sym_add_exported)
+
+1995-2092
+  read_symbols()
+  2005-2006
+    elf format인 module을 읽어 파싱
+    elf header, section header, symbol tbl 정보들을 읽음(parse_elf())
+  2008
+    struct module 추가
+  2017-2091
+    module(elf format)을 파싱하여 struct module, struct symbol등의 정보를 세팅.
+    2017-2030
+      module의 licence정보 check(kernel module의 .modinfo section정보에 포함됨.)
+    2032-2036
+      module의 namespace정보를 추가(kernel module의 .modinfo section정보에 포함됨.)
+    2038-2071
+      symbol table의 각 entry에 대해 symbol table hash에 추가하고 symbol관련 정보 update.
+      
+2431-2481
+  read_dump()
+    Module.symvers file을 read하여 struct symbol(심볼), struct module(모듈) 정보를 세팅.
+2549-2681
+  main function
+  2611-2618
+    Modules.symvers파일 read
+  2620-2625
+    kernel module read
+  2628-2650
+    각 모듈(struct module)에 대해서 필요한 경우 mod.c 파일을 생성
+  2655-2656
+    Module.symvers 파일 생성(dump_sym 주석참조)
+
+scripts/Makefile.modfinal
+module link의 마지막 단계를 수행
+17-18
+  module link rule
+
+24-28
+  *.mod.o 생성 rule
+
+32-42
+  module(.ko) build rule.
+  .o, .mod.o 등등을 링크하여 커널모듈 생성
+
+-package make
+Makefile
+1454-1462
+  pkg빌드 룰
+
+scripts/Makefile.package
+71-88
+  deb-pkg 빌드 룰
+
+scripts/package/mkdebian
+  debian/* directory 생성.
+  생성된 debian/* 디렉토리 기반으로 패키지들 만드나봄(??)

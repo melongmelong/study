@@ -1,0 +1,8 @@
+CUnit 기반으로 간단한거 시도해보면 좋을 듯.
+
+Cunit 
+  site : http://cunit.sourceforge.net/
+  source : https://sourceforge.net/projects/cunit/
+
+testcode build시 다음과 같이 라이브러리 링크 필요함.
+  gcc -o main main.c ./install/lib/libcunit.a

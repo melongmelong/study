@@ -1,0 +1,23 @@
+덧셈
+  두 숫자를 더함
+뺄셈
+  두 숫자를 뺌
+곱셈
+  두 숫자를 곱함
+나눗셈
+  두 숫자를 나눔
+
+1. testcase추가
+2. test결과확인
+  if pass
+    goto 3.
+  if fail
+    통과할때까지 코드수정
+3. refactoring
+4. goto 1.
+
+하긴했는데 익숙하지가 않음.
+build process에 test결과 반영하도록 해야할 듯.(ex. build fail, noti 등...)
+다른 예제로 한번 더 해봐야할 듯.
+CUnit사용은 익숙해짐.
+    

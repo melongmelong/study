@@ -1026,6 +1026,14 @@ src/lib/hardwaremain.c
 74-87
   boot_state boot_states 정의
 
+91-94
+  bs_pre_device()
+    nothing to do
+
+96-104
+  bs_dev_init_chips
+    dev_initialize_chips()
+  
 263-295
   bs_call_callbacks()
   boot_state->boot_phase[type]에 등록된 callback들을 실행. 각 실행된 callback은 리스트에서 제거 됨.
@@ -1070,6 +1078,75 @@ src/lib/hardwaremain.c
   428-451
      실행환경 초기화(timer, console, interrupt 등)
   454
+
+src/device/device.c
+31-45
+  dev_initialize_chips()
+    all_devices를 참조하여 모든 struct device에 대해서 init을 수행
+    qemu-i440fx의 경우 아무 작업 수행되지 않음.
+  
+892-925
+  scan_bus()
+    device에 등록된 ops->scan_bus()를 호출
+    dev_root부터시작하여 모든 topology를 순회하면서 device enable을 시킴
+
+960-982
+  dev_enumerate()
+    scan_bus() 호출하여 bus를 scan함.
+
+src/include/device/device.h
+72-89
+  struct bus정의
+    struct device dev : 해당 bus device
+    struct device children : 해당 bus에 있는 device
+    struct bus next : 
+
+103-150
+  struct device 정의
+    struct bus bus : 상위 bus device.
+    struct device sibling : 상위 bus의 sibling
+    struct device next : system의 모든 struct device를 관리하는 리스트
+    struct bus link_list : 해당 device에 연결된 bus device.
+
+참고
+  dev_root_links[0](dev_root)
+    _dev0_links[0](_dev0)
+      _dev2
+    _dev1_links[0](_dev1)
+      _dev3
+      _dev4
+      _dev5
+      _dev6
+
+src/device/device_const.c
+12
+  struct device* all_devices 정의
+  dev_root 로 초기화됨
+
+src/device/root_device.c
+94-106
+  scan_static_bus()
+    enable_static_device()
+    
+
+build/mainboard/emulation/qemu-i440fx/static.c
+5-10
+  device operation정의
+  mainboard_ops{
+  }
+  cpu_qemu_x86_ops{
+    .name = "QEMU x86 CPU"
+  }
+  mainboard_emulation_qemu_i440fx_ops{
+    .name = "QEMU Northbridge i440fx"
+    .enable_dev = northbridge_enable
+  }
+  southbridge_intel_i82371eb_ops{
+    .name = "Intel 82371FB/SB/MX/AB/EB/MB Southbridge"
+  }
+
+35-52
+  struct device dev_root정의
 
 src/lib/prog_loaders.c
 26-40
