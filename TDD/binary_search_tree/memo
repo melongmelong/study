@@ -1,0 +1,73 @@
+BST tdd
+next : cycle4 ㄱㄱ
+
+스펙
+integer를 element로 가짐.
+root->left는 root보다 작음.
+root->right는 root보다 크거나 같음.
+bst를 inorder순회하면 sorted 결과를 얻을 수 있음.
+추가, 삭제, 검색기능을 가짐.
+
+-cycle1
+스펙
+integer를 element로 가짐.
+(v)-마땅한 tc없어보임.
+
+root->left는 root보다 작음.
+(v)-root->left->val < root->val true인지체크
+(v)-root->left->val < root->val false인지체크
+
+root->right는 root보다 크거나 같음.
+
+bst를 inorder순회하면 sorted 결과를 얻을 수 있음.
+
+추가, 삭제, 검색기능을 가짐.
+
+-cycle2
+스펙
+integer를 element로 가짐.
+(v)-마땅한 tc없어보임.
+
+root->left는 root보다 작음.
+(v)-root->left->val < root->val true인지체크
+(v)-root->left->val > root->val false인지체크
+*추가/삭제/검색 기능 먼저 완료 후 해당 tc 재삭성 필요해보임
+
+root->right는 root보다 크거나 같음.
+(v)-root->right->val == root->val true인지체크
+(v)-root->right->val > root->val true인지체크
+(v)-root->right->val < root->val false인지체크
+*추가/삭제/검색 기능 먼저 완료 후 해당 tc 재삭성 필요해보임
+
+bst를 inorder순회하면 sorted 결과를 얻을 수 있음.
+
+추가, 삭제, 검색기능을 가짐.
+
+-cycle3
+스펙
+integer를 element로 가짐.
+(v)-마땅한 tc없어보임.
+
+root->left는 root보다 작음.
+(v)-root->left->val < root->val true인지체크
+(v)-root->left->val > root->val false인지체크
+*추가/삭제/검색 기능 먼저 완료 후 해당 tc 재삭성 필요해보임
+
+root->right는 root보다 크거나 같음.
+(v)-root->right->val == root->val true인지체크
+(v)-root->right->val > root->val true인지체크
+(v)-root->right->val < root->val false인지체크
+*추가/삭제/검색 기능 먼저 완료 후 해당 tc 재삭성 필요해보임
+
+bst를 inorder순회하면 sorted 결과를 얻을 수 있음.
+
+추가, 삭제, 검색기능을 가짐.
+  추가
+    (v)트리가 empty인 경우, root가 정상적으로 추가되었는지(root->val == 추가된 값)인지 체크
+    (v)root보다 값이작은 노드가 추가되었을 경우, root->left->val == 추가된값인지 체크
+       이 케이스에 대해 recursive하게 테스트필요.
+    (v)root보다 값이작은 노드가 추가되었을 경우, root->left->val < root->val인지 체크
+       이 케이스에 대해 recursive하게 테스트필요.
+    (v)right도 left와 동일
+  삭제
+  검색
