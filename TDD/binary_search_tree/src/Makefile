@@ -1,4 +1,4 @@
-OBJS=
+OBJS=bst.o
 PROG=
 
 all: $(PROG)
