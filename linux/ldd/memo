@@ -1,4 +1,4 @@
-next : chap10 Top and Bottom Halves부터.
+next : chap14
 
 목표
   ldd책에 나오는 driver 구현 실습
@@ -173,6 +173,95 @@ Interrupt
   거의 disable잘 하진 않지만, 인터럽트 핸들러내에서 spinlock잡고있는 경우에 인터럽트 disable필요(deadlock피하기 위해서)
   disable_irq*/enable_irq : 모든 프로세서에 대해 하나의 인터럽트를 disable/enable(PIC를 제어함), netsted 됨
   local_irq_*, : 하나의 프로세서에 대해 모든 인터럽트를 disable/enable, nested 안됨.
+
+Top/Bottom halves
+top half : 인터럽트에 응답하는 task(ex. interrupt handler)
+bottom half : 추후실행되는 task들(ex. interrupt handler에 의해 스케쥴링 됨), tasklet, workqueue...등
+ 
+Interrupt Sharing
+interrupt handler는 동일 irq에 대해 여러개 등록가능함.(ex. h/w적으로 여러 device가 하나의 irq pin에 연결)
+
+shared interrupt handler는 request_irq와같은 인터럽트 등록 function으로 등록함. 단 function에 전달되는 파라미터가 다름. 
+해제도 마찬가지로 free_irq사용.
+  주요 파라미터 : flag에 SA_SHIRQ bit, dev_id(인터럽트를 발생한 장치를 unique하게 구분하기 위함.)
+
+2개이상의 드라이버가 동일 irq에 대해 인터럽트를 등록한 경우, 인터럽트 발생시, 동일 irq에대해 등록된 모든 interrupt가 실행됨.
+그러므로 interrupt handler에서는 자기가 다뤄야하는 인터럽트가 맞는 지 check하여야함.
+
+Interrupt-Driven I/O
+input : interrupt발생시 메모리에 데이터를 버퍼링, 이후 버퍼링된 데이터를 사용(ex. 프로세스가 read)
+output : 데이터전달완료 또는 전달 가능할 때 device에서 interrupt발생. 보낼 데이터는 미리 버퍼에 채움(ex. 프로세스가 write)
+device가 위 처럼 동작하도록 만들어져야함.
+
+PCI
+PCI Addressing
+  PCI 장치들은 bus number, device number, function number의 값으로 구분됨.
+  linux는 bus들을 포함하는 domain개념을 가지고 있음.
+  리눅스는 직접 address기반 device 액세스보다는 pci_dev 구조체를 사용하여 pci device에 접근함.
+
+PCI device는 3가지 address space가 있음
+  PCI memory locations
+    driver입장에서 memory 접근방식과 동일하게 접근
+    사용되는 address들은 configuration registers 통해서 설정가능.
+  PCI I/O Ports
+    driver입장에서 I/O ports 접근방식과 동일하게 접근
+    사용되는 address들은 configuration registers 통해서 설정가능.
+  PCI configuration registers
+    driver입장에서 configuration registers접근하는 kernel function 사용하여 접근
+    각 function당 256bytes의 register를 가지고 있음(PCI인 경우)
+    
+  *PCI interrupt
+    
+PCI on system boot
+  1. PCI device는 최초 inactive상태 (configuration registers만 접근가능)
+  2. firmware(ex. BIOS)에서 각 PCI장비에 대해 enumeration하고 configration register접근하여 설정수행
+  3. 이 후 PCI device는 active됨
+
+Configuration Register
+  256 bytes의 크기
+  첫 64bytes는 표준이며 나머지는 device dependant함.
+  endianess : little endian
+  3-5가지의 field는 device를 구분함(ex. vendorID, deviceID, class...)
+
+struct pci_device_id
+  driver가 지원하는 pci device의 type을 정의.
+  값 조작을 위한 macro가있음(ex. PCI_DEVICE...)
+
+MODULE_DEVICE_TABLE macro
+  pci_device_id 구조체를 export해주는 macro. hotplug등이 목적임
+  kernel build과정에 depmod 시, modules.pcimap 파일에 관련 정보들이 리스트 됨.
+
+Registering PCI Drvier
+  struct pci_driver 
+    kernel의 PCI core에 등록되는 pci driver
+    이름, id_table(struct pci_device_id*), function pointer의 필드가 존재
+  pci_register_driver/pci_unregister_driver
+    PCI driver를 kernel에 등록/등록해제 하는 function
+    
+PCI device Probing
+  pci_get_device
+  pci_get_subsys
+  pci_get_slot
+    시스템에 존재하는 pci device들 중, 특정조건(함수 파라미터로 넘어감) 만족하는 device를 search하는 function
+    struct pci_dev* 를 return함.
+
+Enabling PCI Device
+  pci_enable_device() 를 사용하여 pci device를 enable(ex. resource할당)함.
+
+Accessing the Configuration Space
+  computer system vendor dependant한 방법으로 접근해야함.
+  linux의 경우 이를 위해 접근을 위한 공통 function들을 제공.
+  
+Accessing the I/O and Memory Spaces
+  pci device가 사용하는 I/O or Memory space는 Configuration Space로부터 가져올 수 있음.
+  kernel에서는 Configuration Space를 직접 접근하는 것 대신 아래 function들을 지원함.
+  pci_resource_start()
+  pci_resource_end()
+  pci_resource_flags()
+  
+PCI Interrupts
+  pci device는 kernel booting이전에 firmware에의해 interrupt가 할당됨
+  그러므로, configuration register에서 interrupt irq number를 가져와서, kernel interrupt등록 interface를 통해 등록하기만 하면 됨.
 
 network device driver tutorial : https://linuxgazette.net/issue93/bhaskaran.html
 milestone 3. customizing(*필요시)
