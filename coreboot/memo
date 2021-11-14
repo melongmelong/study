@@ -1,4 +1,5 @@
 memo
+next : 빌드스크립트 상세분석(각 stage별 소스코드 생성절차...(큰흐름위주) .ex. create_cc_template)
 다음에할거 : 대강 큰 흐름은 다본듯함. tutorial qemu기반 실행도 해봄.(잘됨).
           LinuxBoot coreboot에서 빌드하는 과정다봄. 실행도 해봄.
           payload가 CBFS에 추가되고, 어떻게 load되는 지 큰 흐름 분석완료함.
@@ -1324,6 +1325,31 @@ src/commonlib/include/commonlib/region.h
 
 167-170
   struct mem_region_device 정의.  
+
+-$(top)/toolchain.inc
+35
+  COREBOOT_STANDARD_STAGES 변수 정의
+  stage별 사용할 빌드환경(ex. 컴파일러)를 설정하기 위해 사용됨.
+
+78-90
+  각 아키텍쳐 및 각 stage별로 사용할 toolchain을 설정.
+  ARCH_SUPPORTED는 xcompile(아마 설정파일인듯)에 의해서 세팅됨.(.xcompile 참조)
+
+97-121
+  create_class_compiler
+    compile에 사용할 toolchain설정을 수행함.
+    toolchain들은 xcompile(아마도 설정)에 의해서 세팅됨(.xcompile 참조)
+
+137-139
+  init_standard_toolchain
+  set_stage_toolchain, create_class_compiler 호출.
+
+141-143
+  init_stages 정의
+  COREBOOT_STANDARD_STAGES 각 변수에 대해서 init_standard_toolchain call함.
+
+147
+  call init_stages
 
 -기타memo
 -ELF의 section의 offset은 어떻게 설정되는 지는 정확하게 모르겠음. 그러나 중요한건 각 section은 특정 file offset ~ file size만큼 차지함(단 type에 따라 파일에 없을 수도있음(ex. NOBITS)
