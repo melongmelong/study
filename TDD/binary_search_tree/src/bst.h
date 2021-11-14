@@ -14,5 +14,7 @@ struct bst{
 struct bst_node* create_bst_node(int val);
 void init_bst(struct bst *bst);
 struct bst_node* add_bst(struct bst *bst, int val);
+struct bst_node* search_bst(struct bst *bst, int val);
+void delete_bst(struct bst *bst, int val);
 
 #endif
