@@ -1,4 +1,5 @@
-next : chap14
+next :  chap15 422p~
+        chap14는 젤 나중에...
 
 목표
   ldd책에 나오는 driver 구현 실습
@@ -263,6 +264,34 @@ PCI Interrupts
   pci device는 kernel booting이전에 firmware에의해 interrupt가 할당됨
   그러므로, configuration register에서 interrupt irq number를 가져와서, kernel interrupt등록 interface를 통해 등록하기만 하면 됨.
 
+Memory Management overview
+linux가 다루는 address 종류(ldd Chapter 15, figure 15-1 참조)
+  user virtual address : 프로세스 메모리영역
+  physical address : 물리메모리영역
+  bus address : 버스메모리영역(ex. IOMMU)
+  kernel logical address : kmalloc등에 의해 할당되는 메모리 영역(ex. low memory)
+  kernel virtual address : vmalloc등에 의해 할당되는 메모리 영역(ex. high memory)
+  __pa macro : kernel virtual/logical address -> physical address
+  __va macro : physical address -> kernel logical address(low memory 영역한정.)
+
+PAGE_SHIFT : PFN(page frame number)를 얻기위해 right shift해야하는 비트의 수(ex. 4096bytes page size인 경우 12)
+
+linux kernel은 일반적으로 3gb user space, 1gb kernel space의 메모리로 나뉘어짐.
+LOW memory : kernel logical address가 존재하는 memory영역
+HIGH memory : kernel logical address가 존재하지않는 memory영역
+
+struct page : 하나의 물리메모리 page를 나타내는 구조체, kernel에서는 해당 struct page의 array(array는 1개이상 있을 수 있음)로 관리함.
+이를 관리하기위한 function, macro존재함.
+
+virtual memory area(VMA)
+process의 address space를 나타냄
+struct vm_area_struct구조체임 
+/proc/[pid]/maps 파일에 해당 구조체의 정보가 나옴.
+mmap() system call 지원을 위해서 일부 구조체/필드를 알아야함.
+
+하나의 프로세스에 대한 메모리 정보는 struct mm(struct task_struct내부에 있음)구조체로 나타내며, 메모리관련 정보들(ex. struct vm_area_struct ...)들을 포함하고있음.
+
 network device driver tutorial : https://linuxgazette.net/issue93/bhaskaran.html
+
 milestone 3. customizing(*필요시)
  

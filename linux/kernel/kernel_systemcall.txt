@@ -1,0 +1,26 @@
+next : system call 관련 코드 상세분석
+
+kernel systemcall source analysis
+
+registering interrupt handler(x64)
+start_kernel
+  trap_init
+    cpu_init
+      syscall_init
+
+system call
+interrupt!
+  entry_SYSCALL_64
+    do_syscall_64
+      system call!
+        sys_call_table[SYSCALL]
+
+syscall_init
+  entry_SYSCALL_64 가 64bit systemcall entry임.
+
+sys_call_table
+  kernel build과정에서 system call table(syscall_64.tbl)을 사용하여 header가 생성되며
+  해당 header파일을 include하여 sys_call_table을 population 함.
+
+참조
+  https://0xax.gitbooks.io/linux-insides/content/SysCall/linux-syscall-2.html
