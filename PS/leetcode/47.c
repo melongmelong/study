@@ -1,54 +1,27 @@
-
-int *tmpans[40320];
+int *tmpans[50000];
 int tmpanscnt;
 
-int chk(int *arr, int n){
-    int i,j;
-    int flag;
+void dfs(int *nums, int numsSize, int *tbl, int tblSize, int idx, int *arr){
+    int i;
     
-    for(i=0; i<tmpanscnt; i++){
-        flag = 1;
-        
-        for(j=0; j<n; j++){
-            if(arr[j] != tmpans[i][j]){
-                flag = 0;
-                break;
-            }
-        }
-        
-        if(flag == 1){
-            return 1;
-        }
-    }
-    
-    return 0;
-}
-
-void perm(int *nums, int n, int idx, int *arr){
-    int i, tmp;
-    
-    if(idx == n){
-        if(chk(arr, n) == 0){
-            tmpans[tmpanscnt] = (int*)malloc(sizeof(int)*n);
-            memcpy(tmpans[tmpanscnt], arr, sizeof(int)*n);
-            tmpanscnt++;
-        }
-        
+    if(idx == numsSize){
+        tmpans[tmpanscnt] = (int*)malloc(sizeof(int) * numsSize);
+        memcpy(tmpans[tmpanscnt], arr, sizeof(int) * numsSize);
+        tmpanscnt++;
         return;
     }
     
-    for(i=idx; i<n; i++){
-        tmp = nums[i];
-        nums[i] = nums[idx];
-        nums[idx] = tmp;
-   
-        arr[idx] = nums[idx];
+    for(i=0; i<tblSize; i++){
+        if(tbl[i] == 0){
+            continue;
+        }
         
-        perm(nums, n, idx+1, arr);
+        arr[idx] = i-10;
+        tbl[i]--;
         
-        tmp = nums[i];
-        nums[i] = nums[idx];
-        nums[idx] = tmp;
+        dfs(nums, numsSize, tbl, tblSize, idx+1, arr);
+        
+        tbl[i]++;
     }
 }
 
@@ -58,21 +31,25 @@ void perm(int *nums, int n, int idx, int *arr){
  * Note: Both returned array and *columnSizes array must be malloced, assume caller calls free().
  */
 int** permuteUnique(int* nums, int numsSize, int* returnSize, int** returnColumnSizes){
-    int arr[8];
-    int **ans;
+    int tbl[21] = {0,};
+    int arr[10] = {0,};
     int i;
-    
+    int **ans;
+   
     tmpanscnt = 0;
-    perm(nums, numsSize, 0, arr);
     
-    *returnSize = tmpanscnt;
-    ans = (int**)malloc(sizeof(int*)*(*returnSize));
-    *returnColumnSizes = (int*)malloc(sizeof(int)*(*returnSize));
-    for(i=0; i<tmpanscnt; i++){
-        (*returnColumnSizes)[i] = numsSize;
-        ans[i] = (int*)malloc(sizeof(int)*(*returnColumnSizes)[i]);
-        memcpy(ans[i], tmpans[i], sizeof(int)*(*returnColumnSizes)[i]);
+    for(i=0; i<numsSize; i++){
+        tbl[nums[i] + 10]++;
     }
+
+    dfs(nums, numsSize, tbl, sizeof(tbl)/sizeof(int), 0, arr);
     
+    *returnColumnSizes = (int*)malloc(sizeof(int) * tmpanscnt);
+    *returnSize = tmpanscnt;
+    ans = (int**)malloc(sizeof(int*) * tmpanscnt);
+    for(i=0; i<tmpanscnt; i++){
+        ans[i] = tmpans[i];
+        (*returnColumnSizes)[i] = numsSize;
+    }
     return ans;
 }
