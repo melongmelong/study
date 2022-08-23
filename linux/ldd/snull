@@ -1,0 +1,163 @@
+next : done.
+
+NAPI는 테스트 못해봄.
+NAPI제외한 다른 기능들은 빌드하여 실제 구동동작까지 확인 함.
+       
+ldd에 예제 snull driver 구동 및 분석
+
+가상머신으로 진행
+  ubuntu환경
+
+-구동
+예제코드 그대로는 빌드는 안될 듯.(버전이 안 맞는 듯, 분석 완료 후 최신커널에서 동작하게끔 수정해야할 듯)
+
+빌드시 이슈
+  net_device->quota 컴파일에러(quota가 없음)
+    poll method(NAPI)는 우선 제외.
+  netif_rx_complete() 컴파일에러(해당 함수 없음)
+    poll method(NAPI)는 우선 제외.
+  netif_rx_schedule() 컴파일에러(해당 함수 없음)
+    poll method(NAPI)는 우선 제외.
+  net_device의 각종 callback 및 다른 member없음
+    callback의 경우 최신버전에서는 ndo_* 멤버변수들인 듯
+     참고코드
+    struct net_device_ops driver_netdevops = {
+    .ndo_open       = driver_open,          //net_device->open
+    .ndo_stop       = foo_close,            //net_device->stop
+    .ndo_start_xmit = foo_start_xmit,       //net_device->hard_start_xmit
+    .ndo_do_ioctl   = foo_ioctl,            //net_device->do_ioctl
+    .ndo_tx_timeout = foo_tx_timeout,       //net_device->tx_timeout
+    };
+    
+    net_device->trans_start없음.
+      그냥 주석처리... 구동에 크게 중요한건 아닌 듯.(timeout용 값이었으므로..)
+    net_device->hard_header_cache없음.
+      기존에도 NULL이므로 코드제거.
+  alloc_netdev() 컴파일에러(인자갯수 맞지않음)
+    name_assign_type이라는 인자가 추가되었음.
+    NET_NAME_ENUM으로 우선 설정(다른 코드 참조...)
+  net_device->features에 NETIF_F_NOCSUM 컴파일에러
+    해당 define사라진것으로 확인. 대신 __UNUSED_NETIF_F_1 로 설정(기존과 동일한 값 사용하는 것으로 보임)
+  => 대충 하고 처리하면 load되고 인터페이스 up확인 됨.
+
+-분석
+snull.h
+  간단한 macro정의 및, symbol extern정의되어있음.
+
+snull.c
+  80-90
+    struct snull_priv 선언.
+    snull에서 사용할 private data 구조체.
+
+  98-115
+    snull_setup_pool()
+    snull에서 사용할 메모리 풀을 pre-allocate수행.
+    module parameter로 넘어온 pool_size만큼 struct snull_packet구조체를 생성하여 리스트로 관리함.
+
+  191-195
+    snull_rx_ints()
+      snull의 ex interrupt flag를 세팅해줌
+
+  202-216
+    snull_open()
+    H/W address를 할당(struct net_device->dev_addr 세팅)
+    transmit queue start(netif_start_queue() call.)
+
+  218-224
+    snull_release()
+    transmit queue stop(netif_stop_queue())
+
+  253-281
+    snull_rx()
+    kernel의 network subsystem으로 skb를 copy하여 전달(netif_rx() call)
+
+  286-326
+    snull_pol()
+    293-315
+      packet을 polling
+    316-323
+      packet polling 완료되었으면, kernel에 poll완료를 알리고 intrrupt를 활성화.
+
+  333-376
+    snull_regular_interrupt()
+    snull interrupt handler
+    357-364
+      수신인터럽트처리
+       패킷을 수신(snull_rx() call)
+    365-370
+      송신인터럽트처리
+      패킷송신이 완료되어, 통계업데이트 및 skb 해제.
+
+  380-417
+    snull_napi_interrupt()
+    403-406
+      rx interrupt simulation.
+      interrupt를 disable하고 추후 net_device->poll callback을 호출하도록 스케줄링
+    407-412
+      tx interrupt simulation
+      패킷송신 완료처리(통계업데이트 및 skb해제)
+
+  425-504
+    snull_hw_tx()
+    457-474
+      snull정책에 맞게 패킷 세팅(saddr, daddr)
+    476-490
+      snull정책에 맞게 전송패킷을 수신인터페이스로 전달.(단순히 메모리카피 및 수신interrupt 시뮬레이션(snull_interrupt() call))
+    492-503
+      패킷전달한 인터페이스의 private data 업데이트 및 송신interrupt 시뮬레이션(snull_interrupt() call)
+
+  509-532
+    snull_tx()
+     전달받은 데이터를 전송.(snull_hw_tx() call수행)
+
+  537~549
+    snull_tx_timeout()
+      tx timeout시 call수행 됨.
+      tx interrupt를 시뮬레이션 수행.(snull_interrupt() call)
+
+  575-584
+    snull_rebuild_header()
+      ethernet header를 만듦. 주로 source, dest mac address 설정 수행
+
+  587-598
+    snull_header()
+      ethernet header를 만듦. 주로 source, dest mac address 설정 수행.
+
+  630-676
+    snull_init()
+    struct net_device를 초기화함.
+
+  707-732
+    snull_init_module()
+    struct net_device snull_devs를 alloc하고 kernel에 register함.
+
+  735-736
+    module_init, module_exit 정의.
+
+-참고사항(기타확인내역들 등...)
+module_init, module_exit관련
+  외부모듈인 경우
+  아래 2가지 모두 정의/선언에 특정 attribute를 추가함.
+  module_init
+    __inittest()라는 함수를 정의
+    init_module() 함수 선언
+  module_exit
+    __exittest()라는 함수를 정의
+    cleanup_module() 함수 선언
+
+module_param()
+  variable선언들로 치환 됨....
+
+netif_start_queue(), netif_stop_queue
+  struct netdev_queue->state를 변경(__QUEUE_STATE_DRV_XOFF flag를 on/off함.)
+
+netif_wake_queue
+  netif_start_queue와 비슷(동일 플래그 세팅수행)하나, __netif_schedule() 호출을 수행.
+
+skb_reserve, skb_push, skb_put
+  데이터 영역을 확보하는 helper routine으로 보면 될 듯.
+  skb->data, skb->tail, skb->len을 변경
+  skb_reserve : empty struct sk_buff의 buffer의 data, tail 포인터의 위치를 변경(ex. align등을 위해)
+  skb_push : sk_buff의 buffer의 앞단의 영역을 reserve(data 포인터의 위치를 앞으로 땡기고, 확보한 사이즈만큼 len을 증가)
+  skb_put  : sk_buff의 buffer의 뒷부분에 영역을 reserve tail영역을 확보.(tail포인터의 위치를 뒤로 땡기고, 확보한 사이즈만큼 len을 증가.)
+

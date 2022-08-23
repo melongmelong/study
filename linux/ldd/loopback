@@ -1,0 +1,111 @@
+next : 동작하는 거 보면서 추가분석...(전송부터 보면 될 듯)
+
+loopback device driver 분석
+
+linux-5.7-rc7기반
+
+drivers/net/loopback.c
+68-92
+loopback_xmit()
+  loopback device transmit function
+  88-89
+    netif_rx() call
+
+141-147
+loopback_dev_init()
+  통계정보를 위한 struct pcpu_lstats 구조체 할당.
+
+155-160
+  loopback_ops 정의
+
+162-193
+gen_lo_setup()
+  loopback device의 struct net_device구조체를 초기화함.
+
+198-202
+loopback_setup()
+  setup function 호출수행(gen_lo_setup())
+  
+
+205-230
+loopback_net_init()
+  loopback device를 alloc / register수행.
+
+net/core/dev.c
+10503-10578
+net_dev_init()
+  어디서 호출하는건지는 확인 필요함.
+  10563-10564
+  loopback_net_ops를 등록(register_pernet_device)
+  
+
+net/core/net_namespace.c
+1300-1309
+register_pernet_device()
+  struct pernet_operations를 등록
+  인자로 넘어온 struct pernet_operations의 init function을 call함.
+
+net/ethernet/eth.c
+326-335
+eth_mac_addr()
+  새로운 MAC address를 설정
+---------------------------------
+loopback device ping 했을 경우, netif_rx() function호출될때까지의 call trace(ftrace로 확인)의 function확인(overview수준만...)
+
+1. do_syscall_64
+  systemcall 수행을 위한 진입점
+
+2. __x64_sys_sendto
+  sendto system call entry point.
+
+3. __sys_sendto
+  fd로부터 struct socket 구조체를 찾고 전송데이터정보를 struct msghdr msg에 세팅.
+
+4. sock_sedmsg
+  적절한 call(inet6_sendmsg, inet_sendmsg)에 대한 call 수행
+
+5. inet_sendmsg
+  적절한 call(tcp_sendmsg, udp_sendmsg, ping_v4_sendmsg 등)에 대한 call 수행
+
+6. ping_v4_sendmsg
+  ICMP를 보내기 위한 각종 체크 및 세팅 수행.
+
+7. ip_push_pending_frames
+  struct sk_buff 를 생성.
+
+8. ip_send_skb
+  ip_local_out call
+
+9. ip_local_out
+  dst_output call
+
+10. ip_output
+  ip_finish_output call
+
+11. ip_finish_output
+  __ip_finich_output call
+
+12. __ip_finish_output
+  ip_finish_output2 call
+
+13. ip_finish_output2
+  struct neighbour 를 할당
+
+14. dev_queue_xmit
+  __dev_queue_xmit call
+
+15. __dev_queue_xmit
+  skb전송을 위해 dev_hard_start_xmit call
+
+16. dev_hard_start_xmit
+  ndo_start_xmit callback call
+
+17. loopback_xmit
+  netif_rx call
+
+18. netif_rx
+  ...
+
+---------------------------------
+참고
+  https://blog.birost.com/a?ID=01000-6d936ef5-dc5b-4e92-8d91-cc9338cbdbe1

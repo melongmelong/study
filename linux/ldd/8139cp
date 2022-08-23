@@ -1,0 +1,269 @@
+next : deep하게 볼 목록 확인(PCI 확인(8139cp 드라이버에서 사용하는 PCI call별 정확한 의미, PCI irq/addr등은 언제 세팅되는 지에 대해 확인), ldd대충은 봤고 코드나 더 딥하게(ex. h/w구성) 볼 부분 찾아보고 다음 넘어가면 될 듯.)
+      
+      (v)- 데이터 송수신(NAPI..., https://wiki.linuxfoundation.org/networking/napi 참고하면 좋을 듯, 구글링이랑...)
+      (v)- 인터럽트루틴(cp_interrupt, interrupt 등록루틴(cp_open))
+      (v)- MII(mii_check_media function)
+      (v)- device memory access(ex. cpw, cpr function)
+
+deep하게 볼 목록
+(v)interrupt
+(v)DMA
+PCI
+  pci_register_driver : 좀 더 봐야할 듯... 엄청 개괄적인 내용만 ... 봄.
+  pci_enable_device 
+  pci_request_regions 
+  pci_resource_start 
+  pci_resource_len
+NAPI
+(v)8139cp register(datasheet구했음, 참고해서 코드 보면 좋을 듯)
+
+rtl8139cp(net/ethernet/realtk/8139cp.c) qemu ubuntu machine에서 사용... 얘가나을 듯
+
+linux-5.7-rc7기반
+net/ethernet/realtk/8139cp.c
+434-450
+  cp_rx_err_acct
+  rx error 통계치를 업데이트
+
+463-566
+  cp_rx_poll
+  479-488
+    DMA에의해 채워진 sk_buff관련 버퍼의 주소 및 DMA속성 값 등을 세팅
+  490-505
+     수신데이터에 대한 예외처리
+  510-525
+    DMA를 위한 새로운 sk_buff 할당 및 DMA메모리 매핑 수행
+     수신처리한 기존 DMA 매핑을 해제
+  533-549
+    cp_rx_skb call하여 실제 데이터 수신
+     패킷처리 카운트(rx)값 증가
+  541-549
+     새로운 DMA버퍼영역을 세팅
+  557-563
+    네트워크 서브시스템에 존재하는 패킷을 다 처리한 경우에 대한 처리(인터럽트 on?)
+  
+568-630
+  cp_interrupt
+  578-586
+    interrupt시 nic h/w 상태정보를 read
+  603-624
+    nic h/w 상태에 따라 인터럽트 처리 로직을 태움
+    603-607
+      수신인터럽트처리
+      NAPI schedule을 수행(이후 poll method(cp_rx_poll)이 called)
+    609-610
+      송신인터럽트처리
+      cp_tx call
+    611-612
+      link status 변경 처리
+    615-624
+      PCI error에 대한 처리(특별히 처리하는 건 없음...)
+
+648-707
+  cp_tx
+    전송완료된 데이터에대해서 resource해제하고 통계치 update.
+    660-662
+      전송상태를 read
+    664-665
+      전송완료한 sk_buff를 가져옴
+    667
+      DMA unmap수행
+    671-695
+       전송완료한 데이터에 대한 리소스 해제 / 통계 업데이트 수행
+      672-684
+        전송실패시 전송실패 통계치 업데이트
+      684-691
+        전송성공시 전송성공 통계치 업데이트
+      692-694
+        리소스해제 수행
+    704-706
+      전송완료 작업 수행.
+
+731-883
+  cp_start_xmit
+    744-749
+      ring buffer에 공간이 충분한지 확인
+    751-776
+      송신데이터에 대한 option 세팅
+    778-866
+      송신데이터에 대한 dma buffer를 설정
+    867
+      next ring buffer index를 설정
+    873-878
+      device에 특정데이터 write후 return
+
+888-924
+  __cp_set_rx_mode
+  nic h/w의 multicast filter를 설정
+
+926-934
+  cp_set_rx_mode
+    nic h/w의 수신모드를 설정.
+
+943-955
+  cp_get_stats
+    stats정보를 가져옴.
+
+957-969
+  cp_stop_hw
+  nic h/w를 stop
+  959-963
+    nic h/w에 cmd write
+  965-966
+    ring buffer관련 데이터 초기화
+  968
+    netdev_reset_queue()
+
+987-1021
+  cp_start_hw
+    nic h/w를 start(ring buffer(dma)를 세팅함.(8139 datasheet참조))
+    
+
+1058-1094
+  cp_refill_rx
+    rx ring buffer에 sk_buff를 미리 할당.
+    1067-1069
+      struct sk_buff 할당
+    1071-1076
+      struct sk_buff의 데이터 영역에 대해 dma memory mapping수행.
+      *dma_map_single : 인자로 전달받은 process virtual memory영역을 DMA mapping하여 bus address(dma_add_t)로 반환함.
+    1077-1086
+      ring buffer에 위에서 mapping된 영역정보를 세팅.(8139 datasheet참조)
+
+1102-1111
+  cp_init_rings
+    1104-1106
+      ring buffer memset
+    1108
+      ring buffer index init
+    1110
+      rx ring buffer에 sk_buff를 미리 할당.(?)
+
+1113-1131
+  cp_alloc_rings
+    ring buffer allocation
+    1119-1121
+      dma memory 할당
+      *dma_alloc_coherent : coherent DMA memory영역을 할당후, virtual address는 함수의 return으로, bus address는 dma_addr_t로 setting해줌.
+    1123-1124
+      cp_private->rx_ing, cp_private->tx_ring초기화
+    1126-1128
+      ring buffer 초기화
+    
+1133-1168
+  cp_clean_rings
+  ring buffer를 반환
+  1138-1158
+    ring buffer의 메모리(dma 등)을 반환
+  1160
+    packet 관련 통계정보 clear
+  1162-1167
+    buffer관련 데이터 초기화
+
+1179-1212
+  cp_open
+    net_device->ndo_open callback
+    1887-1189
+      ring buffer초기화
+    1191
+      napi 활성화
+    1193
+      nic h/w init
+    1195-1199
+      irq 등록(cp_interrupt) 및 nic h/w irq 활성화
+    1201
+      netif_carrier_off(아마 초기화 작업 일환일 듯.)
+    1202
+      mii관련 체크 수행.
+    1203
+      transmit 활성화
+
+1214-1236
+  cp_close
+  net_device->ndo_close callback
+    cp_open에서 할당한 리소스 해제작업 수행.
+    
+1238-1272
+  cp_tx_timeout
+  tx timeout callback
+  1244-1259
+    nic의 상태 및 ring buffer의 상태를 출력
+  1261-1269
+    nic h/w 상태 reset 및 transmit 재시작.
+  
+1619-1639
+  cp_set_mac_address
+  net_device->ndo_set_mac_address callback
+  nic h/w에 변경 될 MAC address를 세팅.
+
+1884-2040
+  cp_init_one
+    pci device probe callback.
+    1903-1919
+      struct net_device alloc
+      struct cp_private 필드에서 필요 구조체 필드 초기화 수행.
+    1921-1923
+      pci device enable
+      *pci_register_driver : driver가 다룰 수 있는 pci device와, kernel이 호출할 callback function들을 등록... 즉, kernel에 정보를 등록...
+      *pci_enable_device 아마 ACPI등을 통해 세팅되어있는 pci관련 설정들을 먼가 적용(ex.mem/irq 등 리소스할당 등...)...
+    1929-1944
+      pci device리소스 할당...
+      *pci_request_regions : memory or i/o resource들을 reserve...(pci bus address를 host physical address로 remap되므로 이 함수 및 아래 pci_resource_start/len과 같은 함수 사용하는 듯.)
+      *pci_resource_start : pci device bar영역의 start address를 가져옴.
+      *pci_resource_len : pci device bar영역의 길이를 가져옴.
+    1946-1966
+      dma attributes 설정
+      *kernel src tree/pci.rst 참조하면 조음!
+      *pci_set_dma_mask : streaming DMA mapping에 대한 속성(ex. 32bit/64bit?)를 세팅하기 위한 함수(dma_set_mask()를 호출함)
+      *pci_set_consistent_dma_mask : consistent DMA mappiing에 대한 속성(ex. 32bit/64bit?)를 세팅하기 위한 함수(dms_set_coherent_mask()를 호출함)
+      *dma mask는 속성값을 의미하는 듯.(사실상 bus address에서 사용하는 bit인 것으로 보여짐)
+      *DMA의 메모리매핑은 streaming mapping과 consisten mapping이 존재하는 것으로 확인 됨.
+    1974-1982
+      pciaddr를 ioremap수행 및 해당 주소 struct cp_private에 설정
+    1984
+      nic h/w초기화
+    1986-1990
+      nic h/w로부터 MAC address read
+    1992-2017
+      struct net_device초기화
+      netdev_ops 설정, napi context초기화(netif_napi_add), feature 설정 수행.
+      register_netdev call    
+
+2116-2134
+  2116-2121
+    struct pci_device_id선언 및 symbol export(MODULE_DEVICE_TABLE)
+  2123-2132
+    struct pci_driver 초기화
+  2134
+    module_pci_driver 선언(module_init, module_exit이 선언됨)
+
+--------------------------
+참고
+  module_pci_driver
+    module_init, module_exit macro로 치환됨
+    pci driver를 위한 helper macro로 보면 됨.
+
+cpw*, cpr*의 경우 실제 device로 i/o발생하는 function임.
+register의 offset에 특정 값쓰거나, offset으로부터 값 읽어와서 값에 따른 처리를 함...
+아래 참고사이트 참고...
+
+MII(Media-independent interface)
+  대충... 내가 이해한 내용..
+  OSI layer2의 MAC(media access control), layer1 PHY(physical layer)사이의 interface.
+  layer2의 MAC, layer1 PHY는 주로 h/w로 이루어지므로, MII역시 h/w형태로 존재.
+    MAC h/w(layer2) - PHY h/w(layer1) - physical medium(copper, fiber...)
+  MII는 하드웨어이므로 control이 가능(register기반). 8139cp driver역시, PCI기반으로 MII h/w를 control.
+  *http://www.ktword.co.kr/test/view/view.php?m_temp1=2025 의 젤 아래그림 참조하면 도움될 듯.
+
+--------------------------
+참고
+https://blog.krybot.com/a?ID=00700-892a992a-a5ae-4b74-bdcb-4448d485abc2
+https://blog.actorsfit.com/a?ID=01600-1f2ee894-4ad5-460f-b622-d55880b7b07f
+https://wiki.osdev.org/RTL8139
+rtl8139 programming guide로 구글링..
+커널소스 다큐먼트 참조(Documentation/PCI/pci.rst)
+https://wiki.osdev.org/PCI (PCI 설명)
+https://stackoverflow.com/questions/31330039/when-linux-calls-pci-drivers-probe-function (PCI)
+https://codeofconnor.com/how-the-linux-kernel-detects-pci-devices-and-pairs-them-with-their-drivers/ (PCI)
+8139 datasheet
+  http://realtek.info/pdf/rtl8139cp.pdf
