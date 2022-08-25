@@ -130,43 +130,77 @@ void test_bst_search(void)
 	CU_ASSERT_EQUAL_FATAL(node->val == 4, 1);
 }
 
-void test_bst_delete(void)
+void __test_bst_delete_leaf(void)
 {
 	struct bst bst;
 	struct bst_node *node;
 
-/*
 	init_bst(&bst);
 	node = add_bst(&bst, 5);
 	node = add_bst(&bst, 4);
 	node = add_bst(&bst, 3);
 	node = add_bst(&bst, 6);
-
-	delete_bst(&bst, 3);
-	node = search_bst(&bst, 3);
-	CU_ASSERT_EQUAL_FATAL(node == NULL, 1);
-	test_bst_inorder(&bst);
 
 	delete_bst(&bst, 6);
 	node = search_bst(&bst, 6);
 	CU_ASSERT_EQUAL_FATAL(node == NULL, 1);
 	test_bst_inorder(&bst);
-*/
+}
+void __test_bst_delete_leaf_root(void)
+{
+	struct bst bst;
+	struct bst_node *node;
+
+	init_bst(&bst);
+	node = add_bst(&bst, 5);
+	delete_bst(&bst, 5);
+	node = search_bst(&bst, 5);
+	CU_ASSERT_EQUAL_FATAL(node == NULL, 1);
+	CU_ASSERT_EQUAL_FATAL(bst.root == NULL, 1);
+	test_bst_inorder(&bst);
+}
+void __test_bst_delete_nonleaf_1child(void)
+{
+	struct bst bst;
+	struct bst_node *node;
 
 	init_bst(&bst);
 	node = add_bst(&bst, 5);
 	node = add_bst(&bst, 4);
 	node = add_bst(&bst, 3);
 	node = add_bst(&bst, 6);
-	test_bst_inorder(&bst);
 
-	printf("test root:%p\n", bst.root);
-	printf("test root->left:%p\n", bst.root->left);
 	delete_bst(&bst, 4);
-	printf("test root->left:%p\n", bst.root->left);
 	node = search_bst(&bst, 4);
 	CU_ASSERT_EQUAL_FATAL(node == NULL, 1);
 	test_bst_inorder(&bst);
+}
+void __test_bst_delete_nonleaf_2child(void)
+{
+	struct bst bst;
+	struct bst_node *node;
+
+	init_bst(&bst);
+	node = add_bst(&bst, 5);
+	node = add_bst(&bst, 4);
+	node = add_bst(&bst, 3);
+	node = add_bst(&bst, 6);
+
+	delete_bst(&bst, 5);
+	node = search_bst(&bst, 5);
+	CU_ASSERT_EQUAL_FATAL(node == NULL, 1);
+	test_bst_inorder(&bst);
+}
+void test_bst_delete(void)
+{
+	printf("delete_leaf\n");
+	__test_bst_delete_leaf();
+	printf("delete_leaf_root\n");
+	__test_bst_delete_leaf_root();
+	printf("delete_nonleaf_1child\n");
+	__test_bst_delete_nonleaf_1child();
+	printf("delete_nonleaf_2child\n");
+	__test_bst_delete_nonleaf_2child();
 }
 
 int main(int argc, char *argv)

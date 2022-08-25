@@ -54,6 +54,12 @@ kernel/module.c
     kernel module이 blacklist인지 check
   3762-3764
     kernel module의 signature정보를 check
+  3766-3768
+    kernel module의 각 section 위치를 세팅 / 필요한 경우 각 section에 대한 flag변경
+  3771-3774
+    module version check CONFIG가 enable인 경우, module version check수행.
+  
+  
   
   3892-3933
     예외처리를 위한 코드...

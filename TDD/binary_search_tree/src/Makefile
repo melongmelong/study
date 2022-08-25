@@ -1,5 +1,5 @@
-OBJS=bst.o
-PROG=
+OBJS=bst.o main.o
+PROG=main
 
 all: $(PROG)
 

@@ -66,86 +66,57 @@ struct bst_node* search_bst(struct bst *bst, int val)
 	return search_bst_node(bst->root, val);
 }
 
-static struct bst_node* get_most_left_node(struct bst_node **parent, struct bst_node *node)
+static struct bst_node** find_successor(struct bst_node **cur)
 {
-	if(node->left == NULL){
-		return node;
+	if((*cur)->left==NULL){
+		return cur;
 	}
 
-	*parent = node;
-
-	return get_most_left_node(parent, node->left);
+	return find_successor(&(*cur)->left);
 }
-static struct bst_node* get_node_replaced(struct bst_node **parent, struct bst_node *node)
+static void delete_bst_node(struct bst_node **cur, int val)
 {
-	if(node->left != NULL && node->right == NULL){
-		return node->left;
-	}
-	else if(node->left == NULL && node->right != NULL){
-		return node->right;
-	}
-
-	return get_most_left_node(parent, node->right);
-}
-static void delete_bst_node(struct bst_node *parent, struct bst_node **cur, int val)
-{
-	struct bst_node *replace, *parent_of_replace;
+	struct bst_node *del, **successor;
 
 	if(*cur == NULL){
 		return;
 	}
 
 	if((*cur)->val == val){
-		if(parent == NULL){
+		if((*cur)->left==NULL && (*cur)->right==NULL){
+			free(*cur);
 			*cur = NULL;
 		}
+		else if(((*cur)->left==NULL && (*cur)->right) || ((*cur)->left && (*cur)->right==NULL)){
+			if((*cur)->right){
+				del = *cur;
+				*cur = (*cur)->right;
+				free(del);
+			}
+			else if((*cur)->left){
+				del = *cur;
+				*cur = (*cur)->left;
+				free(del);
+			}
+		}
 		else{
-			if((*cur)->left == NULL && (*cur)->right == NULL){
-				if(parent->left == *cur){
-					parent->left = NULL;
-				}
-				else if(parent->right == *cur){
-					parent->right = NULL;
-				}
+			successor = find_successor(&(*cur)->right);
 
-				free(*cur);
-			}
-			else if((*cur)->left && (*cur)->right){
-				replace = get_node_replaced(&parent_of_replace, *cur);
-				(*cur)->val = replace->val;
-				delete_bst_node(parent_of_replace, &replace, replace->val);
-			}
-			else{
-				printf("del:%d %p\n", (*cur)->val, *cur);
-				printf("parent:%p\n", parent);
-				replace = get_node_replaced(NULL, *cur);
+			(*cur)->val = (*successor)->val;
 
-				if(parent->left == *cur){
-					printf("parent->left:%d %p\n", parent->left->val, parent->left);
-					parent->left = replace;
-					printf("parent->left:%d %p\n", parent->left->val, parent->left);
-				}
-				else if(parent->right == *cur){
-					parent->right = replace;
-				}
-				printf("del2:%d %p\n", (*cur)->val, *cur);
-		//		free(*cur);
-			}
+			delete_bst_node(successor, (*successor)->val);
 		}
 		return;
 	}
 
 	if((*cur)->val < val){
-		delete_bst_node(*cur, &((*cur)->right), val);
+		delete_bst_node(&(*cur)->right, val);
 	}
 	else{
-		delete_bst_node(*cur, &((*cur)->left), val);
+		delete_bst_node(&(*cur)->left, val);
 	}
 }
 void delete_bst(struct bst *bst, int val)
 {
-	printf("root:%p\n", bst->root);
-	printf("root->left:%d %p\n", bst->root->left->val, bst->root->left);
-	delete_bst_node(NULL, &(bst->root), val);
-	printf("root->left:%d %p\n", bst->root->left->val, bst->root->left);
+	delete_bst_node(&bst->root, val);
 }

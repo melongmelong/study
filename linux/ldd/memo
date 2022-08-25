@@ -1,4 +1,5 @@
-next :  chap15 422p~
+next :  chap17위주로 보면서 곁다리로 필요한 부분들 참조해서 보는 방향으로 해야겠다. 
+        chap15 447p~
         chap14는 젤 나중에...
 
 목표
@@ -169,6 +170,8 @@ Interrupt
 인터럽트 번호(irq) 감지방법은 여러가지 있음(hardware정보에 의해, pci등 device에서 지원하는 정보, or 직접 probing)
 인터럽트 핸들러
   작성에 주의 필요
+    인터럽트 시 실행되기때문임.(process context에서 실행하지 않으므로, 제약들(sleep, 메모리할당시 atomic해야함, lock에 제한 등..)
+    응답성과 관련있으므로 빠르게 완료되어야 함.
   인터럽트 핸들러 인자 및 리턴값은 적절하게 사용해야함 
 인터럽트 enable/disable
   거의 disable잘 하진 않지만, 인터럽트 핸들러내에서 spinlock잡고있는 경우에 인터럽트 disable필요(deadlock피하기 위해서)
@@ -193,6 +196,26 @@ Interrupt-Driven I/O
 input : interrupt발생시 메모리에 데이터를 버퍼링, 이후 버퍼링된 데이터를 사용(ex. 프로세스가 read)
 output : 데이터전달완료 또는 전달 가능할 때 device에서 interrupt발생. 보낼 데이터는 미리 버퍼에 채움(ex. 프로세스가 write)
 device가 위 처럼 동작하도록 만들어져야함.
+
+참고. x86 interrupt handling과정
+  interrupt 발생!
+  1. interrupt number를 stack에 push후 do_IRQ() call.
+  2. do_IRQ수행(아래 작업들 수행)
+    - interrupt controller에 ack
+     - 발생한 IRQ number를 동시실행못하도록 동기화(ex. lock) 수행
+     - 발생한 IRQ number에 대한 handler호출.(handle_IRQ_event함수를 통해서 등록된 handler수행함)
+    - pending IRQ들 처리
+
+참고. 8259 PIC.
+  interrupt 처리 chip임.
+  interrupt발생시 INT signal전달하고, interrupt관련한 vector정보도 전달함
+  https://pdos.csail.mit.edu/6.828/2010/readings/hardware/8259A.pdf 참고필요.(INTERRUPT SEQUENCE)
+
+참고. APIC(Advanced PIC)
+  intel에서는 크게 다음 2종류로 구분
+    local APIC : interrupt를 수신후 해당 interrupt를 실제 CPU로 전달..
+    I/O APIC : interrupt를 수신후 해당 interrupt를 local APIC로 전달..
+*아마 PIC로부터 전달받은 interrupt vector(IRQ number)는 S/W(cpu instruction)개입없이 h/w적으로 처리(read)되는 듯?
 
 PCI
 PCI Addressing
@@ -223,13 +246,14 @@ Configuration Register
   첫 64bytes는 표준이며 나머지는 device dependant함.
   endianess : little endian
   3-5가지의 field는 device를 구분함(ex. vendorID, deviceID, class...)
+  I/O port address 0xCF8, 0xCFC 를 통해서 접근.(해당 address는 Host to PCI Bridge(Host Bridge) device로 접근하는 듯. 이 후, Host Bridge에서 값에 따른 하드웨어적인 동작수행 pci21.pdf(PCI local bus spec) 3.7.4.1참조)
 
 struct pci_device_id
-  driver가 지원하는 pci device의 type을 정의.
+  driver가 지원하는 pci device의 type을 정의. struct pci_driver의 id_table필드에 세팅됨.(이후 kernel에서 해당 id_table에 맞는 device찾은 경우 struct pci_driver의 probe callback을 해당 값과 함께 호출..)
   값 조작을 위한 macro가있음(ex. PCI_DEVICE...)
 
 MODULE_DEVICE_TABLE macro
-  pci_device_id 구조체를 export해주는 macro. hotplug등이 목적임
+  pci_device_export해주는 id 구조체를 macro. hotplug등이 목적임(userspace에서 접근하기 위한 정보를 생성..?)
   kernel build과정에 depmod 시, modules.pcimap 파일에 관련 정보들이 리스트 됨.
 
 Registering PCI Drvier
@@ -238,16 +262,30 @@ Registering PCI Drvier
     이름, id_table(struct pci_device_id*), function pointer의 필드가 존재
   pci_register_driver/pci_unregister_driver
     PCI driver를 kernel에 등록/등록해제 하는 function
+    pci_register_driver에 struct pci_driver를 등록하면, pci_drver->id_table에 존재하는 미인식 PCI device에 대해서 pci_driver->probe function이 호출(파라미터로 어떤 device id인지에 대한 정보를 줌) 됨
+    대략적인 내용은 다음과 같아보임...
+      커널 부팅 과정에서 PCI device들을 enumeration. 이 때 device id / vendor id와 같은 device 정보들을 얻어와서 커널이 가지고 있음(아마도 ACPI을 통해서.. 커널이든 BIOS든...)
+     PCI device driver 등록시점에,(pci_register_driver)
+     PCI core에서 PCI device정보를 조회해서 지원하는 driver라고 판단하면, probe function호출.....
+      참조
+       https://stackoverflow.com/questions/31330039/when-linux-calls-pci-drivers-probe-function (PCI)
+       https://codeofconnor.com/how-the-linux-kernel-detects-pci-devices-and-pairs-them-with-their-drivers/ (PCI)
+       https://sunilbojanapally.wordpress.com/2015/02/13/linux-device-driver-initialization/
+      
     
 PCI device Probing
   pci_get_device
   pci_get_subsys
   pci_get_slot
     시스템에 존재하는 pci device들 중, 특정조건(함수 파라미터로 넘어감) 만족하는 device를 search하는 function
-    struct pci_dev* 를 return함.
+    struct pci_dev* 를 return함.(이후 해당 구조체를 기반으로 PCI enabling수행하면 되나봄, kernel src document pci.rst, Device Initialization Steps 참조)
 
 Enabling PCI Device
-  pci_enable_device() 를 사용하여 pci device를 enable(ex. resource할당)함.
+  pci_enable_device() 를 사용하여 pci device를 enable(device wake-up, resource(I/O addr, memory addr, IRQ)할당(?), BIOS가 하지않았다면)함...
+  참고. 실제 코드 확인해보면, 적절한 PCI configuration register를 설정함. 즉, PCI device를 초기화함.
+  참고. 
+    PCI BAR, IRQ정보는 device enumeration시점에(ex. by BIOS) 세팅되는 듯? 이후, kernel device driver단에서는 해당 정보 읽어서 사용정도만 하는 듯???(좀 더 확인은 필요해보임)
+    https://en.wikipedia.org/wiki/PCI_configuration_space, Bus enumeration 참조.
 
 Accessing the Configuration Space
   computer system vendor dependant한 방법으로 접근해야함.
@@ -286,12 +324,209 @@ struct page : 하나의 물리메모리 page를 나타내는 구조체, kernel�
 virtual memory area(VMA)
 process의 address space를 나타냄
 struct vm_area_struct구조체임 
+  operation 구조체(struct vm_operations_struct)가 있음
+    open : VMA open시(ex. process가 fork 등..) called. 일반적으로 kernel에서 기본작업 수행해주며, driver additional task들을 구현함.
+    close : VMA close시 called. 일반적으로 kernel에서 기본작업 수행해주며, driver additional task들을 구현함.
+    nopage : process가 valid VMA영역에 access하지만, 현재 memory가 mapping이 되지 않은 경우 called.
+             ex. mremap에 의해 VMA size가 커짐(줄어드는 건 kernel이 알아서 지움), 이 경우 매핑되어있지 않은 valid한 VMA영역 접근 시, nopage가 called됨.(page fault개념인듯함)
 /proc/[pid]/maps 파일에 해당 구조체의 정보가 나옴.
-mmap() system call 지원을 위해서 일부 구조체/필드를 알아야함.
+mmap() system call 지원을 위해서 일부 구washing machines, mobile phones, and other embedded systems with limited조체/필드를 알아야함.
 
 하나의 프로세스에 대한 메모리 정보는 struct mm(struct task_struct내부에 있음)구조체로 나타내며, 메모리관련 정보들(ex. struct vm_area_struct ...)들을 포함하고있음.
 
+mmap()
+  device address를 process virtual address와 매핑.
+  성능적인 이점이 있음.(system call없이 바로 접근가능)
+  PAGE_SIZE단위로 매핑가능함
+  모든 device가 mmap을 지원하진 않음.
+  device driver입장에서는, virtual address와 device의 address를 매핑해주는 작업을 해주면 됨.(나머지는 커널에서 해줌)
+    remap_pfn_range() 사용 or vma->nopage call 사용해서 구현.
+
+remap_pfn_range()
+  physical address range를 virtual address range에 매핑하기 위한 page table을 설정함.
+  mmap()구현 시 주로 사용하는 function임.
+
+get_user_pages
+  user space buffer와 관련되어있는 struct page 리스트를 리턴해줌
+  user buffer -> kernel buffer -> device의 흐름을 user buffer -> device의 흐름으로 만들어, user space에서 직접 device에 접근하기 위함.(for 성능향상. 그러나 무조건 향상되는 건 아닐 수 있음!)
+  
+asynchronous I/O
+  aio_read, aio_write 를 구현
+    is_sync_kiocb를 통해 전달된 iocb가 sync인지 async인지 확인 후 맞춰서 동작할 수 있어야함.
+    sync지원인 경우, 일반 read, write call과 비슷하게 구현
+    aync지원인 경우,
+      i/o관련 필요정보들을 어딘가에 저장하고, return -EIOCBQUEUED 수행.
+
+  aio_complete
+    aio작업이 완료된 경우 커널에 알리기 위해 사용하는 function
+    
+DMA(ldd 및 kernel source Docuemntation(DMA-API-*.txt 참조))
+  processor의 개입없이 device에서 직접 main memory 접근하는 메카니즘. H/W가 지원해야만 함.
+  읽기 처리관점에서 DMA 대략적인 처리 프로세스
+  -s/w가 요청 시 DMA trigerring (Synchronous DMA)
+    1. read system call
+    2. driver가 DMA device를 setting(ex. DMA buffer 위치 설정 등)
+    3. DMA device가 데이터 read가 done되면 인터럽트 발생. 
+    4. driver가 읽은 데이터를 처리(ex. process에게 전달 등)
+  -device가 s/w요청과 무관하게 DMA trigerring(asynchronous DMA)
+    1. DMA device가 새로운 data read시 인터럽트 발생
+     2. 인터럽트 핸들러가 DMA device를 setting(ex. DMA buffer 위치 설정 등)
+     3~4는 위와 동일.
+
+DMA buffer 할당
+  DMA device limitation 때문에 아무 메모리나 할당해서는 안 됨.(device의 bus가 physical addr만 지원한다.. 등)
+    *virtual memory addr접근을 지원한다면 가능은 하지만, portable하지 않음.
+  메모리 할당 시, GFP_DMA flag를 주면 됨.
+
+  할당방법
+    -get_free_pages : fragmentation 등의 이유로 필요한 사이즈만큼 할당 실패할 수 있음.
+    -kernel boot parameter 이용 : kernel module에서는 불가능함.
+    -GFT_NOFAIL flag로 할당 : system 부하 가능성 있어서 웬만하면 안 쓰는게 좋음.
+    -Scatter/Gather I/O 사용
+
+The Generic DMA Layer
+  DMA는 DMA buffer를 할당해서 bus address를 dma deivce에 전달해야함.
+  해당 오퍼레이션은 HW dependant함.
+  linux에서는 DMA device 및 HW independant한 layer를 제공.
+  linux device model에서 device를 나타내는 struct device 사용이 필요함.
+  참고. address 종류...
+    logical, linear address : CPU가 사용하는 논리주소
+    physical address : CPU가 사용하는 물리주소
+    bus address : CPU가 아닌 device들에서 사용하는 물리주소. DMA의 경우 device-memory간 접근이므로, bus address 기준으로 동작필요함.
+                  *x86의경우 bus address == physical address이지만, 다른 아키텍쳐의 경우 io-mmu등에 의해 다를 수 있음.
+
+  dma_set_mask() / dma_set_coherent_mask / dma_set_mask_and_coherent()
+    device의 DMA addressing capabilities(ex. 32bit, 64bit동작..)를 kernel에 inform하는 function.(dma mask(속성?)를 세팅한다고 함)
+    dma_set_mask : streaming mapping을 위한 setup 수행
+    dma_set_coherent_mask : coherent mapping을 위한 setup 수행
+    dma_set_mask_and_coherent : dma_set_mask, dma_set_coherent_mask를 한번에 수행.
+     해당 함수의 return 이 0이면, 해당 device에 대한 dma mask 세팅이 가능함(즉 해당 방식으로 동작가능함)을 의미 non-zero는 세팅 불가함을 의미.
+ 
+  DMA mapping
+    dma device에 의해 접근가능한 buffer를 할당하고 해당 buffer의 address를 설정하는 행위.
+     *즉, CPU -> 물리메모리로는(ex. device driver code) virtual address(ex. kmalloc을 통해 return된 address)사용해서 접근가능.
+       하지만 동일 물리메모리로의 device -> 물리메모리로는 device입장에서 bus address를 사용해서 접근가능함.
+       그러므로, device -> 물리메모리 접근에 대한 mapping이 필요함.!
+    dma_addr_t : DMA buffer의 bus address를 나타냄.
+     고려/주의해야 할 사항들이 있음
+       IOMMU를 사용하는 HW가 있을 수 있으므로 virt_to_bus()와 같은 함수 사용은 주의(지양)
+       bounce buffer 사용고려(device가 접근하지 못하는 메모리 영역에 대한 버퍼링 영역?)
+       cache coherency 고려(ex. DMA device가 DMA buffer로 부터 읽기전, processor cache에 해당 buffer변경내역이 있으면 해당 cache내역이 반영되고나서 DMA device가 read수행 필요)
+          2가지 DMA mapping type존재.
+            Coherent DMA mapping(consistent, syncronous라고도 함)
+                해당 DMA mapping은 cache coherency가 보장됨. 즉, CPU-RAM-device 관계에서, cache가 존재하지 않는 것처럼 동작(ex. CPU가 RAM에 write한 데이터가 device에서도 별도 절차없이 visible하며 그 반대도 성립, 즉 SW개입없이 coherency가 보장됨.)
+              driver가 존재하는 동안 DMA buffer가 mapping됨.
+              cpu, device에서 동시에 사용가능함.
+              dma_alloc_coherent(), dma_free_coherent() 으로 mapping/unmapping수행함.
+                 dma_alloc_coherent : 물리메모리할당해서 해당 메모리 접근가능한 virtual address와 bus address를 return함.
+            Streaming DMA mapping(non-coherent, asynchronous라고도 함)
+              cache coherency를 고려해야함(ex. kernel helper function등 사용)
+                하나의 오퍼레이션 마다 mapping되고 unmapping.
+              mapping register가용률이 높고, Coherent DMA mapping에서는 불가능한 성능개선 방법이 있음.
+              dma_map_single(), dma_unmap_single()로 mapping/unmapping 수행함.
+             참고. x86는 'snoop'을 통해서 cache coherency가 항상 보장되므로 2가지 매핑타입 아무거나 사용해도 되지만, 다른 아키텍쳐는 그러지 않을 수 있음. 매핑타입도 잘 선택하여야함.
+
+network drivers
+  network driver는 network protocl과 독립적인 부분임.(그래도 L2 layer는 관련있을 수는 있음.)
+  
+  Device Registration
+    char/block device처럼 리소스할당(ex. IRQ, I/O Ports)은 수행하지만 module load단계에서 major/minor number로 등록하진 않음.
+     대신 탐지한 NIC를 global list of network devices 에 등록함.
+    
+    struct net_device 구조체로 NIC를 기술.
+
+    alloc_netdev()로 struct net_device를 할당할 수 있음.
+      alloc_netdev()를 wrap한 helper function존재(ex. alloc_etherdev())
+
+    register_netdev()로 kernel에 net_device를 등록.
+      register완료 후에는 언제든지 코드가 동작할 수 있으므로, 완전히 초기화 완료 후 해당함수 호출필요함.
+
+    unregister_netdev()로 kernel에등록된 net_device 등록를 해제
+    free_netdev()로 net_device를 kernel로 반환.
+
+  Opening/Closing
+    ioctl을 통해(ex. ifconfig command)서 network interface의 open(struct net_device->open method called), close(struct net_device->stop method called)를 수행.
+    open
+      resource할당, hardware address(ex. MAC addr) 할당, transmit queue start(netif_start_queue() function 사용) 작업 필요
+    close
+      open의 반대작업 수행.
+
+  Packet Transmission
+    kernel이 데이터 전송이 필요한 경우 struct net_device->hard_start_transmit method를 call 수행함.
+    전송되는 데이터는 struct sk_buff(소켓버퍼) 구조체임.
+      kernel의 네트워크 서브시스템에서 사용되고 복잡한 정보를 갖고있지만, network 드라이버 입장에서는 단순히 전달되는 데이터로 봐도 됨.
+    hard_start_transmit내부에서 실제 하드웨어관련 작업 처리 필요.
+
+    리소스(ex. memory, device queue 등) 부족 시, packet transmission을 멈출 수 있고, 필요시 다시 시작할 수 있음(시작해야함)
+      netif_stop_queue, netif_tx_disable : 패킷전송을 멈춤.
+      netif_wake_queue : 패킷전송을 재시작.
+
+    timeout 처리
+      device driver에서는 타임아웃 값 및 타임아웃 callback 구현해주면 되며, 나머지는 kernel에서 처리.
+      struct net_device->watchdog_timeo(jiffies단위) 가 transmission timeout임.
+      struct net_device->trans_start 값에서 watchdog_timeo가 초과하면 kernel에서 struct net_device->tx_timeout을 call함.
+      timeout 처리 는 주로 발생한 원인 해결, 진행중이었던 작업에 대한 처리 등을 수행함.
+   
+    scatter/gather i/o
+      원래 packet 전송을 위해서는 각 layer별로 copy작업이 필요하나, scatter/gather i/o지원한다면 불필요함.
+     kernel은 scatter/gatehr packet(프래그먼트)을 hard_start_xmit function에 넘겨주지 않음
+       NETIF_F_SG feature를 set하여 전달받을 수 있음.
+         struct sk_buff->skb_shinfo로부터 데이터 획득 가능.
+          접근을 위한 매크로 존재(sb_shinfo())
+          전송데이터의 첫번째 프래그먼트는 hard_start_xmit인자로 넘어온 sk_buff->data에, 나머지는 sk_buff->frags array통해서 참조가능.
+          driver에서는 해당 fragment들에 대해 하나의 데이터로 만들어서 전송하거나, 각 fragment별 DMA전송 등을 수행하면 됨.
+          
+  Packet Reception
+    packet 수신은 interrupt 또는 polling방식으로 전달받을 수 있음
+    interrupt방식의 경우, interrupt handler에 의해서 패킷수신 method가 called됨.
+     패킷 수신은, struct sk_buff를 할당하여 수신한 데이터 및 메타데이터(ex. upper layer의 protocol 등) 세팅 후, upper layer에 올려주는 작업을 수행하면 됨.
+       netif_rx() : upper layer에 올려주는 method
+
+  interrupt handler
+    network driver의 interrupt는 원인은 다양하지만, 주요한 것은 아래 2가지
+    h/w의 status register등을 읽어서 interrupt 원인 check가능할 수 있음.
+      패킷전송완료
+        일반적으로.. 패킷전송완료되면, 네트워크 통계정보, struct sk_buff 리소스 해제 등의 작업이 수행 됨.
+      패킷수신
+        일반적으로.. 패킷수신시, 패킷수신 method를 호출하여 처리
+
+  Receive Interrupt Mitigation
+    패킷 수신량이 많으면 인터럽트가 많이 발생하여 부하가 커지므로, 이 경우는 polling하여 가져오는 게 좋음
+    linux는 NAPI형태 패킷수신...(polling하여 패킷을 가져옴.)
+    NAPI는 H/W도 지원이 되어야 함(수신인터럽트만 활성/비활성 가능, 패킷버퍼링 등 수행 필요)
+    NAPI형태의 수신 로직은 일반적으로 다음과 같음.
+      struct net_device->poll method 등록.
+       수신 interrupt발생시, interrupt handler에서 수신 interrupt disable 및 netif_rx_schedule() call
+      netif_rx_schedule()에 의해 이후시점에 poll method가 호출됨.
+      poll method에서는, 처리가능한 만큼 패킷을 처리(sk_buff생서 및 network layer로 feed(netif_receive_skb()) 후, netif_rx_complete() 호출하여 폴링 완료를 kernel에 알림.
+     
+  MAC Address Resolution
+    kernel은 hardware header를 만들기 위해서 driver code를 call함.(struct net_device->hard_header)
+    일반적으로 ethernet지원만 하면 된다면 kernel에서 제공하는 ehter_setup()에 의해서 default method(ARP쿼리결과로 hardware header를 만듦.)가 자동 세팅 됨.
+    만약 다른 작업 등 이 필요한 경우(ex. p2p link여서 ARP가 불필요...) 직접 해당 method를 작성하면 됨.
+
+  Custom ioctl
+    ioctl() systemcall이 호출되면 struct net_device->do_ioctl method가 호출 됨. 전달받는 struct ifreq* 가 user space와의 데이터임.(read/write( by function return))
+
+  Statistical Information
+    struct net_deivce->get_stats method를 통해서 nic의 통계정보를 return할 수 있음.
+
+  Multicast
+    multicast packet 특정 group에 속한 host들에게 전달되는 패킷
+     복잡한 작업은 userspace, kernel에서 대부분 수행하므로 nic driver에서는 특별히 할 건 없음
+    대신, 어떤 multicast 패킷을 수신할지에 대한 multicast list정보에 대한 정보는 가지고 있어야하며, 이는 HW 의존적임
+       multicast지원여부에 따라 nic HW는 3가지 카테고리로 나눠 wla.
+         1. multicast지원안함(unicast, broadcast만 지원) : 전체 패킷을 수신하여야 multicast처리가 가능함.(부하많음)
+          2. 모든 multicast패킷을 수신함 : 1보다는 좋음. 부하도 적음
+         3. multicast list정보에 속해있는 multicast패킷만 수신함. 젤 조음
+    multicast 를 지원하기 위해 중요 구조체, 데이터, 플래그는 다음과 같음
+      net_device->set_multicast_list, net_device->mc_list, net_device->mc_ount
+      IFF_MULTICAST, IFF_ALLMULTI, IFF_PROMISC
+
 network device driver tutorial : https://linuxgazette.net/issue93/bhaskaran.html
+                                 https://bootlin.com/doc/legacy/network-drivers/network-drivers-lab.pdf(조금 최신인 듯)
+                                 https://docs.oracle.com/cd/E37670_01/E52461/html/ch06s07.html
+                                 https://awkman.gitbooks.io/linux-networking-notes/content/setup_struct_netdevice.html
 
 milestone 3. customizing(*필요시)
  

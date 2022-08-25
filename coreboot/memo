@@ -1,5 +1,5 @@
 memo
-next : 빌드스크립트 상세분석(각 stage별 소스코드 생성절차...(큰흐름위주) .ex. create_cc_template)
+next : 빌드스크립트 상세분석(각 stage별 소스코드 생성절차...(큰흐름위주) .ex. create_cc_template), gnu make chapter 6 보면 도움되지않을까 싶음..(6.3.2. ㄱㄱ)
 다음에할거 : 대강 큰 흐름은 다본듯함. tutorial qemu기반 실행도 해봄.(잘됨).
           LinuxBoot coreboot에서 빌드하는 과정다봄. 실행도 해봄.
           payload가 CBFS에 추가되고, 어떻게 load되는 지 큰 흐름 분석완료함.

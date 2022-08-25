@@ -1,4 +1,4 @@
-next : system call 관련 코드 상세분석
+next : system call entry 코드(entry_SYSCALL_64) 분석(176 line부터.).
 
 kernel systemcall source analysis
 
@@ -12,15 +12,52 @@ system call
 interrupt!
   entry_SYSCALL_64
     do_syscall_64
-      system call!
-        sys_call_table[SYSCALL]
+      sys_call_table[SYSCALL] -> 실제 시스템콜 루틴.
+
+  system call ftrace시 다음과 같은 trace가 출력됨. 
+    do_syscall_64
+      __x64_sys_sendto
+        __sys_sendto
+
+    ./arch/x86/include/asm/syscall_wrapper.h파일의 __SYSCALL_DEFINEx() macro 참조.
+    do_syscall_64
+      sys_call_table[SYSCALL] 
+    macro 처리에 의해 systemcall과정에서, sys_call_table[SYSCALL]은 __x64_sys_sendto를 호출.
+    __x64_sys_sendto는 macro(__SYS_STUBx())에 의해 __se_sys_sendto()를 호출하고
+    __se_sys_sendto()에서 __do_sys_sendto 호출
+    __do_sys_sendto()에서(SYSCALL_DEFINE()의 {}로 작성된 본체) __sys_sendto를 호출하게 됨
 
 syscall_init
+  syscall, sysenter instruction 실행을 위해 MSR들을 적절한 값으로 세팅.
   entry_SYSCALL_64 가 64bit systemcall entry임.
+  *intel 64bit arch의 경우 MSR register기반으로 systemcall이 실행 됨.
 
 sys_call_table
   kernel build과정에서 system call table(syscall_64.tbl)을 사용하여 header가 생성되며
   해당 header파일을 include하여 sys_call_table을 population 함.
+
+./arch/x86/entry/entry_64.S
+145-276
+  entry_SYSCALL_64
+  153-168
+    gs register값을 변경(rsp register값이 변경됨.)
+     이 후, 새로운 stack에 필요한 값들을 push.
+  172-175
+     call do_syscall_64 
+
+systemcall x86-64 arch 관련 개요
+MSR 기반으로 systemcall 처리.
+관련 register들은 아래와 같음
+  MSR_STAR : syscall instruction 실행 시 사용 됨, 사용할 CS, SS 의 값.
+  MSR_LSTAR : syscall instruction 실행 시 사용 됨, 사용할 address(instruction pointer) 값
+
+  MSR_CSTAR : sysenter instruction 실행 시 사용 됨, 사용할 address(instruction pointer) 값(compatibility mode인 경우)
+  MSR_IA32_SYSENTER_CS : systenter instruction 실행 시 사용 됨, 사용 할 CS의 값
+  MSR_IA32_SYSENTER_ESP : systenter instruction 실행 시 사용 됨, 사용 할 RSP(stack pointer)의 값
+  MSR_IA32_SYSENTER_EIP : systenter instruction 실행 시 사용 됨, 사용 할 address(instruction pointer) 의 값
+                          linux의 경우, MSR_CSTAR와 동일 값이지만, cpu mode에따라 사용하는 값이 다른 듯함.
+
+system call 진입 instruction에 따라서, 특정 MSR값을 각 레지스터(CS, SS, RSP, RIP 등..) 로드하여 function(MSR_LSTAR, MSR_CSTAR, MSR_IA32_SYSENTER_EIP)을 실행시킴.
 
 참조
   https://0xax.gitbooks.io/linux-insides/content/SysCall/linux-syscall-2.html

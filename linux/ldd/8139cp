@@ -9,8 +9,8 @@ deep하게 볼 목록
 (v)interrupt
 (v)DMA
 PCI
-  pci_register_driver : 좀 더 봐야할 듯... 엄청 개괄적인 내용만 ... 봄.
-  pci_enable_device 
+  (v)pci_register_driver
+  (v)pci_enable_device
   pci_request_regions 
   pci_resource_start 
   pci_resource_len
@@ -265,5 +265,8 @@ rtl8139 programming guide로 구글링..
 https://wiki.osdev.org/PCI (PCI 설명)
 https://stackoverflow.com/questions/31330039/when-linux-calls-pci-drivers-probe-function (PCI)
 https://codeofconnor.com/how-the-linux-kernel-detects-pci-devices-and-pairs-them-with-their-drivers/ (PCI)
+https://en.wikipedia.org/wiki/PCI_configuration_space
+pci spec
+  pci21.pdf 참조
 8139 datasheet
   http://realtek.info/pdf/rtl8139cp.pdf
