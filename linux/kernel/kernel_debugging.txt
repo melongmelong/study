@@ -1,0 +1,75 @@
+next : crash 최신버전 빌드해서 사용...(crash 7.2.8 구동한거 gdb확인 시, readmem() 함수가 무한 recursion 수행으로 확인 됨)
+kernel debugging 방법/tool 등... 정리
+
+ftrace
+  Definition : ftrace (Function Tracer) is a tracing framework for the Linux kernel. (wikipedia)
+               Although its original name, Function Tracer, came from ftrace's ability to record information related to various function calls performed while the kernel is running, ftrace's tracing capabilities cover a much broader range of kernel's internal operations.
+
+  Kernel에서 제공하는 기능이므로, 아래 kernel config on되어야 함.(*이름 등은 버전별 살짝 상이할 수 있음)
+    the kernel configuration parameters that should be enabled are:
+    CONFIG_FUNCTION_TRACER
+    CONFIG_FUNCTION_GRAPH_TRACER
+    CONFIG_STACK_TRACER
+    CONFIG_DYNAMIC_FTRACE
+
+
+  Usage
+    /sys/kernel/debug/tracing 하위 파일들을 통해서 커널트래이싱 설정하고, 해당 디렉토리의 trace파일로 트래이싱 로그를 볼 수 있음.
+    /sys/kernel/debug/tracing/tracing_on : tracing을 on/off
+    /sys/kernel/debug/tracingcurrent_tracer : tracer 종류 를 설정
+    /sys/kernel/debug/tracing/buffer_size_kb : trace파일의 최대 사이즈로 보면 됨
+    /sys/kernel/debug/tracing/options/func_stack_trace : function stack trace 를 출력할지 on/off
+    /sys/kernel/debug/tracing/set_ftrace_filter : tracing시 필터링.
+    /sys/kernel/debug/tracing/trace : tracing on인 경우, 디버그로그가 남음.
+    *경로는 살짝 상이할 수 있음.
+
+  참고
+    https://lwn.net/Articles/365835/
+    https://en.wikipedia.org/wiki/Ftrace
+
+crash
+  Definition
+    Analyze Linux crash dump data or a live system (man page, man7.org)
+       Crash is a tool for interactively analyzing the state of the
+       Linux system while it is running, or after a kernel crash has
+       occurred and a core dump has been created by the netdump,
+       diskdump, LKCD, kdump, xendump kvmdump or VMware facilities
+  
+  crash pkg설치 필요할 수 있음.
+
+  Usage
+    live system에서 실행 : $ crash
+    dumpfile에 대해 실행 :  $ crash [kernel img] [dump] 
+      *kernel img(NAMELIST) : 압축된 bzImage가 아닌, 압축전의 ELF형태의 vmlinux 파일(uncompressed kernel img)이어야 함. 해당 파일은 debug info포함하여 빌드 필요함(커널빌드 시 -g option...)
+
+     위처럼 입력하면 gdb비슷한 CLI 확인할 수 있고, 다양한 명령어를 통해서 분석진행하면 됨.
+       ex. crash> 
+
+    dump생성방법
+      kdump통해서 core 획득 필요함.
+        kdump : kdump is a feature of the Linux kernel that creates crash dumps in the event of a kernel crash.(wikipedia)
+        https://en.wikipedia.org/wiki/Kdump_(Linux)
+
+        kdump는 간단하게... kexec를 통해 dump capture kernel을 부팅하고, dump capture kernel에서 crash kernel의 memory dump를 획득함(이것도 wikipedia참조)
+
+        *kexec : abbreviated from kernel execute and analogous to the Unix/Linux kernel call exec, is a mechanism of the Linux kernel that allows booting of a new kernel from the currently running one (wikipedia)
+        *ubuntu환경에서 무지성으로 아래처럼 패키지 설치하면,,, 잘 되긴 함. 내용 좀 더 확인해봐야함.
+         https://siisee111.medium.com/ubuntu18-04-core-crash-dump-%EB%94%B0%EB%8A%94-%EB%B0%A9%EB%B2%95-183b4f56cfb
+        *dump 캡쳐하고... 실행했는데 안됨...(SegFault떠서 혹시나해서 ulimit -s unlimited 하고 실행하면 OOM돔..) 아마도..... 시스템리소스(특히 메모리) 부족인듯... 이거 해결방법같은게 있나도 봐야할 듯 => 확인결과, 현재기준 최신버전(8.2) 사용하면 됨. 안된거는 7.6이었나 그랬음... ㅡㅡ
+                    
+  참고
+    https://man7.org/linux/man-pages/man8/crash.8.html
+    https://github.com/crash-utility/crash
+
+
+kdb/kgdb
+  Definition
+    kernel이 제공하는 커널디버거 front-end. 
+    kdb, kgdb 두개가 있는데, 둘 다 디버깅목적인데 쓰임이 다르다고 보면 될 듯함.
+    *kgdb의 경우 2개 머신 필요(target machine : 디버깅 대상 시스템, development machine : 디버깅툴 실행 할 시스템)
+    kernel 의 특정 option이 enable되어야 사용가능.
+
+  Usage
+
+  참고
+    https://docs.kernel.org/dev-tools/kgdb.html

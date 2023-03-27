@@ -1,5 +1,6 @@
-next : deep하게 볼 목록 확인(PCI 확인(8139cp 드라이버에서 사용하는 PCI call별 정확한 의미, PCI irq/addr등은 언제 세팅되는 지에 대해 확인), ldd대충은 봤고 코드나 더 딥하게(ex. h/w구성) 볼 부분 찾아보고 다음 넘어가면 될 듯.)
-      
+next : 금주(~2/19)까지만 실제 동작확인도 해보고 디버그로그도 추가해보고 하면서... 코드분석더하고 다음단계로 걍 넘어가는 게 좋을 듯...(VM은 generic3 사용) 
+      (v)진짜 대강의 큰 그림만 알겠음... 되게 상세하게는 전혀 모름. 다시 리뷰 ㄱ
+      (v)NAPI 확인...~(8139cp NAPI관련 코드 확인~)
       (v)- 데이터 송수신(NAPI..., https://wiki.linuxfoundation.org/networking/napi 참고하면 좋을 듯, 구글링이랑...)
       (v)- 인터럽트루틴(cp_interrupt, interrupt 등록루틴(cp_open))
       (v)- MII(mii_check_media function)
@@ -8,13 +9,13 @@ next : deep하게 볼 목록 확인(PCI 확인(8139cp 드라이버에서 사용�
 deep하게 볼 목록
 (v)interrupt
 (v)DMA
-PCI
+(v)PCI
   (v)pci_register_driver
   (v)pci_enable_device
-  pci_request_regions 
-  pci_resource_start 
-  pci_resource_len
-NAPI
+  (v)pci_request_regions (결국 __request_region을 호출... 해당 부분이랑 연관지어서 확인 필요해보임)
+  (v)pci_resource_start
+  (v)pci_resource_len
+(v)NAPI
 (v)8139cp register(datasheet구했음, 참고해서 코드 보면 좋을 듯)
 
 rtl8139cp(net/ethernet/realtk/8139cp.c) qemu ubuntu machine에서 사용... 얘가나을 듯
@@ -236,6 +237,15 @@ net/ethernet/realtk/8139cp.c
     struct pci_driver 초기화
   2134
     module_pci_driver 선언(module_init, module_exit이 선언됨)
+
+-------------------------
+실제 동작 확인
+디바이스 드라이버 관련 콜트래이스
+초기화
+
+송신
+
+수신
 
 --------------------------
 참고

@@ -161,7 +161,7 @@ I/O map(memory mapped방식)
 I/O port처럼 i/o memory를 위한 메모리 등록/해제 기능이 있지만 꼭 필요step은 아님.
 => 해당 i/o addr range에 대한 struct resource를 생성해서 kernel에 등록, 제거 수행함.(like i/o port)
 ioremap을 통해 물리 i/o addr를 kernel address space로 매핑후 사용필요
-ioremap의 return addr보다는 wrapper function들 사용하는 게 권장됨.(portability 및 ioremap의 return addr은 직접 사용가능하지 않을 수 있음 등.. 의 사유)
+ioremap의 return addr보다는 wrapper function들(ex. readv, writeb, etc...) 사용하는 게 권장됨.(portability 및 ioremap의 return addr은 직접 사용가능하지 않을 수 있음 등.. 의 사유)
 
 device 접근시에는 최적화 작업이 발생하면 안되므로, 이를 위해 barrier 퍼실리티가 있음.
   
@@ -221,7 +221,14 @@ PCI
 PCI Addressing
   PCI 장치들은 bus number, device number, function number의 값으로 구분됨.
   linux는 bus들을 포함하는 domain개념을 가지고 있음.
-  리눅스는 직접 address기반 device 액세스보다는 pci_dev 구조체를 사용하여 pci device에 접근함.
+  리눅스는 직접 addres 기반 device 액세스보다는 pci_dev 구조체를 사용하여 pci device에 접근함.
+  *기본적으로 모든 CPU<->PCI장치 or CPU<->Memory 통신은 PCI host bridge(cpu,memory,다른pci bus(장치?)를 연결하는 역할)를 통함.
+    즉, cpu <--> host_bridge <-->(pci) pci_dev 과 같은 개념... (PCI local bus spec 1.4절 참조)
+                      ^
+                      |
+                      v
+                    memory 
+                   
 
 PCI device는 3가지 address space가 있음
   PCI memory locations
@@ -246,7 +253,7 @@ Configuration Register
   첫 64bytes는 표준이며 나머지는 device dependant함.
   endianess : little endian
   3-5가지의 field는 device를 구분함(ex. vendorID, deviceID, class...)
-  I/O port address 0xCF8, 0xCFC 를 통해서 접근.(해당 address는 Host to PCI Bridge(Host Bridge) device로 접근하는 듯. 이 후, Host Bridge에서 값에 따른 하드웨어적인 동작수행 pci21.pdf(PCI local bus spec) 3.7.4.1참조)
+  I/O port address 0xCF8, 0xCFC 를 통해서 접근.(해당 address는 Host to PCI Bridge(Host Bridge) device로 접근함. 이 후, Host Bridge에서 값에 따른 하드웨어적인 동작수행 pci21.pdf(PCI local bus spec) 3.7.4.1참조)
 
 struct pci_device_id
   driver가 지원하는 pci device의 type을 정의. struct pci_driver의 id_table필드에 세팅됨.(이후 kernel에서 해당 id_table에 맞는 device찾은 경우 struct pci_driver의 probe callback을 해당 값과 함께 호출..)
@@ -294,6 +301,11 @@ Accessing the Configuration Space
 Accessing the I/O and Memory Spaces
   pci device가 사용하는 I/O or Memory space는 Configuration Space로부터 가져올 수 있음.
   kernel에서는 Configuration Space를 직접 접근하는 것 대신 아래 function들을 지원함.
+  pci_request_region()
+    PCI BAR 데이터를 기반으로, kernel에 해당 영역(i/o port or mmio address)에 대한 점유한다는 것을 알림.(mark)
+    해당 function실패하면, PCI의 BAR에 접근은 불가하다고 보면 됨.
+    *참고. 내부적으로는 결국 __request_region함수를 호출하며, 실제 i/o port, mmio address 할당이 아닌, '해당 영역을 사용한다'를 커널에 등록하는 개념으로 보여짐. 즉, 실제 리소스 할당은 해당 함수가 아닌 다른 로직에 의해서 수행(ex. PCI enumeration일 듯함, PCI spec(pci21.pdf) 6.2.4, 6.2.5참조.(POST나 device independant S/W에서 세팅해야된다는 sentence확인 됨.), PCI configuration space wikipedia-Bus enumeration도 참조.)
+      
   pci_resource_start()
   pci_resource_end()
   pci_resource_flags()
@@ -493,12 +505,44 @@ network drivers
   Receive Interrupt Mitigation
     패킷 수신량이 많으면 인터럽트가 많이 발생하여 부하가 커지므로, 이 경우는 polling하여 가져오는 게 좋음
     linux는 NAPI형태 패킷수신...(polling하여 패킷을 가져옴.)
-    NAPI는 H/W도 지원이 되어야 함(수신인터럽트만 활성/비활성 가능, 패킷버퍼링 등 수행 필요)
+    NAPI는 H/W도 지원이 되어야 함(수신인터럽트만 활성/비활성 가능, 패킷버퍼링(ex. DMA 사용) 등 수행 필요)
     NAPI형태의 수신 로직은 일반적으로 다음과 같음.
       struct net_device->poll method 등록.
        수신 interrupt발생시, interrupt handler에서 수신 interrupt disable 및 netif_rx_schedule() call
       netif_rx_schedule()에 의해 이후시점에 poll method가 호출됨.
       poll method에서는, 처리가능한 만큼 패킷을 처리(sk_buff생서 및 network layer로 feed(netif_receive_skb()) 후, netif_rx_complete() 호출하여 폴링 완료를 kernel에 알림.
+    
+    pdf는 예전꺼고 최근꺼는 인터페이스가 좀 바꼈음
+      struct napi_struct
+        NAPI 사용을 위해 driver가 할당해야만 하는 구조체.
+
+      netif_napi_add / netif_napi_del
+        NAPI 사용을 위해 struct napi_struct구조체를 등록/제거 하는 function
+        netif_napi_add는 다음의 인자를 받음
+          struct netdevice dev, struct napi_struct, poll, wegiht
+          weight : 해당 driver의 가중치. 고대역일수록 더 높은 값(ex. gigabit의 경우 64)
+
+      napi_schedule
+        driver interrupt service routine에서, interrupt disable후 패킷 polling을 위해 해당 함수호출.
+        schedule이되면, poll callback이 호출됨.
+         아래와 같음.
+          if (napi_schedule_prep(napi))
+            __napi_schedule(napi)
+
+      poll callback
+        prototype : int (*poll)(struct napi_struct *napi, int budget);
+        budget : driver의 작업량에 대한 limit수치임. (수신된 패킷 1개당 1개의 작업단위로 보면 됨?. ex. budget이 10이면 최대 10개패킷 수신가능??)
+        netif_receive_skb를 통해서 패킷수신함.(netif_rx 는 사용 X)
+        poll callback은 처리한 작업량을 return해야함.(아마 수신한 패킷갯수인 듯?)
+        kernel은 poll callback이 동시에 여러 cpu에서의 수행을 허용하지 않음.(오직 하나의 cpu에서만 수행을 보장함)
+
+      napi_complete
+        polling을 멈춤.
+   
+
+      
+      https://wiki.linuxfoundation.org/networking/napi 참조
+    
      
   MAC Address Resolution
     kernel은 hardware header를 만들기 위해서 driver code를 call함.(struct net_device->hard_header)
@@ -529,4 +573,4 @@ network device driver tutorial : https://linuxgazette.net/issue93/bhaskaran.html
                                  https://awkman.gitbooks.io/linux-networking-notes/content/setup_struct_netdevice.html
 
 milestone 3. customizing(*필요시)
- 
+

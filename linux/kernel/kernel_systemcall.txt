@@ -1,6 +1,97 @@
-next : system call entry 코드(entry_SYSCALL_64) 분석(176 line부터.).
+next : issuing a system call via systenter/Exiting from the system call 내용확인.(understanding the linux kernel, chapter 10 System Calls, The sysexit instruction)
+         chapter4장이랑 같이 확인해서 정리필요.
+       system call entry 코드(entry_SYSCALL_64) 분석(176 line부터.).
 
 kernel systemcall source analysis
+
+systemcall 개요(understanding linux kernel 기반으로 정리)
+  정의 : a system call (commonly abbreviated to syscall) is the programmatic way in which a computer program requests a service from the kernel of the operating system on which it is executed
+
+  POSIX APIs and System Calls
+    POSIX API != System calls
+    일반적으로 POSIX API들이 System Calls을 wrapping해서 user program이 사용할 수 있도록 기능 제공
+    ex. malloc의 경우 brk system call사용
+
+  System Call Handelr and Service Routines
+    각 system call은 system call handler를 통해서 실행됨. system call 수행은 대략 다음의 순서를 가짐
+    1. system call handler수행(software interrupt 등을 통해). 이 시점에서 User -> Kernel mode로 switch
+    2. system call handler에서 필요한 레지스터들을 kernel stack에 저장
+    3. system call handler에서 실제 system call 호출 후 system call수행.
+    4. system call handler에서 kernel stack에 저장된 레지스터 복구, kernel -> user mode로 switch.
+
+    각 system call은 system call number가 부여되어 있고, 해당 정보를 system call handler 실행할 때 파라미터로 전달함.(ex. %eax register에 system call number를 세팅)
+
+  Entering and Exiting a System Call
+    x86에서는 system call호출 및 exit 방법은 다음과 같음
+      int(int 0x80)-iret instruction을 통해 
+      sysenter-sysexit instruction를 통해
+      kernel의 경우 compatiblility를 고려해야함(ex. libc가 int만 지원하는 경우, sysenter가 없는 프로세서에서 어떻게 처리할 것인지? 등등...)
+    issuing a System Call via the int 0x80 instruction
+      kernel 초기화 시점에 0x80에 대한 interrupt handler가 등록 됨
+        set_system_gate(0x80, system_call)
+        => interrupt descriptor fields를 적절하게 설정. 즉, int 0x80 발생하면, system_call이 수행
+        => system_call이 system call entry point로 볼 수 있음.
+             
+      큰 흐름은 다음과 같음(understanding linux kernel참조)
+        -register를 stack에 저장
+system_call:
+pushl %eax
+SAVE_ALL
+movl $0xffffe000, %ebx /* or 0xfffff000 for 4-KB stacks */ => current process의 thread_info 구조체를 구해옴.
+andl %esp, %ebx
+
+        -do_syscall_trace() //tracing flag(thread_info 구조체)가 set된 경우
+        -system call number validation check
+cmpl $NR_syscalls, %eax
+jb nobadsys
+movl $(-ENOSYS), 24(%esp)
+jmp resume_userspace       //user mode로 복귀 label
+nobadsys:
+         -system call 호출 
+call *sys_call_table(0, %eax, 4)
+
+           -함수리턴값 저장(%eax에 리턴된 시스템콜 리턴값을 스택에 저장함)
+movl %eax, 24(%esp)
+         -flag check.
+cli
+movl 8(%ebp), %ecx
+testw $0xffff, %cx
+je restore_all        //stack에있는 register정보를 reload. 
+         -do_syscall_trace() //tracing flag(thread_info 구조체)가 set된 경우
+         -flag결과에 따라 resume_userpsace / work_pending label로 jmp. 해당 코드들에 의해 실제 시스템콜로부터 복귀전에 둘 다 스케줄링, signal처리 등등을 수행함.
+
+    issuing a System Call via sysenter instruction
+      int 0x80은 sanity check등이 수행되므로 느리다는 단점이있음. systenter는 이런걸 수행하지 않고, User <-> Kernel mode switch 더 빠름.
+      The systenter instruction
+        주요 레지스터
+         SYSENTER_CS_MSR :The Segment Selector of the kernel code segment
+         SYSENTER_EIP_MSR : The linear address of the kernel entry point
+         SYSENTER_ESP_MSR : The kernel stack pointer
+        수행과정
+         1. Copies the content of SYSENTER_CS_MSR into cs .
+         2. Copies the content of SYSENTER_EIP_MSR into eip .
+         3. Copies the content of SYSENTER_ESP_MSR into esp .
+         4. Adds 8 to the value of SYSENTER_CS_MSR , and loads this value into ss .
+
+      The vsyscall page
+        linux kernel이나 cpu가 sysenter지원하지 않을 경우, 호환을 위한 code가 들어있는 page(메모리)
+        execv system call수행하여 user process실행되면 해당 process에 적절한 code를 link함.     
+
+      Entering the system call
+      -__kernel_vsyscall 수행됨(라이브러리에서(ex. standard library) 실행 )
+       -해당 코드에서 stack에 필요 정보들 저장 후 sysenter instruction 수행
+      -sysenter_entry 수행((pointed to by the SYSENTER_EIP_MSR register))
+          필요한 작업들 수행(스택에 필요정보저장, interrupt enable 등)
+      -int 0x80의 시스템콜 절차 수행함(위 내용 참조, system_call label부터 동일하게 수행)
+
+      Exiting from the system call
+        system_call label(int 0x80 systemcall 내용참조)과 동일한 작업 수행.
+         이후, sysenter_entry에서 스택에 저장한 정보들 pop후 User Mode로 switch 및 SYSENTER_RETURN 수행.
+          
+        
+          
+  참고. understanding linux kernel (chapter 10. syustem calls)
+       wikipedia(systemcall)
 
 registering interrupt handler(x64)
 start_kernel
