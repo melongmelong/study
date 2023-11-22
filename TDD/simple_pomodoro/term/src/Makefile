@@ -1,7 +1,28 @@
-.PHONY: all clean
+.PHONY: all clean include
 
-all:
-	echo "dummy all"
+TOPDIR=$(CURDIR)/..
+
+TARGET=main
+EXOBJS=dummy_src.o
+INOBJS=dummy_main.o
+OBJS=$(EXOBJS) $(INOBJS)
+INCLUDE=$(TOPDIR)/Makefile.include
+
+all: $(TARGET) include
+
+$(TARGET): $(OBJS)
+	gcc -o $@ $?
+
+%.o : %.c
+	gcc -c $<
+
+%.o : %.c %.h
+	gcc -c $<
+
+include:
+	echo "SRC_INCDIR=$(CURDIR)" 1>>$(INCLUDE)
+	echo "SRC_OBJDIR=$(CURDIR)" 1>>$(INCLUDE)
+	echo "SRC_OBJS=$(addprefix $(CURDIR)/, $(EXOBJS))" 1>>$(INCLUDE)
 
 clean:
-	echo "dummy clean"
+	rm -rf $(OBJS) $(TARGET) $(INCLUDE)

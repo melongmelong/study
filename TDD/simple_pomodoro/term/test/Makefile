@@ -1,7 +1,26 @@
 .PHONY: all clean
 
-all:
-	echo "dummy all"
+TOPDIR = $(CURDIR)/..
+
+include $(TOPDIR)/Makefile.include
+
+CUNIT_INCDIR = $(CURDIR)/CUnit/include
+CUNIT_LIBDIR = $(CURDIR)/CUnit/lib
+CUNIT_LIB = -lcunit
+
+TARGET=dummy_main
+OBJS=dummy_main.o
+
+all: $(TARGET)
+
+%.o : %.c
+	gcc -c $< -I$(CUNIT_INCDIR) -I$(SRC_INCDIR)
+
+%.o : %.c %.h
+	gcc -c $< -I$(CUNIT_INCDIR) -I$(SRC_INCDIR)
+
+$(TARGET) : $(OBJS)
+	gcc -o $@ $(OBJS) $(SRC_OBJS) -L$(CUNIT_LIBDIR) $(CUNIT_LIB)
 
 clean:
-	echo "dummy clean"
+	rm -rf $(OBJS) $(TARGET)
