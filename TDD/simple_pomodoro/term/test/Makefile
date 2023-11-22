@@ -8,8 +8,8 @@ CUNIT_INCDIR = $(CURDIR)/CUnit/include
 CUNIT_LIBDIR = $(CURDIR)/CUnit/lib
 CUNIT_LIB = -lcunit
 
-TARGET=dummy_main
-OBJS=dummy_main.o
+TARGET=main
+OBJS=main.o
 
 all: $(TARGET)
 
