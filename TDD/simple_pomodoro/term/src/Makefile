@@ -3,8 +3,8 @@
 TOPDIR=$(CURDIR)/..
 
 TARGET=main
-EXOBJS=dummy_src.o
-INOBJS=dummy_main.o
+EXOBJS=input.o
+INOBJS=main.o
 OBJS=$(EXOBJS) $(INOBJS)
 INCLUDE=$(TOPDIR)/Makefile.include
 
