@@ -12,6 +12,7 @@ TARGET=main
 OBJS=main.o
 
 all: $(TARGET)
+	LD_LIBRARY_PATH=$(CUNIT_LIBDIR) $(CURDIR)/$(TARGET)
 
 %.o : %.c
 	gcc -c $< -I$(CUNIT_INCDIR) -I$(SRC_INCDIR)

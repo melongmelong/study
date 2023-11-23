@@ -1,4 +1,4 @@
-int dummy_src(void)
+int is_valid_input(char *input)
 {
-	return 0;
+	return 1;
 }
