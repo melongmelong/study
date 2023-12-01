@@ -7,7 +7,13 @@
 
 void test_input(void)
 {
-	CU_ASSERT(is_valid_input("start") == 1);
+	CU_ASSERT(is_valid_input(INPUT_START) == 1);
+	CU_ASSERT(is_valid_input(INPUT_START" ") == 0);
+
+	CU_ASSERT(is_valid_input(INPUT_QUIT) == 1);
+	CU_ASSERT(is_valid_input(INPUT_QUIT" ") == 0);
+
+	CU_ASSERT(is_valid_input("sdkfjsdkfj ") == 0);
 }
 
 int main(int argc, char **argv)
