@@ -5,6 +5,7 @@
 
 #include "input.h"
 #include "status.h"
+#include "time.h"
 
 void test_input(void)
 {
