@@ -3,7 +3,7 @@
 TOPDIR=$(CURDIR)/..
 
 TARGET=main
-EXOBJS=input.o
+EXOBJS=input.o status.o
 INOBJS=main.o
 OBJS=$(EXOBJS) $(INOBJS)
 INCLUDE=$(TOPDIR)/Makefile.include
@@ -11,13 +11,13 @@ INCLUDE=$(TOPDIR)/Makefile.include
 all: $(TARGET) include
 
 $(TARGET): $(OBJS)
-	gcc -o $@ $?
+	gcc -g -o $@ $?
 
 %.o : %.c
-	gcc -c $<
+	gcc -g -c $<
 
 %.o : %.c %.h
-	gcc -c $<
+	gcc -g -c $<
 
 include:
 	echo "SRC_INCDIR=$(CURDIR)" 1>>$(INCLUDE)
