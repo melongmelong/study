@@ -18,6 +18,7 @@ char* get_input(void)
 	static char buff[128] = {0};
 	char *p = NULL;
 
+	printf(">");
 	p = fgets(buff, sizeof(buff), stdin);
 	if (p == NULL) {
 		return "";
