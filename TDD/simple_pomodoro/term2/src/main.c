@@ -22,18 +22,21 @@ int main(int argc, char **argv)
 {
 	char *input;
 	int status;
+	int exit = 0;
 
-	input = get_input();
+	do {
+		input = get_input();
 
-	set_status(input);
-	status = get_status();
+		set_status(input);
+		status = get_status();
 
-	switch (status) {
-		case STATUS_QUIT:
-			printf("quit!\n");
-			return 0;
-		break;
-	}
+		switch (status) {
+			case STATUS_QUIT:
+				printf("quit!\n");
+				exit = 1;
+			break;
+		}
+	} while (!exit);
 
 	return 0;
 }
