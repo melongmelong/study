@@ -3,7 +3,7 @@
 TOPDIR=$(CURDIR)/..
 
 TARGET=main
-EXOBJS=
+EXOBJS=status.o
 INOBJS=main.o
 OBJS=$(EXOBJS) $(INOBJS)
 INCLUDE=$(TOPDIR)/Makefile.include
