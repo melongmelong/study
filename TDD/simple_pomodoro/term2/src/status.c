@@ -1,15 +1,15 @@
 #include <string.h>
 #include "status.h"
 
-int g_status = -1;
+int g_status = STATUS_NONE;
 
 void set_status(char *input)
 {
 	if (strcmp(input, "quit") == 0) {
-		g_status = 0;
+		g_status = STATUS_QUIT;
 	}
 	else {
-		g_status = -1;
+		g_status = STATUS_NONE;
 	}
 }
 

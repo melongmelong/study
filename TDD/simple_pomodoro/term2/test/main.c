@@ -8,13 +8,13 @@
 void test_quit(void)
 {
 	set_status("start");
-	CU_ASSERT(get_status() != 0);
+	CU_ASSERT(get_status() != STATUS_QUIT);
 
 	set_status("quit");
-	CU_ASSERT(get_status() == 0);
+	CU_ASSERT(get_status() == STATUS_QUIT);
 
 	set_status("abcd");
-	CU_ASSERT(get_status() != 0);
+	CU_ASSERT(get_status() != STATUS_QUIT);
 }
 
 int main(int argc, char **argv)

@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <string.h>
 #include "status.h"
 
 char *get_input(void)
@@ -28,7 +29,7 @@ int main(int argc, char **argv)
 	status = get_status();
 
 	switch (status) {
-		case 0:
+		case STATUS_QUIT:
 			printf("quit!\n");
 			return 0;
 		break;
