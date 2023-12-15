@@ -5,6 +5,18 @@
 
 #include "status.h"
 
+void test_start(void)
+{
+	set_status("start");
+	CU_ASSERT(get_status() == STATUS_POMO);
+
+	set_status("quit");
+	CU_ASSERT(get_status() != STATUS_POMO);
+
+	set_status("skjfksjfdkjskdf");
+	CU_ASSERT(get_status() != STATUS_POMO);
+}
+
 void test_quit(void)
 {
 	set_status("start");
@@ -25,6 +37,7 @@ int main(int argc, char **argv)
 
 	test_suite = CU_add_suite("test_suite", NULL, NULL);
 
+	CU_add_test(test_suite, "test_start", test_start);
 	CU_add_test(test_suite, "test_quit", test_quit);
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);

@@ -3,7 +3,8 @@
 
 enum {
 	STATUS_NONE = -1,
-	STATUS_QUIT
+	STATUS_QUIT,
+	STATUS_POMO
 };
 
 void set_status(char *input);

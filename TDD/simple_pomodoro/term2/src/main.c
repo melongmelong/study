@@ -33,10 +33,13 @@ int main(int argc, char **argv)
 		status = get_status();
 
 		switch (status) {
+			case STATUS_POMO:
+				printf("start pomo!\n");
+				break;
 			case STATUS_QUIT:
 				printf("quit!\n");
 				exit = 1;
-			break;
+				break;
 		}
 	} while (!exit);
 
