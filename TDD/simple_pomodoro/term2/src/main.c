@@ -4,8 +4,10 @@
 
 char *get_input(void)
 {
-	static char input[16];
-	char *p;
+	static char input[16] = {'\0'};
+	char *p = NULL;
+
+	input[0] = '\0';
 
 	printf(">");
 	fgets(input, sizeof(input), stdin);
@@ -20,8 +22,8 @@ char *get_input(void)
 
 int main(int argc, char **argv)
 {
-	char *input;
-	int status;
+	char *input = NULL;
+	int status = STATUS_NONE;
 	int exit = 0;
 
 	do {
