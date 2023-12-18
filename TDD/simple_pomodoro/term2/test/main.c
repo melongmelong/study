@@ -4,6 +4,7 @@
 #include "CUnit/Console.h"
 
 #include "status.h"
+#include "time.h"
 
 void test_start(void)
 {
@@ -29,6 +30,12 @@ void test_quit(void)
 	CU_ASSERT(get_status() != STATUS_QUIT);
 }
 
+void test_time(void)
+{
+	CU_ASSERT(get_pomo_time() == 25);
+	CU_ASSERT(get_pomo_time() != 5);
+}
+
 int main(int argc, char **argv)
 {
 	CU_pSuite test_suite = NULL;
@@ -39,6 +46,7 @@ int main(int argc, char **argv)
 
 	CU_add_test(test_suite, "test_start", test_start);
 	CU_add_test(test_suite, "test_quit", test_quit);
+	CU_add_test(test_suite, "test_time", test_time);
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);
 	CU_basic_run_tests();

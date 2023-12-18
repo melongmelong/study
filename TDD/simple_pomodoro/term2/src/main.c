@@ -25,6 +25,7 @@ int main(int argc, char **argv)
 	char *input = NULL;
 	int status = STATUS_NONE;
 	int exit = 0;
+	int cnt = 0;
 
 	do {
 		input = get_input();
@@ -35,6 +36,10 @@ int main(int argc, char **argv)
 		switch (status) {
 			case STATUS_POMO:
 				printf("start pomo!\n");
+				for (cnt = 1; cnt <= get_pomo_time(); cnt++) {
+					sleep(1);
+					printf("elapsed time(pomo):%d\n", cnt);
+				}
 				break;
 			case STATUS_QUIT:
 				printf("quit!\n");
