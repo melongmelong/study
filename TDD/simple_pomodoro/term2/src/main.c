@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <string.h>
+#include <unistd.h>
 #include "status.h"
+#include "time.h"
 
 char *get_input(void)
 {
