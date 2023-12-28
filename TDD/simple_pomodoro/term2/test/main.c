@@ -35,8 +35,12 @@ void test_time(void)
 	CU_ASSERT(get_pomo_time() == 25);
 	CU_ASSERT(get_pomo_time() != 5);
 	
-	CU_ASSERT(get_break_time() == 5);
-	CU_ASSERT(get_break_time() != 25);
+	CU_ASSERT(get_break_time(1) == 5);
+	CU_ASSERT(get_break_time(1) != 25);
+
+	CU_ASSERT(get_break_time(4) == 15);
+	CU_ASSERT(get_break_time(8) == 15);
+	CU_ASSERT(get_break_time(12) == 15);
 }
 
 int main(int argc, char **argv)

@@ -26,6 +26,7 @@ int main(int argc, char **argv)
 {
 	char *input = NULL;
 	int status = STATUS_NONE;
+	int pomo_cnt = 1;
 	int exit = 0;
 	int cnt = 0;
 
@@ -44,10 +45,12 @@ int main(int argc, char **argv)
 				}
 
 				printf("start break!\n");
-				for (cnt = 1; cnt <= get_break_time(); cnt++) {
+				for (cnt = 1; cnt <= get_break_time(pomo_cnt); cnt++) {
 					sleep(1);
 					printf("elapsed time(break):%d\n", cnt);
 				}
+
+				pomo_cnt++;
 				break;
 			case STATUS_QUIT:
 				printf("quit!\n");
