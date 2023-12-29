@@ -38,16 +38,16 @@ int main(int argc, char **argv)
 
 		switch (status) {
 			case STATUS_POMO:
-				printf("start pomo!\n");
+				printf("pomo : %d, total:%dpomos\n", get_pomo_time(), pomo_cnt);
 				for (cnt = 1; cnt <= get_pomo_time(); cnt++) {
 					sleep(1);
-					printf("elapsed time(pomo):%d\n", cnt);
+					printf("pomo : %d, total:%dpomos\n", get_pomo_time() - cnt, pomo_cnt);
 				}
 
-				printf("start break!\n");
+				printf("break : %d, total:%dpomos\n", get_break_time(pomo_cnt), pomo_cnt);
 				for (cnt = 1; cnt <= get_break_time(pomo_cnt); cnt++) {
 					sleep(1);
-					printf("elapsed time(break):%d\n", cnt);
+					printf("break : %d, total:%dpomos\n", get_break_time(pomo_cnt) - cnt, pomo_cnt);
 				}
 
 				pomo_cnt++;
