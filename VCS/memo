@@ -1,0 +1,343 @@
+next : 완료
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : git
+학습이유
+  널리쓰이는 버전 컨트롤 소프트웨어
+  현업에서도 사용중인데 지식의 빈틈이 있어 능숙하지 못함.(그러려니 하고 사용중)
+
+학습목표
+  자주 쓰는 기능에 대한 지식의 빈틈 제거
+  목록
+    (v)staging area?(관련 명렁어 : git add)
+    (v)branch관리?(관련 명령어 : git checkout, git branch)
+    (v)remote branch?(관련 명령어 : git pull, git push, git fetch, git remote)
+    (v)merge?(관련 명령어 : git merge)
+    (v)rebase?(관련 명령어 : git rebase)
+    (v)submodule? (관련 명령어 : git submodule)
+    (v)stash? (관련 명령어 : git stash)
+    (v)tag?(관련 명령어 : git tag)
+    (v)conflict resolution?(관련 명령어 : git merge)
+    git-flow *요건 나중에 따로 ...(git사용법보다는 git을 사용한 브랜치관리전략이므로...)
+    
+학습자료
+  git Document(https://git-scm.com/book/en/v2)
+  구글링
+  github 계정 사용하면 편할 듯함
+
+학습계획
+  milestone1. 학습목표-목록 순서대로(git Document참조하면 될듯) 개념정리 + 실제 사용(먼가 시나리오 짜야될 필요도 있을 듯함)해보기.
+  
+=======================
+milestone1. 학습목표-목록 순서대로(git Document참조하면 될듯) 개념정리 + 실제 사용(먼가 시나리오 짜야될 필요도 있을 듯함)해보기
+7단계. 목표 : 모든 목록 한번씩 훑어보기(간단하게(ex. 이런 용어가 있고 대충 이런 느낌인가? 정도)) + 8단계에서 확인할 내용 정리
+-staging area
+git repo의 파일은 다음 2가지 상태(tracked / untracked) 중 하나임.
+  tracked : 아래 3가지 상태
+    modified : staged or committed 상태의 파일이 수정됨.
+    staged : 다음 commit에 포함 될 준비가 됨. staging area에 추가.(ex. git add)
+    committed : commit됨(git commit)
+  untracked : tracked 상태 빼고 모두.(ex. 새로생성된 파일 *staged도 안됨)
+
+git add로 staging area에 포함가능(tracked상태로 만듦)
+git rm으로 staging area로부터 제거가능(untracked상태로 만듦)
+git mv는 파일명 변경해서 staging area로 넣을수있는데 실제로는 아래 3커맨드로 볼 수 있음.
+  $ mv README.md README
+  $ git rm README.md
+  $ git add README
+git commit으로 staing area에 있는 내역들을 commit함.
+
+-branch관리
+git은 branch관리(생성, branch이동 등)이 빠르게(lightweight) 처리 됨(git의 branching model은 killer-feature라고도 할 수 잇음)
+
+branch : commit을 가리키는 포인터로 볼 수 있음. ex) branch생성은 현재 내가 가리키고있는 commit(=HEAD)을 가리키는 새로운 포인터를 생성한다로 생각할 수 있음.
+
+HEAD : 현재 내가 작업중인 브랜치를 의미. 실제로는 HEAD가 작업중인 branch를 가리킨다고 볼 수 있음.
+  git commit하게되면 HEAD와 HEAD가 가리키는 브랜치 모두 move forward.
+  git checkout으로 브랜치이동하면 HEAD도 이동하게 됨(즉 변경된 브랜치를 가리키게 됨.)
+
+참고. branch 관련 주요 용어
+  snapshot
+    git은 타 VCS와 달리 변경내역들(delta-based)가 아닌 snapshot(당시 repository의 상태/형태)들(stream of snapshots)로 봄
+
+  commit / tree / blobs : 하나의 git commit은 이 3가지 요소로 이루어져 있다라고 볼 수 있음.
+    commit : commit관련 정보를 의미. 특히 snapshot(=tree) 정보를 가리킴
+    tree : snapshot이라고도 볼 수 있으며, blob정보를 가리킴
+    blobs : 실제 데이터라고도 볼 수 있음.
+
+-merge
+merge
+  branch를 merge할 수 있음.
+
+  merge방법
+    merge당할 branch로 git checkout
+    git merge [merge할 branch] 수행
+
+  3-way merge. 
+    git의 merge방법(개념적으로)
+     2개의 commit(merge할 브랜치 commit, merge당할 브랜치 commit)과 2개 commit에 대한 공통 조상 commit을 사용하여 merge수행.
+     => 결과적으로 이 3개 commit merge결과에 대한 commit이 생성됨.
+
+    *참고. C:Common-Ancestor, C':머지당할branch commit, C''':merge할 branch commit, M:merge된 commit(Merge commit)
+    git document가 더 상세함.
+    *C,C',C'''로 3way merge수행
+    C - C' (branch1 *merge당할 branch)
+      \
+       -C'' - C''' (branch2 *merge할 브랜치)
+
+    *위를 merge한 결과.(M)
+    C - C' ------------M (branch1 *merge당할 branch)
+      \              /   
+       -C'' - C'''--- (branch2 *merge할 브랜치)
+
+-rebase
+  개념 : merge처럼 commit을 합치는 방법. merge든 rebase든 최종 작업물 결과는 동일함.
+        단, merge와 차이점은 rebase는 특정 커밋을 또 다른 커밋지점부터 재적용 수행하는 방식임.
+       => rebase를 함으로써 commit 내역이 linear하게 됨(merge는 linear하지 않음)
+        
+  rebase방법
+    rebase할 브랜치로 git checkout *포함할 커밋
+    git rebase [rebase당할 branch] *기준이 될 커밋
+    *git rebase 다른 기능도 있다. 이건 일단은 참고정도만...
+
+  before. rebase (branch2 -> branch1)
+  C0 - C1 - C2 - C3 branch1
+               \
+                -C4 branch2
+   after. rebase
+  C0 - C1 - C2 - C3 - C4' branch2
+               branch1
+
+  이 시점이후, git branch1, git merge branch2를 수행하면 fast-forward merge가 수행됨.
+  C0 - C1 - C2 - C3 - C4' branch1, branch2
+  *C4'는 git checkout branch1, git merge branch2로 생성된 커밋(snapshot)과 동일함. 
+
+merge든 rebase 서로 다른 2개의 브랜치 아무거나에 대해서 merge, rebase가 가능!
+merge / rebase는 두 브랜치를 합친다는 행위는 동일하나, commit history가 어떻게 처리되냐가 다르다... 라고 보면 될 듯하네요.
+
+-remote branch                                
+git remote -v : remote repo정보를 보여줌(branch아님)
+git remote add [shorcut] [repo URL] : remote repo를 추가
+git remote show [remote(shortcut] : remote 정보를 보여줌(remote브랜치정보, remote의 HEAD 정보, local repo와 트랙되는지, push, pull시 어떻게 처리되는 지..)
+git fetch [remote(shorcut)] : remote repo로부터 데이터들(ex. 스냅샷(커밋) 등)을 가져옴 *단 merge는 수동수행 필요(local에 브랜치가 있다고 보면 됨)
+git pull : git fetch + merge를 자동수행함.(branch가 tracked인 경우 가능.)
+git push [remote] [branch]: local repo [branch]를 [remote]로 공유.
+                  [remote에] [branch]없는 경우 “Take my serverfix and make it the remote’s serverfix",
+                  [remote에] [branch]있는 경우 "Take my serverfix local branch and push it to update the remote’s serverfix branch" 같은 느낌.
+git remote rename/remove 명령어도 존재(remote repo 이름 변경하거나 제거)
+git clone : remote repository정보를 가져옴(tracking branch자동으로 처리 됨!)
+
+remote repo의 branch는 local repo에서 다음처럼 참조함 [repo]/[branch] (ex origin/master)
+
+local repo, remote repo, remote branch모양은 https://git-scm.com/book/en/v2/Git-Branching-Remote-Branches의 figure 30~34 참조하는게 제일 좋음.
+
+tracking branch : 리모트repo 브랜치 [remote]/[branch] 와 local repo브랜치 [branch]를 연결해준다고 보면 됨. git pull, git push가 가능해짐.
+git checkout --track [remote]/[branch] : local repo에 [remote]/[branch]를 tracking하는 [branch]를 생성!
+
+정리하면...
+  remote(branch1, branch2가 존재)로부터 clone한 경우, 
+    local repo기준으로 리모트르포의 브랜치는 remote/branch1, remote/branch2 로 참조가능하고,
+    자동으로 tracking branch가 생성되어, local repo의 branch1-remote/branch1, branch2-remote/branch2 관계가 됨.
+    *실제 remote repo의 branch1,branch2의 상태는 local repo의 remote/branch1, remote/branch2과 다를 수 있음.(git fetch/pull를 통해 업데이트 할 수 잇슴)
+    *위 figure 30~34참조
+
+-submodule
+다른 git repo를 특정 repo의 subdir로 관리할 수 있는 방법. 쉽게말해 외부repo참조
+
+git submodule add [repo URL] [dir]: submodule추가. dir에 repo를 연결.
+
+.gitmodules : repo URL과 local repo directory를 매핑하는 정보를 담고있음.
+
+git의 submodule은 참조하는 repo의 특정 commit으로 처리한다고 볼 수 있음.
+예시
+$ git diff --cached DbConnector
+diff --git a/DbConnector b/DbConnector
+new file mode 160000
+index 0000000..c3f01dc
+--- /dev/null
++++ b/DbConnector
+@@ -0,0 +1 @@
++Subproject commit c3f01dc8862123d317dd46284b05b6892c7b29bc
+
+submodule포함 repo clone방법 *최초로 repo를 받아오는 경우.
+  git clone
+  git submodule init : local repo에 submodule설정정보를 초기화
+  git submodule update : local repo로 submodule을 fetch하고 checkout수행.
+  =>git clone --recurse-submodules 과 동일
+  =>git clone상태라면, git submodule update --init --recursive 수행하면 됨(git submodule init, update와 동일)
+
+git clone한 이후에, submodule 최신변경사항 받아오는 방법 *다른 방법도있는데 일단 많이 쓰는 방법 한개만 확인함.
+  submodule directory로 이동(cd)
+  git fetch
+  git merge origin/master
+  => git submodule update --remote 와 동일함.
+  *git diff --submodule로 submodule변경내역 확인 가능.
+  *git submodule update --remote 는 submodule remote repo의 HEAD가 가리키는 branch를 받아옴. .gitmodules수정해서 받아올 branch를 변경할 수 있음.(git config -f .gitmodules submodule.DbConnector.branch stable 또는 .gitmodules 직접편집) 
+
+-stash
+repo의 dirty상태(modified된 tracked files와 staged된 변경사항 *untracked는 해당하지 않음!)를 stack에 저장하고 언제든지 재적용하도록 함.(작업완료되지않은 내역에대한 임시저장개념)
+
+git stash(or git stash push) 수행으로 상태저장가능. 변경상태들은 stack에 저장되고, local repo는 clean한(변경내역없는)상태가 됨
+git stash drop [stash name] : stash 제거
+git stash pop : stash적용하고 제거
+git stash list : stashing된 내역 조회.
+git stash apply or git stash apply [stash name] 으로 local repo에 재적용 가능 *[stash name] 이 없으면, 가장 최근 stash를 적용함
+*stash를 수행한 브랜치와 다른 브랜치로 apply도 가능함.(conflict발생가능?)
+
+-tag
+태그 : repository의 특정 히스토리를 가리키는 기능, 일반적으로 release point를 mark하기 위해 사용함.
+
+git tag : tag 목록 조회
+git tag -a [tag_name] -m [tag_msg] : annotated tag를 생성(-m옵션은 필수아님)
+git tag [tag_name] : lightweight tag를 생성
+git tag [tag_name] [commit_hash] 로 특정 커밋에 대한 태깅도 가능함.
+git tag -d [tag_name] : tag제거
+git push [remote] [tagname] : remote server로 태그를 push
+git push [remote] --delete [tagname] : remote의 태그를 제거
+git checkout [tag_name] : tag가 가리키는 지점으로 checkout *detached HEAD 상태가 됨.
+git show [tag_name] : tag정보를 볼 수 있음.
+
+detachec HEAD
+In “detached HEAD” state, if you make changes and then create a commit, the tag will stay the same, but your new commit won’t belong to any branch and will be unreachable, except by the exact commit hash
+
+태그종류
+  lightweight : 변경되지않는 branch 같은 개념임.(단순히 특정 커밋으로의 포인터로 볼 수 있음.)
+  annotated : 더 많은 정보를 가지고있음(checksum되고, 이름,이메일,태깅날짜,태깅메시지 등등등)
+  
+-conflict resolution
+동일파일 편집 후 merge 시 conflict 발생가능하고, 수동으로 처리(resolve)가 필요함.
+conflict발생 시, conflict 대상에 marker(<<<<, ====, >>>>)가 표기됨.
+
+git status : conflict상태를 볼 수 있음.(unmerged 라고 표기됨, resolve후에는 modified로 표기됨)
+git add : merge를 수동처리 후, resolve함.(git에서는 conflict file staging이 resolve를 의미함)
+git commit : conflict해결후 똑같이 commit수행하면 됨.
+
+8단계. 목표 : 7단계에서 내용 좀 더 정리 + command 입력하면서 궁금한거 테스트 + 9단계 처리 내용 정리.
+-remote branch
+ local repo에서 merge, rebase등 remote branch참조하여 처리가능하고 push할 수 있음(??? 테스트필요)
+
+9단계. 목표 : 모든 목록 내용에 대한 정리
+commit / tree / blobs
+  commit object : commit에 대한 정보(snaphot으로의 pointer, name, email, commit msg, parent commit으로의 pointer 등등...) 를 가지고 있는 object
+  tree : directory의 contents(blobs) 정보를 가지고있음. *linux에서의 directory 같은... 개념 (https://git-scm.com/book/en/v2/Git-Internals-Git-Objects, figure 173참조)
+  blobs : git repo에서의 특정 버전 파일 정보(content포함) *linux에서의 file 같은... 개념.
+  대략적으로 관계는 다음과 같음.(commit이 생성되면, commit은 tree를 가리키고, tree는 blob들을 가리킴) *https://git-scm.com/book/en/v2/Git-Branching-Branches-in-a-Nutshell, Figure 9 참조
+  commit -> tree -> blobs 
+
+  commit, tree, blobs는 각각 SHA-1 hash가 있음
+  내부적으로는 .git/objects(called object database) 에 해당 commit, tree, blobs들의 정보가 저장됨.
+  git hash-object, git cat-file, git commit-tree 등등을 통해 commit, tree, blobs들을 직접 추가/조회 가능. *이건 참고정도만 하면 될 듯.
+  하여간 중요한 것은 commit(커밋!) -> tree(디렉토리개념) -> blobs(파일개념) 의 구조를 가짐!
+
+  *git hash-object
+    특정 데이터를 track하고 .git/objects 디렉토리에 저장하고, 해당 데이터에 대한 unique key를 return.(출력)
+    ex) 'test content' 데이터에 대해 git hash-object 수행 *option은 크게 중요치 않음ㅎ
+    $ echo 'test content' | git hash-object -w --stdin
+    d670460b4b4aece5915caf5c68d12f560a9fe3e4   => 데이터의 header + content에 대한 SHA-1 해시
+    
+    $ find .git/objects -type f
+    .git/objects/d6/70460b4b4aece5915caf5c68d12f560a9fe3e4 => 데이터에대한 정보...
+
+  *git cat-file
+    .git/objects 디렉토리의 파일 정보를 볼 수 있음.
+    ex) blobs(object)의 정보 확인
+    $ git cat-file -p d670460b4b4aece5915caf5c68d12f560a9fe3e4
+    test content => 위(git hash-object example)에서 생성했던 데이터를 보여줌.
+
+    ex) tree object정보의 경우(해당 tree(directory)의 하위에 있는 blob(file)과, 또다른 tree 정보를 가지고 있다...)
+    $ git cat-file -p master^{tree}
+    100644 blob e845566c06f9bf557d35e8292c37cf05d97a9769	README
+    100644 blob 78981922613b2afb6025042ff6bd878ac1994e85	a
+    100644 blob 61780798228d17af2d34fce4cfbdf35556832472	b
+    040000 tree 20bb0109200f37a7e19283b4abc4a672be3f0adb	sub
+
+    ex) commit object정보의 경우
+    $ git cat-file -p fdf4fc3
+    tree d8329fc1cc938780ffdd9f94e0d364e0ea74f579
+    author Scott Chacon <schacon@gmail.com> 1243040974 -0700
+    committer Scott Chacon <schacon@gmail.com> 1243040974 -0700
+
+    First commit
+
+  *git commit-tree [tree's SHA-1] [-p [parent commit's SHA-1]]
+    ex) tree object d8329f 에 대한 commit object를 생성.
+    $ echo 'First commit' | git commit-tree d8329f
+    fdf4fc3344e67ab068f836878b6c4951e3b15f3d => commit hash
+
+git reference / refspec
+  git refrence : commit hash(SHA-1)에 대한 간단한 이름을 의미함. (=git의 branch 와 동일 개념으로 봐도 됨.)
+  local repo의 .git/refs 에 정보가있음.
+  
+  echo [commit hash] 1>[reference(.git/refs/heads/master)] : reference를 업데이트.
+    ex. echo 1a410efbd13591db07496601ebc7a059dd55cfe9 > .git/refs/heads/master 
+         결과적으로 local repo master branch의 commit이 변경 됨! (다른 local branch도 마찬가지)  
+  *참고.
+    git branch [branch]의 경우 HEAD commit을 기준으로 새로운 reference가 생성되는 개념으로 볼 수 있음.
+
+  HEAD
+    cat .git/HEAD : HEAD의 정보(ex. ref: refs/heads/master) => 즉, reference를(=branch를) 가리킴
+                    git checkout 하면 변경됨!(=해당 파일 이름 바꾸면 git checkout과 동일하다)
+
+  Remote repo branch
+    .git/refs/remotes/[remote] 에 동일한 형태로 존재
+    git checkout은 가능하나 readonly만 가능!(HEAD reference도 이동하지 않음!)
+
+  결론. git reference는 git branch이다.(쫌 다를수도 있겠지만 일단 지금은 이렇게 알고있으면 될 듯)
+
+  git refspec : local repo branch, remote repo branch의 매핑정보로 보면 될 듯.
+
+  refpsec format : [+]src:dst
+    + : reference를 업데이트 하라는 의미.
+    src : remote repo의 reference pattern
+    dst : local repo tracked인 reference pattern.
+    ex) +refs/heads/*:refs/remotes/origin/*
+
+  아래 3개 command는 모두 동일 의미(ref/remotes/origin/master 의 commit log를 보여주세요.)
+    $ git log origin/master *3번째와 동일 의미
+    $ git log remotes/origin/master *3번째와 동일 의미
+    $ git log refs/remotes/origin/master
+
+  refspec fetch 예시 *fetch해주세요 remote(origin) repo master branch into local repo master branch
+  .git/config 파일의 경우
+  [remote "origin"]
+	  url = https://github.com/schacon/simplegit-progit
+    fetch = +refs/heads/master:refs/remotes/origin/master
+
+  command line의 경우
+  $ git fetch origin master:refs/remotes/origin/master
+
+  *refspec을 여러개도 가능(git doc참조)
+  *push도 동일형태로 처리 가능함(단, push시에는 reference에 [remote]는 명시불필요)
+
+10단계. 최종내용정리.
+  결과
+    git 관련 지식의 빈틈 목록들에 대해서 알 게 되었음.
+    앞으로 git사용 시 기존에는 '이런거겠지?'가 지금은 '이거다'인 느낌이 가능할 듯.
+
+  알게된 것
+    git 관련 지식의 빈틈 목록
+      개요
+        staging area : git tracked상태 중 하나이며, commit되기 전의 영역임. 연관 command는 git add
+         리모트 : local repo가아닌 다른 외부 repo. git remote 명령어로 조회/추가 등 가능
+         브랜치/리모트브랜치 : 브랜치는 특정 커밋을 가리키는 포인터, HEAD는 브랜치를 가리키는 포인터, 리모트브랜치는 리모트의 브랜치([remote]/[branch]로 local repo에서 참조가능) 정보(refspec으로 매핑정보를 기술함). 내부적으로는 repo의 .git/refs, .git/HEAD 에 정보가 있음
+        tag : repo의 특정 commit을 가리키는 정보. lightweight, annotated tag가 있음.
+        git merge/rebase : 작업물을 합치는 방법. merge는 3-way merge수행, rebase는 특정 branch를 기준으로 변경내역을 반영(결과는 동일하며 히스토리관리가 깔끔해짐)
+        conflict resolution : 작업물 merge/rebase시 conflict발생영역이 표기되며 수동으로 처리 후, git add / git commit 수행하면 됨
+        stash : 작업물을 임시 저장(git stash command사용) *trakced되는 상태들만 임시 저장 됨!
+        submodule : 하나의 repo에서 또 다른 repo를 참조할 수 있음. git submodule command사용. git submodule의 경우 .gitmodules에서 매핑정보 기술할 수 있음. submodule directory는 fetch할 commit 정보로 관리됨!
+
+     추가내용(commit/tree/blobs, reference/refspec) *detail하진 않지만 이게 대충은 무엇이다는 알게 됨.
+
+  코멘트
+    완전히 숙지되지 않은 점은 git계속 쓰면서 숙지될 것 같고, 잘 못 알고있던 내용도 계속 쓰면서 바로잡아갈 듯.
+    git을 완전히 잘 알지는 않으나, 목표였던 'git관련 자주쓰는 모호한 부분에 대해 알고 git을 쓴다' 정도는 되었다고 판단.
+
+
+
+

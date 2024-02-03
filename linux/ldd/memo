@@ -574,3 +574,119 @@ network device driver tutorial : https://linuxgazette.net/issue93/bhaskaran.html
 
 milestone 3. customizing(*필요시)
 
+reference.
+  PACKET_STATISTICS
+    Packet socket(PF_PACKET) options 중 하나(man 7 packet)
+      *Packet sockets(PF_PACKET) are used to receive or send raw packets at the device driver (OSI Layer 2) level.
+    man page : Retrieve packet socket statistics in the form of a structure
+      struct tpacket_stats {
+        tp_packets;  /* Total packet count */
+        tp_drops;    /* Dropped packet count */
+      };
+
+     struct tpacket_stats는 PF_PACKET type처리할때만 카운팅 됨(./net/packet/af_packet.c) 
+       tp_drops : packet_rcv, tpacket_rcv에서 처리못할 경우 증가.
+       tp_packets : packet_rcv, tpacket_rcv에서 처리할 경우 증가.
+     
+    PF_PACKET default는 packet_rcv이지만, 특정 조건이 되면 tpacket_rcv되는 듯(패킷수신시 처리)
+      *packet_rcv, tpacket_rcv는 dev_add_pack에 의해 등록되는 프로토콜 핸들러이고, 상황에따라 같은 프로토콜에 여러개의 핸들러가 등록될 수 있음~
+      *netif_receive_skb is the function that dispatches ingress frames to the right protocol handlers. netif_receive_skb에 의해서 등록된(by dev_add_pack()) 프로토콜 핸들러들(ex. packet_rcv)이 실행된다고 보면 될 듯...
+    
+    요약하면, socket layer(PF_PACKET인 경우)에서 정상처리 못하는 경우 tp_drops가 증가, 정상처리하면 tp_packets증가. 
+            getsockopt PACKET_STATISTICS에서는 tp_packets에 tp_drops결과까지 포함하여 전달.!
+   
+    참고
+     man 7 packet
+     Understanding Linux network internals, Protocol Handlers/fig 13-2
+     Understanding Linux network internals, Protocol Handlers
+
+  network device driver statistics(igb device driver 기준의 의미, nic는 i350 datasheet참조)
+    stats->rx_errors => 주로 HW register의 값을 읽음. 거의 찐 HW error로 보면 될 듯함.(ex. crc error 등)
+
+    stats->rx_dropped => igb driver에서는 업데이트 하지 않음 ...
+    stats->rx_missed_errors => HW의 MPC register 값(FIFO버퍼가 부족하거나 PCI버스 bandwidth가 insufficient하면 카운팅)
+     *위 2개가 /proc/net/dev에 나오는 rx_dropped수치(두 값을 더함)
+    *i40e의 경우, rx_dropped는 해당 수치는 아래수치(igb의 rx_fifo_errors)와 비슷한 의미로 보임.(XL710 datasheet 참조)
+
+    stats->rx_fifo_errors => rx_missed_errors와 동일 + RQDPC(Receive Queue drop packet count, 이용가능 desc가 부족할 경우 드랍되는 패킷 수)값
+
+    stats->rx_length_errors
+    stats->rx_over_errors
+    stats->rx_crc_errors
+    stats->rx_frame_errors
+
+  procfs
+
+Appendix
+  수신처리관점에서의 의문점들
+    NAPI callback은(poll function) 언제 수행?
+      __do_softirq에 의해 아래 calltrace참조.
+      net_dev_init() function에서, open_softirq(net_rx_action) 수행하여 등록.
+         
+    ring buffer는 언제 dequeue되는 지?
+      napi_gro_receive function 호출완료 시점으로 보여짐.(8139cp 예시, *다른 driver(ex. intel igb driver)도 비슷한 것으로 보여짐.)
+      *napi_gro_receive netif_receive~~~랑 하는 일은 최종적으로 비슷할 듯함...
+
+    NAPI callback시 netif_receive_skb까지의 처리흐름(아래 calltrace참조)
+      poll function에서 recevie계열 function호출
+      ex) 8139cp의 경우, NAPI callback인 cp_rx_poll 함수내에서 napi_gro_receive function을 호출함.(아래 calltrace참조)
+      *napi_gro_receive 로 구글링하면,,, 중국어로 된 갠차는 자료가 종종 보여짐... ㅎ
+
+    netif_receive_skb function의 protocol handler 까지의 처리흐름(특히 PF_PACKET 관점)
+    대충 아래처럼 흐름... 뭐땜에 이렇게 된건진 모르겠으나(가상머신(ubuntu), 아마 8139cp driverdlfemt(cp_rx_poll확인) command는 모름...)
+ => tpacket_rcv
+ => __netif_receive_skb_list_core
+ => netif_receive_skb_list_internal
+ => gro_normal_list.part.0
+ => napi_complete_done
+ => cp_rx_poll
+ => __napi_poll
+ => net_rx_action
+ => __do_softirq
+
+    NIC driver의 stat정보의 제공흐름?(proc, ethtool 관점)
+      proc (가상머신(ubuntu), 8139cp driver, cat /proc/net/dev 시 ftrace 내역) => ifconfig시에도 동일 trace
+             cat-3834    [000] .....  1078.955998: <stack trace>
+ => cp_get_stats                *net_device_ops->ndo_get_stats가 호출 
+ => dev_get_stats
+ => dev_seq_printf_stats
+ => dev_seq_show
+ => seq_read_iter
+ => seq_read
+ => proc_reg_read
+ => vfs_read
+ => ksys_read
+ => __x64_sys_read
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+      cat /sys/class/net/ens3/statistics/rx_dropped 시 ftrace(가상머신(ubuntu), 8139cp driver)
+             cat-3912    [002] .....  1292.453711: <stack trace>
+ => cp_get_stats                    *net_device_ops->ndo_get_stats가 호출 
+ => dev_get_stats
+ => netstat_show.isra.0
+ => rx_dropped_show
+ => dev_attr_show
+ => sysfs_kf_seq_show
+ => kernfs_seq_show
+ => seq_read_iter
+ => kernfs_fop_read_iter
+ => new_sync_read
+ => vfs_read
+ => ksys_read
+ => __x64_sys_read
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+      ethtool -S [nic] ftrace (가상머신(ubuntu), 8139cp driver)
+         ethtool-4777    [002] .....  1559.332201: <stack trace>
+ => cp_get_ethtool_stats             *ethtool_ops->get_ethtool_stats가 호출       
+ => dev_ethtool
+ => dev_ioctl
+ => sock_do_ioctl
+ => sock_ioctl
+ => __x64_sys_ioctl
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+

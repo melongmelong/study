@@ -1,4 +1,5 @@
-next : crash 최신버전 빌드해서 사용...(crash 7.2.8 구동한거 gdb확인 시, readmem() 함수가 무한 recursion 수행으로 확인 됨)
+next : 끗.
+
 kernel debugging 방법/tool 등... 정리
 
 ftrace
@@ -45,6 +46,8 @@ crash
      위처럼 입력하면 gdb비슷한 CLI 확인할 수 있고, 다양한 명령어를 통해서 분석진행하면 됨.
        ex. crash> 
 
+    crash utility source README에 기본적인 사용법/tip나와있음(github repo 있음)
+
     dump생성방법
       kdump통해서 core 획득 필요함.
         kdump : kdump is a feature of the Linux kernel that creates crash dumps in the event of a kernel crash.(wikipedia)
@@ -54,13 +57,296 @@ crash
 
         *kexec : abbreviated from kernel execute and analogous to the Unix/Linux kernel call exec, is a mechanism of the Linux kernel that allows booting of a new kernel from the currently running one (wikipedia)
         *ubuntu환경에서 무지성으로 아래처럼 패키지 설치하면,,, 잘 되긴 함. 내용 좀 더 확인해봐야함.
+           sudo apt install linux-crashdump
          https://siisee111.medium.com/ubuntu18-04-core-crash-dump-%EB%94%B0%EB%8A%94-%EB%B0%A9%EB%B2%95-183b4f56cfb
         *dump 캡쳐하고... 실행했는데 안됨...(SegFault떠서 혹시나해서 ulimit -s unlimited 하고 실행하면 OOM돔..) 아마도..... 시스템리소스(특히 메모리) 부족인듯... 이거 해결방법같은게 있나도 봐야할 듯 => 확인결과, 현재기준 최신버전(8.2) 사용하면 됨. 안된거는 7.6이었나 그랬음... ㅡㅡ
+
+    crash dump command memo
+      crash dump를 분석하기 위해 알아야 할 것 같은 애들..
+        object file : 특히 ELF, link, symbol, vaddr, paddr...(stack frame 및 메모리 데이터 읽어야함) 
+          resource : gnu ld Docs, ELF pdf, Linker and Loader pdf
+        ABI : calling convention (stack frame을 봐야하므로...)
+          resource : 
+        computer arch : kernel동작하는 ISA(register종류/역할) *X86_64
+          resource : intel software developer manual pdf
+        linux kernel 주요구조(task, file, paging, interrupt ...)
+          resource : kernel source, 커널관련 book pdf들...
+
+      bt output 관련
+       [eb1a3d9c] handle_irq_event_percpu at c00dcba0   stack frame size는 다양한 사유(ex 인자갯수)로 다를 수 있음.(사이즈 일정하지 않음)       
+       [eb1a3da8] schedule_timeout at c07f4e20
+       [eb1a3dcc] gic_eoi_irq at c001d500
+           |                   |
+           v                   v
+      stack vaddr         return address(sym command로 커널소스 라인위치도 확인할 수 있음)
+
+        bt output에서 address는 일반적으로 모두 vaddr이라고 보면 됨. vaddr->paddr, paddr->vaddr 변환가능(vtop, ptov comamnd), 명령어를 통해 데이터도 볼 수 있음.
+
+        crash, help bt시, 32bit platform의 function parameter stack에서 찾으라는 내용있으나, 32bit경우이고, 64bit는 해당되지 않음
+           참고(https://wiki.osdev.org/System_V_ABI, calling convention)
+           SystemV ABI 64bit calling convention
+              내용일부 *상세는 위 참고URL 참조
+             The stack grows downwards. Parameters to functions are passed in the registers rdi, rsi, rdx, rcx, r8, r9, and further values are passed on the stack in reverse order
+             Functions preserve the registers rbx, rsp, rbp, r12, r13, r14, and r15; while rax, rdi, rsi, rdx, rcx, r8, r9, r10, r11 are scratch registers => parameter의 경우 기존정보 보존할 필요없으므로 preserve하지 않음.! *즉, memory dump의 stack frame으로부터 함수의 파라미터정보 획득은 어려울 수 있어보임...
+               
+        call instruction시 stack에 return address push(rip), ret instruction에서는 stack으로부터 rip = pop() 수행. 단, 무적권은 아닌 것으로 확인 됨. (gcc에 의해서는 아마... 일반적으로 call, ret 수행 시 rip에 대해 push, pop할 듯하긴 함.)
+           e8 00 00 00 00          callq  12a6 <vfs_write+0x66 
+           => opcode e8이므로, near call 즉, 해당 명령어 수행하면 RIP가 push됨. *커널 바이너리의 call은 아마도 대부분 opcode e8일 듯...(아마도)
+
+    bt output 시, 아래 call stack분석(echo c 1>/proc/sysrq_trigger시의 call stack 일부분임)
+...
+ #6 [ffffa7a7814b3da8] proc_reg_write at ffffffffb8c2371a
+    ffffa7a7814b3db0: ffff97ebc0836000 000056481c3c1980 
+    ffffa7a7814b3dc0: ffffa7a7814b3df8 ffffffffb8b83699 
+ #7 [ffffa7a7814b3dc8] vfs_write at ffffffffb8b83699
+    ffffa7a7814b3dd0: ffff97ebcb55ce00 ffff97ebcb55ce00 
+    ffffa7a7814b3de0: 000056481c3c1980 0000000000000002 
+    ffffa7a7814b3df0: 0000000000000000 ffffa7a7814b3e38 
+    ffffa7a7814b3e00: ffffffffb8b85a07 
+ #8 [ffffa7a7814b3e00] ksys_write at ffffffffb8b85a07
+    ffffa7a7814b3e08: 0000000000000000 566a887a75d45100 
+    ffffa7a7814b3e18: 0000000000000000 ffffa7a7814b3f58 
+    ffffa7a7814b3e28: 0000000000000000 0000000000000000 
+    ffffa7a7814b3e38: ffffa7a7814b3e48 ffffffffb8b85aaa 
+ #9 [ffffa7a7814b3e40] __x64_sys_write at ffffffffb8b85aaa
+...
+
+    #9~#8(낮은주소가 stack top)영역 시점(= ksys_write수행시점)의 스택형태는 다음과 같음.
+.....................
+     ffffffffb8b85aaa          <--return address (__x64_sys_write 함수로 돌아갈때의 리턴어드레스)
+%rbp ffffa7a7814b3e48 bottom   <--%rbp           (즉, __x64_sys_write의 %rbp 값을 스택에 저장한다고 보면 됨)
+%r14 0000000000000000
+%r13 0000000000000000
+%r12 ffffa7a7814b3f58
+%rbx 0000000000000000                      
+8    566a887a75d45100          
+8    0000000000000000 top      <--%rsp           (stack top)
+     ffffffffb8b85a07          <--return address (ksys_write로부터 호출당한 함수가 종료후 ksys_write로 돌아갈때의 리턴어드레스)
+
+    #8~#7 영역 시점(=vfs_write수행시점)의 스택형태는 다음과 같음.
+      ffffffffb8b85a07          <--return address (ksys_write로부터 호출당한 함수가 종료후 ksys_write로 돌아갈때의 리턴어드레스)
+%rbp  ffffa7a7814b3e38          <--%rbp
+%r15  0000000000000000
+%r14  0000000000000002
+%r13  000056481c3c1980
+%r12  ffff97ebcb55ce00
+%rbx  ffff97ebcb55ce00          <--%rsp           (stack top)
+          
                     
+  ELF core file format 분석
+   ELF core file type 포함 정보들 
+   ELF header
+typedef struct {
+unsigned char e_ident[EI_NIDENT]; // ELF format인지를 나타내는 정보(파일로치면 magic number같은거)
+Elf32_Half e_type;                // object file type (core file인지, executable인지에 대한 정보) *core file의 경우 file contents가 정의되어 있지 않음
+Elf32_Half e_machine;             // architecture(즉 ISA?) 정보
+Elf32_Word e_version;             // ELF file의 버전.
+Elf32_Addr e_entry;               // system이 처음 시작할 주소(virtual address). 의미없으면 0일 수 있음.
+Elf32_Off e_phoff;                // 프로그램헤더table의 위치(ELF file내 offset)
+Elf32_Off e_shoff;                // 섹션헤더table의 위치(ELF file내 offset)
+Elf32_Word e_flags;               
+Elf32_Half e_ehsize;              // ELF header 크기
+Elf32_Half e_phentsize;           // 프로그램헤더table 각 엔트리의 사이즈
+Elf32_Half e_phnum;               // 프로그램헤더table 엔트리 갯수
+Elf32_Half e_shentsize;           // 위와 동일한데 섹션헤더임
+Elf32_Half e_shnum;               // 동일
+Elf32_Half e_shstrndx;            // section name string table의 인덱스 in 섹션헤더
+ } Elf32_Ehdr;
+
+   Program header              
+typedef struct {
+Elf32_Word p_type;                // 해당 프로그램 헤더 엔트리 content(=segment라고함)의 type
+Elf32_Off p_offset;               // 해당 프로그램 헤더 엔트리 content의 위치(ELF file내 offset)
+Elf32_Addr p_vaddr;               // 해당 프로그램 헤더 엔트리 content의 memory 내 위치(vaddr)
+Elf32_Addr p_paddr;               // 해당 프로그램 헤더 엔트리 content의 memory 내 위치(paddr)
+Elf32_Word p_filesz;              // 해당 프로그램 헤더 엔트리 content의 ELF file 내 크기
+Elf32_Word p_memsz;               // 해당 프로그램 헤더 엔트리 content의 memory 내 크기
+Elf32_Word p_flags;               
+Elf32_Word p_align;
+} Elf32_Phdr;
+   ELF core type관련 주요 p_type 
+     PT_LOAD : segment가 메모리로 로드 가능.
+     PT_NOTE : segment가 추가정보를 포함
+
+   PT_NOTE 관련 추가 내용
+     ELF file관련한 추가적인 정보를 가지고 있는 segment.
+     4bytes array형태(갯수제한없음)인 것을 제외하고는 특정 포맷은 없음.
+
+   Section header
+typedef struct {
+Elf32_Word sh_name;               // 섹션이름
+Elf32_Word sh_type;               // 섹션 타입
+Elf32_Word sh_flags;              // 
+Elf32_Addr sh_addr;               // memory img를 가질때(로드되는 케이스 얘기하는 듯) address. 0일 수 있음
+Elf32_Off sh_offset;              // 섹션의 ELF file내 위치
+Elf32_Word sh_size;               // 섹션의 크기
+Elf32_Word sh_link;               // 
+Elf32_Word sh_info;
+Elf32_Word sh_addralign;
+Elf32_Word sh_entsize;
+} Elf32_Shdr;
+
+    ELF core type관련 주요 sh_type
+      SHT_NULL : 의미없는 섹션(??)
+      SHT_PROGBITS : 프로그램에 의해 정의된 정보를 가지는 섹션(??)
+      SHT_NOTE : note...
+
+    *기본적으로 ELF이기 때문에 다른 타입(ex. excutable)과 포맷자체는 동일
+
+   core type의 경우, 프로그램헤더content(segment)와 섹션content(section) 정보가 동일함(섹션0, string 섹션빼고 모두 동일함)
+   
+   readelf -n option은 note 정보를 보여줌(segment인지 section인지는 모르겠지만...)
+     ex. readelf -n ./core.11281
+     note 정보 일부
+  Owner                 Data size	Description => output header
+  CORE                 0x00000088	NT_PRPSINFO (prpsinfo structure)         => 일반적인 프로세스정보(ex. 프로세스상태 등)을 나타냄
+  CORE                 0x00000150	NT_PRSTATUS (prstatus structure)         => 여기부터
+  CORE                 0x00000200	NT_FPREGSET (floating point registers)   => ...
+  LINUX                0x00000440	NT_X86_XSTATE (x86 XSAVE extended state) => ...
+  CORE                 0x00000080	NT_SIGINFO (siginfo_t data)              => 여기까지는 thread관련 정보(pid, register 등)
+  CORE                 0x00000140	NT_AUXV (auxiliary vector)               
+  CORE                 0x00000217	NT_FILE (mapped files)                   => vaddr과 mapped file의 매핑정보를 가지고있음
+     *각 structure(ex prpsinfo structure 등)은 linux/elfcore.h 와 같은 헤더파일에 실제 정의된 구조체임
+
+   
+    참고.
+      https://www.gabriel.urdhr.fr/2015/05/29/core-file/
+
+  디버깅정보
+    ELF파일(ex. executable, library 등)내 디버깅정보를 사용하여 코어덤프의 메모리값(ex. vaddr)이랑 매핑(ex. 소스파일, symbol매핑 등)가능함.
+    이를 위한 디버깅정보에는 대표적으로 DWARF와 같은 포맷이있음.(다른포맷도 많은 듯 함. https://en.wikipedia.org/wiki/Debugging_data_format)
+    DWARF
+      debugging data format임.
+      ELF파일 내에 포함되는 형태로 사용되어짐.
+       디버깅 정보를 포함하여 빌드한경우(ex. -g or -ggdb option..), 아래 섹션들이 DWARF 데이터로 보면 됨.
+    [26] .debug_aranges    PROGBITS         0000000000000000  0000103d
+    [27] .debug_info       PROGBITS         0000000000000000  0000106d
+    [28] .debug_abbrev     PROGBITS         0000000000000000  0000141d
+    [29] .debug_line       PROGBITS         0000000000000000  0000155a
+    [30] .debug_str        PROGBITS         0000000000000000  0000163b
+
+       objdump를 사용해서 dwarf데이터를 확인할 수 있음(ex. objdump --dwarf=info)
+
+       function, source code, 변수의 매핑은 각 .debug섹션에 포함된 정보를 기반으로 수행한다고 보면 됨.(시작주소라거나 등등...)
+      참고.
+        https://en.wikipedia.org/wiki/DWARF
+        https://eli.thegreenplace.net/2011/02/07/how-debuggers-work-part-3-debugging-information
+
+    .debug section뿐 아니라 다양한 섹션(.gnu_debuglink, .eh_frame 등...)에도 디버깅데이터가 들어갈 수 있어보임(포맷은 정확하게 모르겠음)
+     .gnu_debuglink : ELF파일내부가아닌 외부에 존재하는 디버깅정보(https://sourceware.org/gdb/onlinedocs/gdb/Separate-Debug-Files.html / https://help.totalview.io/previous_releases/2019/HTML/index.html#page/Reference_Guide/Usinggnu_debuglinkFiles.html)
+     *.eh_frame : 예외처리루틴을 위한 unwinding정보가 있는데, 얘가 디버깅할때도 사용할 수 있나봄...(DWARF의 .debug_frame section과 비슷한 포맷에 유사한 목적이라고는 함(https://refspecs.linuxfoundation.org/LSB_3.0.0/LSB-Core-generic/LSB-Core-generic/ehframechpt.html))
+
+  Dynamic linking
+    프로그램 실행 직후(시점?)에 수행 *early binding인 경우.
+   ELF의 PT_INTERP segment에 명시되어있는 interprter(=dynamic linker, 프로그램 환경 셋업하고 실행하는 역할)를 실행함(바로 프로그램의 main이 실행되는 게 아님!)
+   dynamic linker는 .dynamic section의 내용을 기반으로 실행환경 셋업수행(readelf -d 로 확인가능)
+     .dynamic section의 주요 entry
+       DT_NEEDED : ELF실행시 필요한 shared library
+       DT_SYMTAB : symbol table
+       DT_FLAGS : flag...
+    dynamic linking 대략 과정 *early binding인 경우.
+      1. dynamic linker실행
+      2. dynamic linker가 바이너리의 PT_LOAD segment를 메모리에 로드
+      3. dynamic linker가 dynamic section/segment정보를 참조하여 필요 library load 수행
+      4. dynamic linker가 relocation수행
+      5. dynamic linker가 각 shared library의 init function들 수행(.preinit_array, .init, .init_array section정보 참조)
+       6. 바이너리의 실제 entry point로 jmp~
+
+    GOT : entries of addresses of global variables and external functions
+      With early binding, GOT entries are relocated by the dynamic linker at load-time. => 프로그램 로드 시점에 처리시에는, GOT entry에 resolution된 address정보가 존재
+      With lazy linking, the GOT entries will be relocated on-demand by a function call. At a function’s first invocation, the PLT will be used to call the dynamic linker to link the missing function.
+
+    PLT : short entries of instructions (often called “trampolines” or “thunks”), used to reach external functions by redirecting control flow of execution to its corresponding GOT entry. 
+
+    Lazy Linking
+      resolve function references when they are called (lazily) instead of at load-time (eagerly).
+      This is enabled by the Procedure Linkage Table (PLT) and the Global Offset Table (GOT).
+
+      case. printf 호출. 
+      early binding 인 경우,(load시점에 symbol이 모두 resolution되어 GOT에 기록됨.)
+        step1) printf대신 printf@plt 를 call
+(gdb) disassemble 
+Dump of assembler code for function main:
+   0x000055555555464a <+0>:	push   %rbp
+   0x000055555555464b <+1>:	mov    %rsp,%rbp
+   0x000055555555464e <+4>:	sub    $0x10,%rsp
+   0x0000555555554652 <+8>:	mov    %edi,-0x4(%rbp)
+   0x0000555555554655 <+11>:	mov    %rsi,-0x10(%rbp)
+=> 0x0000555555554659 <+15>:	lea    0xa4(%rip),%rdi        # 0x555555554704
+   0x0000555555554660 <+22>:	mov    $0x0,%eax
+   0x0000555555554665 <+27>:	callq  0x555555554520 <printf@plt>   =>  printf대신 printf@plt (printf의 plt entry)로 call!
+   0x000055555555466a <+32>:	mov    $0x0,%eax
+
+        step2) printf@plt 수행
+(gdb) disassemble 0x555555554520 => printf@plt 함수 코드
+Dump of assembler code for function printf@plt:
+   0x0000555555554520 <+0>:	jmpq   *0x200aaa(%rip)        # 0x555555754fd0   => 0x555555754fd0 주소(printf의 GOT entry)에 있는 값으로 jmp!
+   0x0000555555554526 <+6>:	pushq  $0x0
+   0x000055555555452b <+11>:	jmpq   0x555555554510
+
+        step3) 0x555555754fd0가 가지고 있는 값(0x00007ffff7a46e40)으로 jmp
+0x555555754fd0:	0xf7a46e40	0x00007fff
+0x555555754fd0는 GOT임
+(gdb) disassemble 0x555555754fd0
+Dump of assembler code for function _GLOBAL_OFFSET_TABLE_:
+   0x0000555555754fb8:	enterq $0x200d,$0x0
+   0x0000555555754fbc:	add    %al,(%rax)
+   0x0000555555754fbe:	add    %al,(%rax)
+   0x0000555555754fc0:	add    %al,(%rax)
+   0x0000555555754fc2:	add    %al,(%rax)
+   0x0000555555754fc4:	add    %al,(%rax)
+   0x0000555555754fc6:	add    %al,(%rax)
+   0x0000555555754fc8:	add    %al,(%rax)
+   0x0000555555754fca:	add    %al,(%rax)
+   0x0000555555754fcc:	add    %al,(%rax)
+   0x0000555555754fce:	add    %al,(%rax)
+   0x0000555555754fd0:	rex outsb %ds:(%rsi),(%dx)           =>해당 엔트리가 printf address를 가지고있음. 이 값을 16진수로 잘 봐보면 __printf로의 address임(아래 step4참조)
+   0x0000555555754fd2:	movsb  %ds:(%rsi),%es:(%rdi)
+   0x0000555555754fd3:	idiv   %edi
+   0x0000555555754fd5:	jg     0x555555754fd7
+   0x0000555555754fd7:	add    %al,(%rax)
+   0x0000555555754fd9:	add    %al,(%rax)
+   0x0000555555754fdb:	add    %al,(%rax)
+   0x0000555555754fdd:	add    %al,(%rax)
+   0x0000555555754fdf:	add    %ah,-0x85fc5(%rax)
+   0x0000555555754fe5:	jg     0x555555754fe7
+   0x0000555555754fe7:	add    %al,(%rax)
+   0x0000555555754fe9:	add    %al,(%rax)
+   0x0000555555754feb:	add    %al,(%rax)
+   0x0000555555754fed:	add    %al,(%rax)
+   0x0000555555754fef:	add    %al,(%rax)
+   0x0000555555754ff1:	add    %al,(%rax)
+   0x0000555555754ff3:	add    %al,(%rax)
+   0x0000555555754ff5:	add    %al,(%rax)
+   0x0000555555754ff7:	add    %dl,(%rax)
+   0x0000555555754ff9:	push   %rbp
+   0x0000555555754ffa:	movabs %al,0x7ffff7
+End of assembler dump.
+
+        step4) 0x00007ffff7a46e40는 __printf symbol의 주소임. 즉 printf를 수행...
+(gdb) disassemble 
+Dump of assembler code for function __printf:
+=> 0x00007ffff7a46e40 <+0>:	sub    $0xd8,%rsp
+...
+
+    Lazy Linking은 step3에서 dynamic linker로 점프...후 resolution이후에 early binding과 동일한 과정을 거친다고 보면 될 듯.(나중에 시간나면 직접 확인해보던가 합시다..)
+
   참고
+    https://www.intezer.com/blog/malware-analysis/executable-linkable-format-101-part-4-dynamic-linking
+    https://bpsecblog.wordpress.com/2016/03/09/about_got_plt_2/ 
     https://man7.org/linux/man-pages/man8/crash.8.html
     https://github.com/crash-utility/crash
-
+    디버깅을 위한 vmlinux 설치(https://www.ibm.com/docs/en/linux-on-systems?topic=linuxonibm/liacf/oprofkernelsymrhel.html)
+    - add key
+sudo apt-key adv --keyserver keyserver.ubuntu.com --recv-keys C8CAB6595FDFF622 
+$ echo "deb http://ddebs.ubuntu.com $(lsb_release -cs) main restricted universe multiverse" 
+| sudo tee -a /etc/apt/sources.list.d/ddebs.list
+     $ echo "deb http://ddebs.ubuntu.com $(lsb_release -cs)-updates main restricted universe multiverse" 
+| sudo tee -a /etc/apt/sources.list.d/ddebs.list
+   - refresh repository info
+     $ apt-get update
+   - install the debug symbols package
+     $ sudo apt-get install linux-image-$(uname -r)-dbgsym
 
 kdb/kgdb
   Definition
@@ -73,3 +359,24 @@ kdb/kgdb
 
   참고
     https://docs.kernel.org/dev-tools/kgdb.html
+
+기타
+Trace32
+  in-circuit emulators 이고, 주로 임베디드 시스템 디버깅을 위한 tool임.
+  하드웨어형태로 지원되는 듯
+  즉, 걍 ICE라고 보면 되고, 특히 JTAG-based hardware debugger로 보면 됨. 특정 회사에서 만든...
+
+Jtag
+  PCB를 테스팅하기 위한 도구 표준(standard). hw interface가 존재함.
+  Jtag 표준을 사용해서, IC의 특정module(기능)에 접근(access)이 가능. 
+  즉, ICE(in-circuit emulator)가 JTAG표준을 통해서 IC의 디버깅 모듈(디버깅을 위한 이런저런 기능을 제공)과 통신(?) 가능하게 함. 이를 통해 디버깅에도 사용 가능! => 그래서 임베디드시스템 디버깅에 jtag~~~ 이라는 용어가 많이 등장함.
+  *겉으로만 보면 JTAG는 HW사이의 통신 인터페이스이고, 각 칩 벤더에서는 JTAG 인터페이스를 통해서 디버깅을 할 수 있도록 칩을 제작함. 물론 JTAG으로 칩을 디버깅 하기 위한 HW도구(ICE)도 필요
+  참고. wikipedia(JTAG)
+       https://www.fpga4fun.com/JTAG1.html
+
+ICE
+  In-circuit emulator
+  임베디드시스템의 소프트웨어 디버깅을 위해 사용함
+  JTAG-based hardware debugger라고도 불림.(주로 JTAG 표준 기반으로 동작하나봄)
+  단순하게, 프로세서의 역할을 흉내낸다고 보면 될 것으로 보이고 + 기타 tool (디버깅을 위한 UI 등을 제공한다거나..)을 제공한다 보면 될 듯.
+  

@@ -1,0 +1,23 @@
+next : TLS관련 통신 기초 확인(using openssl, TLS서버/클라이언트 샘플 구현 / 샘플코드분석)
+       (v)spec정리
+       tc정리
+
+1:1 simple echo server, client
+
+Spec
+  server
+    client의 데이터를 암호화 통신을 통해서 수신후 데이터를 그대로 에코함.
+    TLS, TCP, IP, Ethernet기반
+    server가 bind하는 address 및 port는 127.0.0.1:60000
+    server는 iterative구조.
+  client
+    server와 암호화 통신을 하여 데이터 전송 믿 전송받은 데이터를 그대로 에코받음.
+    TLS, TCP, IP, Ethernet기반
+    에코데이터는 프로그램 실행 파라미터로 전달받음.
+
+참고
+  https://aticleworld.com/ssl-server-client-using-openssl-in-c/
+  https://en.wikipedia.org/wiki/Transport_Layer_Security
+  https://www.openssl.org/
+
+TC
