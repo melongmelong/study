@@ -1,0 +1,159 @@
+next : 완료
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : autotools
+학습이유
+  opensource 빌드 시, 이게 뭘까?에 대한 의문 해소.
+  +대부분 linux open source project에 사용되서 알고있으면 좋을 것 같음.
+  +추후에도 도움이 될 수도 있지 않을까라는 막연한 생각.
+
+학습목표
+  autotools 직접 프로젝트 적용해보는 수준정도.(너무 딥하게는 필요없고 필요한것만 확인해서 프로젝트 적용해서 빌드 ㄱㄱ)
+  
+학습자료
+  구글링
+  위키피디아(autotools)
+  gnu document
+  튜토리얼 참고
+    http://soopsaram.com/documentudy/2021/09/11/gnu-autotools/
+    https://elinux.org/images/4/43/Petazzoni.pdf
+   
+학습계획
+  autotools 개념
+  autotools 튜토리얼
+  autotools 프로젝트 적용
+  
+========
+7단계 *기본개념(정의수준), 튜토리얼실행수준
+autotools?
+  목적 : a suite of programming tools designed to assist in making source code packages portable to many Unix-like systems.=> GNU build system을 만들기 위한 tool
+  *GNU build system : A unified build system that makes all packages almost indistinguishable by the installer.
+                      GNU build system이 정의하는 표준들(ex. make target목록, configure option 등등...)이 있음. gnu automake doc참조.
+
+  주요 components
+    autoconf
+      정의 : extensible package of M4 macros that produce shell scripts to automatically configure software source code packages.
+     
+     input : configure.ac
+     output : configure script
+
+     configure.ac : configure script를 생성하기 위한 소스코드로 보면 됨
+                    syntax와 표준 layout은 gnu autoconf doc 3.1.2,3.1.3 참조
+
+     configure script : shell script임.
+                           주로 Makefile, header, script(ex config.status) 등등을 생성하는 내용임(gnu autoconf doc 3 Making configure Scripts그림 참조)
+                        configure script실행은 autotools가 인스톨되어있지 않은 환경에서도 가능함 즉, 생성할때만 autotools이 필요함.
+
+
+    automake
+      정의 : a tool for automatically generating Makefile.in from files called Makefile.am
+
+     input : Makefile.am, configure.ac
+     output : Makefile.in
+
+     Makefile.am : gnu Makefile의 definitions들의 모음이라고 볼 수 있음.
+     Makefile.in : gnu Makefile 문법을 따름.
+                   Makefile.am내용을 copy하고, copy하면서 추가적으로 처리필요(ex. make rule 생성)한 것들은 추가로 expand함.
+
+    libtool => 이건 일단 있다는 수준만... 확인!
+       정의 : static/dynamic library 생성 관리를 위한 helper
+
+   참고. autoconf, automake등 autotools의 input/output 큰 흐름은 위키피디아 참조(https://en.wikipedia.org/wiki/GNU_Autotools)
+
+   참고. autoconf와 automake는 서로의 결과물을 상호참조 되어짐
+     예1) automake output인 Makefile.in은 ./configure(by config.status)에 의해 읽어들어져서 M4매크로에의해 M4매크로로 작성된 데이터가 치환 됨 결과 Makefile이 최종 생성됨.
+        configure.ac 가 아래와 같을 때,
+          AC_CONFIG_FILES([Makefile])
+        Makefile.in의 일부('@'으로 감싸져있는 부분이 치환될 놈)이면
+          pkgdatadir = $(datadir)/@PACKAGE@
+        ./configure로 생성된 Makefile은 다음처럼 변경됨(매크로 처리 되었다.)
+          pkgdatadir = $(datadir)/main
+
+     예2) aclocal이 생성하는 매크로 중, automake-provided autoconf macro가 존재.
+        
+tutorial
+  주요tool
+    autoconf : configure.ac로부터 configure 를 생성
+    automake : Makefile.am으로부터 Makefile.in생성
+  기타 tool
+    autoscan : configure.ac 자동생성 해주는 tool.(by scanning source codes)
+    autoreconf : autotools관련 여러툴들(ex. autoconf, aclocal, automake)을 실행해서 GNU Build System(ex configure sciprt등)의 내용을 업데이트
+    aclocal : aclocal.m4 매크로(automake-provided autoconf macro들임)를 생성(by scanning 'configure.ac')
+
+  순서
+    ===configure script생성단계===
+    configure.ac생성
+    aclocal
+    autoconf
+    ===Makefile.in 생성단계===
+    Makefile.am 생성
+    automake [--add-missing] *add-missing은 필요한 파일 존재하지 않는다면 자동생성해준다는 옵션임
+    ===완료=== *configure && make 가 가능(GNU build system 이 만들어졌음)
+    *autoreconf -i => aclocal, autoconf, automake를 한번에 실행해준다고 함(configure.ac, Makefile.am 다 생성 후 수행하면 됨)
+
+  주요파일/코드설명
+    configure.ac
+        AC_INIT : command-line argument 처리 및 autoconf를 초기화/검증수행.                     
+        AM_INIT_AUTOMAKE : generated Makefile이 적절하게 동작하기 위해 필요한 수많은 매크로들을 실행
+        AC_PROG_CC : 사용할 C-language compiler를 결정.
+        AC_CONFIG_FILES([file]) : AC_OUTPUT macro가, file.in으로부터 file을 생성(file.in을 카피하고, output variable값을 세팅하는 과정)하도록 세팅.
+        AC_OUTPUT : config.status를 생성하고 실행함.(configure.ac의 마지막 command임)
+
+       참고.AC_ prefix들은 autoconf macro들임.(autoconf manual 참조)
+       참고.AM_ prefix들은 automake를 위한 macro들임.(automake manual 참조)
+      
+     Makefile.am
+       AUTOMAKE_OPTIONS : automake의 feature(ex. strictness)를 control함.(option을 명시)
+       bin_PROGRAMS : bin => program이 설치되어야할 경로가 bindir 임을 의미
+                      PROGRAMS => 결과 Makefile이 빌드해야하는 program들 리스트를 가지고 있는 special variable.
+       main_SOURCES : main을 만들기 위해 필요한 소스파일 리스트를 가지고 있는 variable.
+                      _SOURCES앞은 프로그램의 이름.(ex. client_SOURCES, server_SOURCES ...)
+       *Makefile.in에 위 규칙을 따르는 code(gnu Makefile syntax)들이 생성됨.
+
+        참고.SUBDIRS : make가 recurse해야하는 디렉토리 목록을 가지고있는 special variable.
+        참고.strictness : GNU convention을 어느정도 수준으로 따르는 지에 대한 정도를 의미
+                        gnu, foreign, gnits 3개 레벨이 있음.
+                        *gnu automake doc 3.2. strictness 참조
+         
+참고
+  M4 macro : 범용 목적의 매크로 프로세서(=간단하게 text replacement tool이라고 볼 수 잇음.) 중 하나임.
+  
+8단계 *configure.ac, Makefile.am 의미 이해.
+  7단계 내용에 추가 정리하였음.!
+
+9단계 *실 프로젝트 적용(내가 했던 TDD프로젝트에 적용해서 빌드되는지)
+  참고. 적용하면서 추가로 사용한 매크로
+    Makefile.am
+      LDADD : 빌드할때 링크할 외부(=configure script에서 참조하지 않는) 라이브러리.
+              prog_LDADD 로 prog빌드시에만 사용할 라이브러리를 override가능.
+      prog_CFLAGS : prog를 빌드할 때 사용할 컴파일 플래그를 정의(_CFLAGS말고도 _CPPFLAGS등등이 존재함)
+  
+10단계 *정리
+결과
+  autotools의 기초적인 사항에 대해서 알게되었음.
+
+알게된 것
+  autotools 란?
+    목적 : a suite of programming tools designed to assist in making source code packages portable to many Unix-like systems.=> GNU build system을 만들기 위한 tool
+    *GNU build system : A unified build system that makes all packages almost indistinguishable by the installer.
+                        GNU build system이 정의하는 표준들(ex. make target목록, configure option 등등...)이 있음. gnu automake doc참조.    
+  주요tool
+    aclocal : autoconf에서사용할 automake-provided 매크로를 생성
+    autoconf : configure.ac -> configure를 생성
+    automake : Makefile.am -> Makefile.in을 생성
+
+  적용방법
+    configure.ac와 Makefile.am을 문법에 맞게 작성하고 autotools(aclocal, autoconf, automake)를 수행하면 됨.
+    *tutoral/, step9/ 참조
+
+코멘트
+  매우 기초적인 것만 알게되었으나,
+  오픈소스에서 자주보던 configure.ac, Makefile.am, Makefile.in과 configure스크립트, Makefile의 의미/관계를 알 수 있었음.
+  추후 디테일하게 알 필요가 있을 때 지금 알게된 내용들 기반으로 추가확인하면 될 것으로 보여짐.
+  
