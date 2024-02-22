@@ -1,0 +1,320 @@
+next : 완료
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : shell script
+학습이유
+  현업에서도 사용중인데 지식의 빈틈이 있어 능숙하지 못함.(그러려니 하고 사용중임. 매번 구글링하고 대충 보고 되는구나 하고 걍 씀.)
+
+학습목표
+  자주 쓰는 기능에 대한 지식의 빈틈 제거
+  목록
+    shell script 개념, 종류/차이(대표적인거 몇개위주)
+    syntax 종류(ex. &&, ||, pipe(|), ;, ., #, here document, [], (), etc...) *bash기준으로
+    
+학습자료
+  shell script wikipedia
+  bash wikipedia
+  구글링
+  man page
+
+학습계획
+  milestone1. 목표 : shell script개념/종류/차이, syntax종류확인, 이중 익숙하지 않은 syntax는 직접 실행해보고 지식의 빈틈 정리
+  
+=======================
+7단계. *목표 : shell script 개념/종류/차이, 3-7장 훑어보면서 대강 정리.
+shell?
+  OS service를 외부(human, application)으로 노출시키는 프로그램. => OS service와의 interface program 이다.
+  외부와의 인터페이스는 크게 2가지
+    CLI
+    GUI
+  참고. OS 컴포넌트에서 가장 외곽에 위치해서 shell이라고 일컬어짐.
+  참고. shell마다 지원하는 기능(command, syntax) 등이 모두 다르기도 하며,
+      shell이 command interpreter또는 script language로써 또는 둘다의 기능을 제공하기도 함.(즉, shell이 script language를 의미할 수도 있다.)
+   
+shell script?
+  shell에서 실행되는 프로그램.
+  => A shell script is a text file containing shell commands
+
+종류/차이
+  대표적인 shell
+    bourn shell(sh)
+    bourn again shell(bash) *shell, or command language interpreter for GNU OS
+    korn shell(ksh)
+    c shell(csh)
+  shell마다 지원하는 기능들(ex. command, syntax)에 차이가 있음.
+  
+BASH
+  bash의 building block들
+    commands
+    control structures
+    shell function
+    shell parameter
+    shell expansion
+    redirection
+    execution commands
+
+  bash 동작개요(3.1.1 Shell Operation참조)
+    대략, string을 input받고 -> string을 word/operator 등으로 토크나이징 -> 토큰파싱 -> expansion(ex. variable 등) -> redirection관련처리 -> command실행
+
+   Quoting
+     bash의 특정 워드에 대한 special의미를 제거하기 위한 목적. 3가지 quoting 메카니즘이 있음
+       escape character(ex. \a)
+       single quotes(ex.'aaa')
+       double quotes(ex. "aaa") : single quotes와는 $, `, \ 등 일부는 quoting처리안한다는 차이가 있음.
+
+    Reserved Words
+      bash에서 특별한 의미를 가지는 word들.(ex. if then elif [[ ]] 등등 *gnu bash doc 참조.)
+
+    Simple Commands
+      blank로 구분된 word들의 sequence(with shell control operator(ex. newline)로 종료됨)
+      ex) cp ./file1 ./file2 => cp ./file1 ./file2 모두 word들임
+      
+    Pipelines
+      '|'로(or '|$') 구분되어진 1개이상의 command들. *command 1개면 simple command로 볼 수 있음(?)
+     exit status는 pipeline의 가장 마지막 command의 것.
+     *pipe개념은 알고있는거랑 동일함.(command는 이전 command의 output을 read함)
+    
+    List of Commands
+      특정구분자(ex. &&, ||, ; 등)으로 구분됨 1개이상의 pipeline의 sequence
+      주요구분자
+        ; : 순차적으로 실행됨(ex. command1 ; command2)
+       &&(AND) : left의 exit status가 0이면(=success) right를 실행.(ex. command1 && command2)
+       ||(OR) : left의 exit status가 0이아니면(=fail) right를 실행(ex. command1 || command2)
+
+    Compound Commands
+      shell programming language construct로, 각 construct는 특정word로 시작하고 특정 word로 종료됨.
+         => 쉽게말해, looping constructs(ex. while ~ do ~ done) 등으로 감싸진 형태를 말함.
+      compound commands의 redirection은 하나의 construct에 모두 적용 됨.
+       종류 *상세내용은 gnu bash doc 3.2.5참조
+        looping constructs (ex. until, for, while ...)
+        conditional commands (ex. if, case ...)
+        grouping 
+          command들을 하나의 단위로 실행하는 기능. 크게 2가지 방법 지원
+          ( list ) : subshell이 만들어진 후 list가 실행 됨.
+          { list; } : current shell에서 list가 실행 됨.
+
+     Shell Functions
+       command의 그룹으로써, 하나의 이름으로 추후에 실행할 수 있음.
+       arguments
+         function실행시, positional parameter형태로 전달 됨.(ex. $1, $2)
+           *'#' 은 positional parameter의 갯수를 의미.
+           *함수종료된 경우 positional paramter(#포함)의 값은 이전값으로 복원 됨.
+
+       exit status
+         function body의 가장 마지막 command의 exit status임.
+         return argument에 값이 있는 경우, function의 return status(=exit status)가 됨.
+
+       return builtin
+         return 이 수행된 경우, function실행완료(=즉시종료)하고 function call지점부터 수행 됨        
+     
+       local builtin  
+         local로 function의 local varaible을 선언할 수 있음.(function에만 visible함)
+         local variable은 global varialbe을 hide함
+
+        *상세내용은 gnu bash doc 3.3참조
+    
+    Shell Parameters
+      값을 저장하는 entity
+     variable : parameter인데 이름을 가짐.(shell varaible 말하는 거임)
+      0개이상의 attirbute를(=값) 가질 수 있음.
+     unset builtin으로 unset가능함.
+      모든 값은 expansion(ex. command subtitution, variable expansion 등)된 값을 처리함.
+     Positional Parameters, Speicial Parameters도 존재함.
+
+    Shell Expansions
+      brace expansion : arbitrary string을 생성하는 메카니즘.
+        ex)
+          bash$ echo a{d,c,b}e
+          ade ace abe
+
+      tilde(~) expansion
+         ex)
+          ~ : The value of $HOME
+          ~/foo : $HOME/foo
+      parameter and variable expansion : $ character가 expansion수단
+      command substitution : command의 output이 command를 대체(command의 stdout 으로 대체된다...)
+         ex)
+           $(command)
+           `command)
+      arithmetic expansion : arithmetic expression의 처리결과로 대체.
+        ex) $(( expression ))
+      word splitting : IFS 값(delimeter역할을 함)을 기준으로 expansion의 결과를 word로 splitting수행함.
+      filename expansion : '*', '?', '[' 에 대하 filename expansion을 수행.(일단 skip)
+
+
+    Redirections
+      command의 read,write관련 file handle에 대한 처리(dup, open, close)를 가능하게 함.(=file descriptor 관련 처리가 됨)
+        redirection 사용 format *n은 file descriptor임!. 명시안된경우 stdin(=0), stdout(=1)를 의미!
+        [n]<word(for read) 
+        [n]>word(for write) 
+        [n]>>word(for write, appending)
+        here document : standard input으로 line들을 redirection함.
+          [n]<<word
+            here-document
+          word(=delimter)
+        here strings : here document의 변형
+          [n]<<< word
+
+    Executing Commands
+       8단계내용 참조
+
+    Shell Scripts
+      shell commands를 포함하는 text file임.
+      non-interactive shell을 생성하여 실행됨.
+
+    Builtin Commands
+      bash가 제공하는 내부 command들.
+       별도 프로그램이 실행되지 않음.
+      cd, eval, exec, . ...등이 존재함.(목록 및 상세내용은 4.Shell Builtin Commands 참조)
+      +job control builtin도 포함(ex. wait, kill ... 목록 / 상세내용은 7.2 Job Control Builtins 참조)
+        
+    Shell Variables
+      bash가 제공하는 기본 Variables들이 존재함(ex. HOME ...)
+       목록/상세내용은 5.Shell Variables 참조
+
+8단계. *목표 : 7단계 정리안된것들 추가 정리
+  Pipelines : simple command도 pipeline으로 볼 수 있는게 맞는가?
+    pipeline의 정의 : 1개 이상의 command들을 시퀀스를 의미
+    simple command 정의 : command의 종류 중 하나(가장 단순한 형태의 command)
+     => 결론, simple command도 pipeline에 속한다.
+
+  List of Commands : pipeline에 대한 리스팅이 가능한가?
+    테스트결과
+    knw@knw-System-Product-Name:~$ echo a | grep a && echo melong | grep me
+    a
+    melong
+    knw@knw-System-Product-Name:~$ echo a | grep a || echo melong | grep me
+    a
+    => pipeline에 대한 리스팅도 가능함.!
+
+  Sehll Functions : varaible visibility 추가정리필요(Shell Functions 참조 keyword : dynamic scoping)
+    dynamic scoping
+      function 내부에서 varaible의 visibility를 제어
+      variable visibility가 function call sequence와 연관된다고 볼 수 있음.
+      ex. f1(w/local variable L) -> f2 -> f3 call인 경우, f2, f3에서 모두 $L을 참조할 수 있다를 의미.
+      테스트결과
+knw@knw-System-Product-Name:~$ f1()
+> {
+> local L='test'  #function f1에 local L정의
+> f2
+> }
+knw@knw-System-Product-Name:~$ f2()
+> {
+> f3
+> }
+knw@knw-System-Product-Name:~$ f3()
+> {
+> echo $L         #function f3에서 L값 출력
+> }
+knw@knw-System-Product-Name:~$ L='global'  # global L정의
+knw@knw-System-Product-Name:~$ f3          # f3바로 call시 global L값이 출력
+global
+knw@knw-System-Product-Name:~$ f1          # f1을 통한 f3 indirect call시, f1의 L값이 출력.!
+test
+
+  Shell Parameters : nameref 확인(3.4. Shell Parameters 참조. keyword nameref)
+    nameref
+      variable을 reference하는 attribute 
+       간접적으로 reference당하는 varaible을 manipulate할 수 있음(C++ reference 변수랑 비슷한 개념으로 보면 됨)
+       *자주 함수 아규먼트로써 사용 됨!
+      declare, local에 '-n' attribute로 reference가능
+        ex. declare -n ref=$1 #함수로 넘어온 첫번째인자를 ref로 참조하겠다.
+      테스트결과
+knw@knw-System-Product-Name:~$ f_ref()
+> {
+> local -n ref=$1
+> ref='f_ref melong'
+> }
+knw@knw-System-Product-Name:~$ f_nonref2()
+> {
+> local ref=$1
+> ref='f_nonref2'
+> }
+knw@knw-System-Product-Name:~$ var='abc'
+knw@knw-System-Product-Name:~$ f_nonref2 var   
+knw@knw-System-Product-Name:~$ echo $var
+abc
+knw@knw-System-Product-Name:~$ f_ref var      #주의! parameter(variable) expansion된거말고 parameter 이름 그대로 넘겨야 함!
+knw@knw-System-Product-Name:~$ echo $var
+f_ref melong
+
+  Shell Expansions 
+    word splitting 개념 좀 더 확인.(IFS)
+      shell은 IFS를 delimeter로하여, expansion의 결과를 word로 split함.
+      expansion이 발생하지 않으면, word splitting을 수행하지않음.!
+      
+    quote removal개념 좀 더 확인.
+      ??? *내용은 짧은데 당최 먼소린지 모르겟다. pass...
+
+  Executiong Commands : expansion순서 등. 기본 개념 확인
+    진짜 간단하게 요약하면,
+    simple command가 실행되는 경우,
+      simple command에 대한 expansion, assignment, redirection을 수행 및 command name을 찾고,
+      command name이 존재하지 않는 경우와
+      command name이 존재하는 경우(ex. function, builtin command, shell script, program *나열순서는 command name처리 우선순위로 볼 수 있음)
+       에 따른 처리(=실행)을 수행한다...
+
+  Array : gnu bash doc 6.7 Arrays로 기본내용 확인
+    다음 2종류 array를 지원
+    one-dimensional array : integer index를 사용(0-indexed)
+    associative array : index가 string임.(map자료구조 비슷하다고 봐도 됨)
+
+    declare builtin으로 명시적으로 array를 선언할 수 있고, name[subscript]=value 형태로 자동으로 생성할 수도 있음.
+      declare -a name[subscript] : one-dimensional array 명시적 선언
+      declare -A name : associative array 명시적 선언
+
+    종류와 관계없이 array의 크기제한도없고, 연속적으로 인덱싱 될 필요도 없음.
+
+    array참조 : ${name[subscript]} 로 값을 참조할 수 있음(array종류 무관함)
+    
+9단계. *목표 : skip!
+10단계. *목표 : 최종정리
+결과
+  shell script가 무엇인가에 대한 '감'을 잡을 수 있었음.
+  추후 필요내용은 bash doc 에서 무얼 봐야되겠다라는 '감'을 잡을 수 있었음.
+  
+알게된 것
+  shell사용 시 확실하지 않았던 의미에 대해 알 수 있었음.
+   shell이란?
+
+   bash의 주요 개념
+    building block
+      commands
+        command종류들은 다음과 같으며, 아래종류는 위종류를 기반으로 확장되는 개념으로 볼 수 있음.
+        simple : ex) echo a b c
+        pipeline : ex) cat test.txt | grep a
+        list : ex) cat test.txt | grep a && echo 1
+        compound : ex) looping construct(ex. while...), conditional construct(ex. if...), function 로 감싸진/정의된 command
+
+      control structures
+         실행흐름을 제어하는 structure를 의미
+          looping construct(ex. while...), conditional construct(ex. if...) 가 있음.
+      
+      shell function
+        shell이 function을 제공함!
+
+      shell parameter
+        shell varaible으로 이해하면 됨.
+
+      shell expansion
+        다양한 expansion(ex. ${var}, ~, ...)을 지원.
+
+      redirection
+        command의 read,write관련 file handle에 대한 처리(dup, open, close)를 가능하게 함
+         응용으로써, here document/here string등이 존재.
+
+      execution commands
+        command 실행에 대한 처리과정 : 파싱(expansion, assignment...) -> locating command name -> execution
+
+코멘트
+  C언어만큼 잘 사용하는 수준이 아니라서 아쉬움 + 간단한 스크립트라도 한 번 짜봤으면 하는 아쉬움이 남으나,
+  주요개념은 한번 짚고넘어갈 수 있었다고 생각되며 + shell/shell script작성 시 reference가 어디있는 지 알 수 있었으므로 의미가 있는 것 같음.  
+
+
+
