@@ -1,0 +1,267 @@
+next : 9단계 ㄱㄱ
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : 리눅스 성능
+
+학습이유
+  리눅스에서 성능의 의미와 시스템/프로세스의 성능 측정방법 학습
+
+학습목표
+  주요성능항목에 대해서
+    의미 확인
+    리눅스 성능측정 tool 종류/사용법
+    샘플프로그램에 대한(종류는 TBD) 성능수치들 실제로 측정해보기!(?)
+
+  주요성능항목?(TBD)
+    CPU(user, system, idle, wait ...) / memory(/proc/meminfo ...) / disk(iops ...)
+    *optional : network
+    
+학습자료
+  책(소프트웨어 성능의 이해) => 탈락...(이번 범위랑은 너무 다른내용임)
+  구글링
+  https://www.brendangregg.com/linuxperf.html (누군가가 리눅스 성능관련 이것저것 모아놓은 페이지)
+
+학습계획
+  milestone1. 주요성능항목에 대한 의미 확인
+  milestone2. 주요성능항목에 대한 측정 tool 종류/사용법확인
+  milestone3. 샘플프로그램에 대한 프로세스/시스템 성능 측정 term prj.
+  
+=======================
+7단계 *목표 : cpu, memory, disk의 주요 성능지표 종류와 대응하는 측정 tool 이 무엇인지?
+성능항목 측정 tool 매핑(항목 / tool)
+  (v)load avg / uptime
+    load avg : linux에서 실행을 워하는 프로세스의 수에 대한 지표.
+    uptime : 1 / 5 / 15분 간격의 load avg수치를 나타냄.(순차적으로)
+  (v)virtual memory statistics / vmstat
+    process, memory, paging, block io, disk, cpu acitivity등에 대한 수치를 나타냄..
+  (v)cpu time per cpu / mpstat
+    cpu 별 cpu 사용 시간을 나타냄
+  (v)cpu time per process / pidstat
+    process별 cpu 사용 시간을 나타냄
+  (v)block device statistics / iostat
+  (v)memory statistics / free
+  (v)system activity information(cpu, nic, block device 등등...) / sar
+  (v)system activity information / top
+  linux profiling tool with performace counter / perf => 얘는 따로보자...
+
+8단계 *목표 : 성능지표의 실제 의미와 tool 사용법(좀 더 디테일하게) 7단계 각 항목별로 성능수치의 의미 + tool사용법
+  load average / uptime
+    성능수치
+      load average
+         의미
+          the average number of processes that are either in a runnable or uninterruptable state averaged over 1min, 5min, 15min
+            runnable state : either using the CPU or waiting to use the CPU == the number of jobs in the run queue (state R)
+            uninterruptable state : waiting for some I/O access, eg waiting for disk == the number of jobs waiting for disk I/O (state D) 
+
+         참고
+          cpu갯수는 고려되지 않은 수치임. 즉, load average가 1 1 1 이면, 
+            cpu 1개 시스템에서는, 1/5/15분 동안 평균적인 R/D state 프로세스가 1개 즉, cpu가 부하가 좀 있다
+            cpu 4개 시스템에서는, 의미는 동일하지만, 대충 cpu 1개는 일을하고 3개는 idle하다로 볼 수도 있음.
+
+         참고
+           1/5/15분 load avg값은, 정확하게 지난 1/5/15분 동안 계산된 load avg가 아닌, 시스템up시간부터 계산된 load avg값을 사용하여 계산된 근사치(통계학적인 방법인듯함)임!
+            https://en.wikipedia.org/wiki/Load_(computing)#cite_note-drdobbs-5
+            https://www.linuxjournal.com/article/9001
+
+         참고
+          load는 system-wide함(즉, 4개CPU, CPU당 1run-queue인 경우, 4개 run-queue의 load가 모두 반영된다고 보면 됨)
+           
+  virtual memory statistics / vmstat
+    성능수치 *기본출력수치들
+      process관련 수치 : r/b (/proc/stat을 참조 *procps-ng_source/proc/sysinfo.c getstat() 참조)
+      memory관련 수치 : swpd/free/buff/cache (/proc/stat을 참조 *procps-ng_source/proc/sysinfo.c getstat() 참조) 
+      Swap관련 수치 : si/so (/proc/stat을 참조 *procps-ng_source/proc/sysinfo.c getstat() 참조)
+      IO관련 수치 : bi/bo (/proc/stat을 참조 *procps-ng_source/proc/sysinfo.c getstat() 참조)
+      System관련 수치 : in/cs (/proc/stat을 참조 *procps-ng_source/proc/sysinfo.c getstat() 참조)
+      CPU관련 수치 : us/sy/id/wa/st (/proc/stat을 참조 *procps-ng_source/proc/sysinfo.c getstat() 참조)
+       *상세의미는 man page참조    
+
+      참고 
+        interval이 없는 경우에는, system up 시간부터의 통계
+                     있는 경우에는, interval 사이의 통계(이전스냅샷, 이후스냅샷의 차이)
+
+  cpu time per cpu / mpstat
+    성능수치 *기본출력수치들
+      CPU, %user, %nice, %sys, %iowait, %irq, %soft, %steal, %guest, %gnice, %ilde (/proc/stat을 참조 *sysstat_source/rd_stats.c read_stat_cpu() 참조)
+       *상세의미는 man page참조
+     참고 
+      interval이 없는 경우에는, system up 시간부터의 통계
+                   있는 경우에는, interval 사이의 통계(이전스냅샷, 이후스냅샷의 차이)
+ 
+  cpu time per process / pidstat
+     성능수치 *기본출력수치들
+       process의 cpu usage정보를 출력
+         UID (/proc/[pid]/status를 참조 *sysstat_source/pidstat.c read_proc_pid_status() 참조)
+         PID (/proc 하위에 숫자이면 pid *sysstat_source/pidstat.c read_stats() 참조)
+         %usr %system %guset %wait %CPU CPU Command (/proc/[pid]/stat를 참조 *sysstat_source/pidstat.c read_proc_pid_stat() 참조)
+          
+      *상세의미는 man page참조
+
+      참고
+        클럭틱값 기준시간으로, interval간 사용률을 구한다고 보면 될 듯. 즉, usage = (cur_tick - prv_tick) / interval_tick
+        => 개념적으로는 일정시간동안의 사용시간 비율임
+       *clock tick기준으로 처리하는 것으로 확인되는데, 소스코드에서 read_uptime에서의 *100은 무슨 의미인지는 정확하게 모르겟슴. 일단 skip
+      참고
+       /proc/[pid] 기반으로 추출 됨.
+         /proc/[pid]/stat
+         /proc/[pid]/schedstat
+          등등..
+     참고 
+      interval이 없는 경우에는, system up 시간부터의 통계
+                   있는 경우에는, interval 사이의 통계(이전스냅샷, 이후스냅샷의 차이)
+
+     참고
+       jiffies : system boot이후 발생해온 틱 갯수(=타이머 인터럽트 수)
+
+
+  block device statistics / iostat
+    성능수치 *기본출력수치들
+      block device의 통계정보를 출력
+        avg-cpu(%user %nice %system %iowati %steal %idle) (/proc/stat를 참조. *sysstat_source/iostat.c의 write_plain_cpu_stat(), rd_stats.c의 read_stat_cpu() 참조)
+        tps kB_read/s kB_wrtn/s kB_dscd/s kB_read kB_wrtn kB_dscd(/proc/diskstat을 참조 *sysstat_source/iostat.c의 write_plain_basic_stat(), read_diskstats_stat_work() 참조)
+      *상세의미는 man page참조하면 됨
+       참고.
+        avg-cpu
+          /proc/stat정보 기반으로 보여줌
+           현재스냅샷 - 과거스냅샷 / 시간 * 100으로 보면 됨
+          iostat.c / write_plain_cpu_stat() function 참조
+          
+        block device 수치 
+          /proc/diskstat 정보 기반으로 보여줌
+           현재스냅샷 - 과거스냅샷 / 시간 or (현재스냅샷-과거스냅샷)의 수치를 보여준다고 보면 됨
+          iostat.c / write_plain_basic_stat() function 참조
+
+       참고 
+        interval이 없는 경우에는, system up 시간부터의 통계
+                     있는 경우에는, interval 사이의 통계(이전스냅샷, 이후스냅샷의 차이)
+
+  memory statistics / free 
+    성능수치 *기본출력수치들
+     total, used, free, shared, buff/cache, avaliable(/proc/meminfo를 참조 *procps_source/sysinfo.c meminfo() 참조)
+     *상세의미는 man page참조하면 됨. (free는 현재 스냅샷 정보만 관여하므로 크게 복잡하진 않음... 메모리영역의 개념빼고는...)
+
+    참고.
+      /proc/meminfo 정보를 보여줌. *어느정도 adjustment는 있는 듯한데... 이건 해당 수치가 진짜 중요할때 코드보면 될 듯.
+
+  system activity information(cpu, nic, block device 등등...) / sar
+    성능수치 *sar로 확인가능한 수치들
+      cpu관련 *-u 옵션
+        CPU, %user, %nice, %system, %iowat, %steal, %idle (/proc/stat을 참조 *sysstat_source/rd_stats.c read_stat_cpu() 참조)
+         참고
+           /proc/stat기반으로 추출됨(man proc의 stat항목 참조)
+
+      memory관련 *-r 옵션
+        kbmemfree, kbavail, kbmemused, %memused kbbuffers kbcached kbcommit %commit kbactive kbinact kbdirty (/proc/meminfo을 참조 *sysstat_source/rd_stats.c read_meminfo() 참조)
+         참고
+           /proc/meminfo기반으로 추출됨
+
+      block device관련 *-d 옵션
+        DEV, tps, rkB/s wkB/s dkB/s areq-sz aqu-sz await %util (/proc/diskstat을 참조 *sysstat_source/rd_stats.c read_diskstats_disk() 참조)
+         참고
+           /proc/diskstats기반으로 추출됨
+
+      nic관련 *-n DEV 옵션
+         IFCAE, rxpck/s txpck/s rxkB/s txkB/s rxcmp/s txcmp/s rxmcst/s %ifutil (/proc/net/dev를 참조 *sysstat_source/rd_stats.c read_net_dev() 참조)
+          참고
+           /proc/net/dev기반으로 추출됨
+
+       *상세의미는 man page참조.
+
+       참고 
+        interval이 없는 경우에는, system up 시간부터의 통계
+                     있는 경우에는, interval 사이의 통계(이전스냅샷, 이후스냅샷의 차이)
+
+       참고
+         sysstat패키지의 경우, link할때 strip하므로, gdb로 디버깅할려면 configure시 disable strip옵션줘야함
+           ./configure --disable-stripping CFLAGS='-ggdb'
+
+       참고
+        sysstat패키지의 activity.c에 각 통계수치별 구조체가 있음. header(ex. %user) 문자열로 검색하면 확인가능하며
+           주요필드
+            f_read : sadc(data collector)가 실제 시스템 통계값을 읽음(ex. /proc/stat 등)
+            f_print : sar가 사용자에게 데이터를 출력
+            hdr_line : 사용자에게 출력되는 헤더line
+
+          sadc에서 f_read로 데이터를 읽고, sar로 전달.
+          sar는 데이터를 읽고 f_print로 데이터 출력(interval간격 통계 or 통계 since system up)
+
+  system activity information / top
+    성능수치 *기본출력수치들
+      load average
+        load average(/proc/loadavg를 참조 *procps_source/proc/sysinfo.c loadavg(), proc/whattime.c sprint_uptime(), top.c summary_show() 참조)
+
+      task sumamry
+        total, running, sleeping, stopped, zombie (/proc/[pid]/stat의 프로세스상태값으로 상태별 태스크 수를 counting. *procps_source/proc/readproc.s simpel_readproc(), top.c procs_hlp() 참조)   
+
+      cpu관련
+        summary
+          us,sys,ni,id,wa,hi,si,st : 전체 시스템에 대한 cpu사용시간비율(/proc/stat의 값으로 보여줌. procps_source/top.c cpus_refresh(), summary_show(), Cpu_States_fmts 참조)
+           참고
+            /proc/stat 정보를 기반으로 보여줌. => 이전프래임(화면출력시점)스냅샷-현재프래임(화면출력시점)스냅샷 / total * 100 으로 보면 될듯.
+            
+        per-process
+          %CPU : 프로세스의 CPU사용비율(마지막 화면업데이트 시점 기준) (/proc/[pid]/stat의 utime, stime값으로 보여줌. procps_source/top.c task_show(), procs_hlp() 참조)
+            참고
+              기본적으로/proc/[pid]/stat, status, statm 등등.. 정보를 기반으로 보여줌
+            %CPU의 경우, /proc/[pid]/stat의 utime, stime값 기반으로 계산해서 보여주며 상세 계산식은 다음과 같음.
+                top.c task_show() 5357line, procs_hlp 2637line 참조. 
+                Frame_etscale = 100 / HZ * elapsed_time(seconds) 
+                      100 의미는 정확하게 모르겠음(백분율 때문일 듯?)
+                   HZ * elapsed_time = 이전프래임~현재프래임 시간동안의 clock tick 횟수!
+                pcpu = 현재stime+utime - 이전stime+utime => 이전프래임~현재프래임 시간동안의 프로세스에 소비한 clock tick 횟수
+                %CPU = pcpu * Frame_etscale => 이전프래임~현재프래임 시간동안의 cpu사용비율!
+                
+      memory관련
+        summary
+          Mem total(MemTotal), free( MemFree ), used( MemTotal - MemAvailable ), buff/cache( Buffers + Cached + SReclaimable )
+          Swap total( SwapTotal ), free( SwapFree ), used( SwapTotal - SwapFree ), avail( MemAvailable, which is physical memory )
+            참고
+             /proc/meminfo 정보를 기반으로 보여줌(괄호안에 있는 문자열이 /proc/meminfo의 매칭되는 필드임. procps_source/sysinfo.c meminfo(), top/top.c summary_show() 참조)
+               단위는 KB
+        per-process
+          VIRT : 프로세스에 의해 사용되는 가상메모리(ex. code, data, shared libraries, page영역 등) 의 양(KB단위) (/proc/[pid]/statm(첫번째필드)를 참조. procps_source/top.c task_show() 5512line, procs_hlp(), proc/readproc.c simple_readproc(), statm2proc()참조)
+          RES : 프로세스가 사용중인 물리메모리(non-swapped만)의 양(KB단위) (/proc/[pid]/status정보(VmRSS필드)를 참조. procps_source/top.c task_show() 5436line, procs_hlp(), proc/readproc.c simple_readproc(), status2proc()참조)
+          %MEM : 프로세스의 메모리 사용비율(resident share를 의미 = RES필드값 / 전체피지컬메모리값 * 100) (구해온 값으로 계산함(per-process의 RES값 / summary의 Mem total * 100). procps_source/top.c task_show() 5399line, 참조)
+            참고
+              메모리 영역의 의미는 man page OVERVIEW / Linux Memory Types참조! 중요함. quadrant로 잘 정리해놓음(아래 긁어온거임)
+                                     Private | Shared
+                                 1           |          2
+            Anonymous  . stack               |
+                       . malloc()            |
+                       . brk()/sbrk()        | . POSIX shm*
+                       . mmap(PRIVATE, ANON) | . mmap(SHARED, ANON)
+                      -----------------------+----------------------
+                       . mmap(PRIVATE, fd)   | . mmap(SHARED, fd)
+          File-backed  . pgms/shared libs    |
+                                 3           |          4
+
+              대충 정리하자면
+             VIRT : 프로세스와 관련된 모든타입의(위 quadrant에서 1,2,3,4모두 포함) 가상메모리영역의 양(크기)
+             RES : VIRT에서 실제 물리메모리에 올라간 영역의 양(크기) => VIRT의 일부! => 위 quadrant에서 1,2,3,4 중 실제 물리메모리에 올라간 것만.
+            
+        
+       *상세의미는 man page참조하면 됨
+
+       참고
+         통계수치는 제일마지막 화면업데이트 시점을 기준으로 계산 됨.
+
+       참고
+        top이 동적라이브러리도 링크되므로, gdb에서 해당 라이브러리사용해서 디버깅할려면 환경변수세팅후 start 필요함.
+        (gdb) set environment LD_LIBRARY_PATH /home/knw/Desktop/Study/tmp/procps/proc/.libs
+        (gdb) start
+
+  번외 / ps command
+    procps_source/ps/output.c의 format_array의 .print필드(값 출력 function) 참조하면 필드별(ex %CPU, %MEM)로 어떤 정보인지에 대한 분석초석이 될 수 있음.!
+
+9단계 *목표 : 샘플프로그램에 대해 성능지표를 tool사용하여 측정.(이후 개선해보기?)
+ 
+
+10단계 *목표 : 정리
+
+
