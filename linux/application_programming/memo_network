@@ -1,0 +1,406 @@
+next : 9단계 ㄱㄱ
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : linux network programming
+
+학습이유
+  linux network programming 중 일부기능(학습목표참조)에 대해 디테일한 학습
+
+학습목표
+  multiplexing(select, poll) 개념부터 실습까지
+  rawsocket 개념부터 실습까지
+  packet socket 개념부터 실습까지
+  socket() parameter 정확한 의미 확인
+  listen, bind, connect, close/shutdown 정확한 의미 확인
+    
+학습자료
+  책(APUE, Unix Network Programming)
+  man page
+
+학습계획
+  milestone1. 학습목표(위 참조) 도달
+  
+=======================
+7단계 *목표 : 개념확인.(이론 / 주요함수)
+1. multiplexing(select, poll)
+모니터링대상(file descriptor / socket)에 대해 이벤트(ex read, write, timeout) 발생함을 noti받아 처리하는 방식.
+
+1-1. select
+-주요함수
+select()
+  전달받은 fd set에 대해, 이벤트 발생을 기다림. 최대 timeout만큼 기다림.
+  nfds(maxfdp1) 인자 : 모니터링할 socket desc의 가장 큰 값 + 1(모니터링할 socket의 갯수를 의미). fd범위 0 ~ nfds-1에 대해서만 체크수행됨!
+  이벤트종류
+    read *아래 중 한가지라도 만족하면 read event발생
+      socket recieve buffer의 현재데이타크기가 socket recieve buffer low-water-mark이상(SO_RCVLOWAT socket option)인 경우 발생
+      socket read-half가 closed됨(ex. TCP에서 FIN을 수신함)
+      socket이 listening socket이고, completed connection수가 1이상임.
+      socket에 error가 발생 *read/write event둘 다 발생함
+      
+    write
+      socket send buffer의 이용가능크기가 socket send buffer low-water-mark이상(SO_SNDLOWAT) + connect된 상태(UDP는 상관없음)인 경우
+      socket write-half가 closed됨
+      connection이 맺어졌거나, 실패함.(by non-blocking connect())
+      socket error가 발생 *read/write event둘 다 발생함
+      
+    exception
+      out-of-band data가 존재
+      
+  fdset조작하는 함수/매크로들이 제공됨
+    ex) FD_ZERO(), FD_SET(), FD_CLR(), FD_ISSET()
+
+  *fdset 파라미터 모두 NULL로세팅함으로써 select()를 timer로써 사용할 수도 있음.
+      
+
+1-2. poll
+  전달받은 nfds개의 fdarray에 대해 이벤트 발생을 기다림. 최대 timeout만큼 기다림.
+  fdarray : 이벤트 발생을 기다릴 fd를 명시. struct pollfd type임
+    struct pollfd
+      fd : 이벤트 발생을 기다릴 fd. -1이면 해당 descriptor는 무시
+      events : 기다릴 이벤트 종류
+      revents : 발생한 이벤트 종류
+      *이벤트종류에는 POLLIN(readable), POLLOUT(writable), POLLERR 등이 존재함.
+    
+  nfds : fdarray의 갯수(select와는 달리 특이한 의미는 없음)
+  timeout : 타임아웃 값.
+  
+2. rawsocket(ipv4 only)
+개념 : link level header를 제외한 ipv4 datagram(전부는 아니고, kernel이처리하지 않는 일부 datagram만)을 send/recv가 가능한 socket.(=userspace에서 IPv4 protocol처리를 직접할 수 있다.)
+      IPv4만 해당, IPv6는 다른 방식접근이 필요.
+
+struct sockaddr_in 구조체로 address를 기술.
+
+IP_HDRINCL option
+  IPv4 header를 kernel에서 생성하냐마냐를 의미
+  전송시,
+    disable인 경우는 보내는 데이터에 IPv4 header를 제외한 데이터가 포함되어야 함.
+    enable인 경우는 보내는 데이터에 IPv4 header가 포함되어야 함.
+  수신시,
+     옵션과 무관하게 항상 수신된 데이터에 IPv4 header가 포함되어있음.
+  
+creating socket
+  IPv4 rawsocket생성 일반적인 sequence
+
+  socket()
+    인자
+      domain : AF_INET
+      type : SOCK_RAW
+      protocol : 처리할 IPv4 protocol number(ipv4 header에 존재). *해당 protocol만 수신/송신한다.
+                 or IPPROTO_RAW.
+
+  setsockopt() *optional
+    IP_HDRINCL option 세팅.
+
+  bind() *rare case
+    데이타전송 시 사용할 source address(sourceIP주소)가 세팅(출발지포트는 X)
+    데이타수신시에도 세팅된 주소가 영향을 미침(아래 receiving data 참조)
+    
+  connect() *rare case
+    데이타전송 시 사용할 foreign address(dsetIP주소)를 세팅(목적지포트는 X)
+    데이타수신시에도 세팅된 주소가 영향을 미침(아래 receiving data 참조)
+    write(), send() 사용가능해짐
+    
+sending data
+  데이터전송은 아래 function으로 수행가능
+    sendto(), sendmsg() : destination address를 명시(struct sockaddr_in)해서 데이터를 전송.
+    write(), send() : 데이터전송은 똑같으나, connected가 되어야함(=connect()를 통해 dest address정보가 세팅되어야 함.)
+
+  IP_HDRINCL option enable인 경우,
+    데이터전송(ex sendto()) 시 파라미터data는 IP데이터그램의 data부분만 포함되어야 함.
+    *일부 header필드(ex id, header checksum)는 kernel이 알아서 세팅하므로 0으로 build하면 됨.
+  IP_HDRINCL option disable인 경우,
+    데이터전송(ex sendto()) 시 data파라미터는 전체IP데이터그램(=header+data)를 포함하여야함.
+    *IP header protocol field는 socket()함수 3rd 파라미터의 값으로 세팅됨.
+
+  kernel은 IP datagram이 MTU를 초과한 경우 알아서 fragmentation을 수행함.
+  전송하는 데이터의 경우 byte-ordering은 kernel 의존함(ex. kernel이 처리하는 byte ordering으로 세팅해서 전달해야함)
+    
+receiving data
+  kernel에서는 아래 조건을 만족하는 경우 rawsocket으로 패킷을 전달해줌(=rawsocket으로 전달될 데이타그램 후보로 보면 됨)
+    kernel이 처리하지 못하는 protocol field를 가진 IPv4 datagram은 모두 rawsocket으로 전달됨. *즉 TCP,UDP패킷은 rawsocket으로 전달안됨.(처리하기 위해서는 rawsocket이 아닌 data-link access가 필요함)
+    ICMP패킷 일부만 rawsocket으로 전달됨. *echo request, timestamp req, address maks req 타입은 전달하지 않음
+
+  kernel이 선택한 IP데이타그램의 경우(위 조건을 만족하면), 실제 rawsocket 데이터로 전달되기 위해서는 아래 3가지를 모두 만족해야 함.
+    1. socket()의 protocol파라미터(3번째파라미터)가 수신된 IP데이터그램 protocol과 일치. *socket() protocol파라미터 0는 all을 의미함.
+    2. bind()된 IP주소와 수신된 IP데이터그램의 dest IP주소가 일치. *optional(bind()수행된 경우)
+    3. connect()한 IP주소와 수신된 IP데이터그램의 source IP주소가 일치. *optional(connect()수행된 경우) 
+    *해당 조건을 만족하는 시스템의 모든 rawsocket으로 전달(=copy)해줌.
+ 
+  rawsocket을 통해 수신되는 데이터는 전체 IP데이터그램(header+data)임.
+
+  output과 마찬가지로 kernel이 fragmentation을 알아서 처리함.(=단일 fragment는 rawsocket으로 전달되지 않음. 모두 조립된 데이터만 rawsocket으로 전달됨.)
+  output과 마찬가지로 수신된 데이터의 경우 byte-ordering은 kernel 의존함(ex. kernel이 처리하는 byte ordering으로 사용해야함)
+
+3.packet socket
+개념 : layer2 packet을 receive/send하기 위해 사용되는 소켓.(=userspace에서 L2패킷을 직접 처리할 수 있음을 의미)
+
+socket(AF_PACKET, socket_type, protocol) *packet socket 생성
+  AF_PACKET(=PF_PACKET) : packet socket임을 의미
+  socket_type : SOCK_RAW / SOCK_DGRAM
+  protocol : 처리(ex. 수신)할 L2 패킷 프로토콜타입헤더. *ETH_P_ALL인 경우 전부 처리(수신)가능함.
+
+SOCK_RAW : receive시, L2 packet 전체(header+data) userspace로 전달됨.
+                      struct sockaddr_ll에 address정보가 세팅되어 userspace로 전달됨.
+           send시, 전송하는 데이터 파라미터는 L2 packet 전체(header+data)를 포함하여야 함. 해당 데이터를 그대로 device driver로 전달함.
+                     전달하는 대상은 명시된 주소(struct sockaddr_ll)의 NIC(=device driver)임.
+SOCK_DGRAM : receive시, L2 packet data만 userspace로 전달됨.
+             send시, 전송하는 데이터 파라미터는 L2 packet data만 포함. 헤더는 struct sockaddr_ll기반으로 커널에서 세팅되고, 명시된 주소에 해당하는 NIC(=device driver)로 전달됨
+
+패킷수신 시, packet socket의 protocol(socket() 3rd argument)과 L2 packet의 타입이 일치하면 packet socket으로 전달 됨!
+특정 NIC에서 수신된 패킷만 받을려면 bind() 호출하면 됨.
+
+bind()
+  struct sockaddr_ll에 명시된 인터페이스와 packet socket을 bind함.
+   즉, 해당 NIC로 수신된 패킷중, protocol타입과 일치하는 것만 받겠다를 의미.
+
+connect()는 packet socket에서는 지원하지않음.
+
+4.socket() function parameter
+socket()?
+  user process와 kernel network protocol stack의 인터페이스.
+  communication endpoint로써, 통신을 할 수 있음.
+  user space에서는 socket descriptor를 사용한다.
+  kernel network protocol module은 socket()의 3가지 인자로 group화됨.(=즉 인자로 사용할 kernel network procotol stack을 선택한다.)
+    예시) socket(AF_INET, SOCK_STREAM, 0) => network protocol로 TCP/IPv4사용!
+        socket(AF_INET, SOCK_STREAM, 0) => network protocol로 UDP/IPv4사용!
+        socket(AF_INET, SOCK_DGRAM, IPPROTO_UDPLITE) => network protocol로 UDP-lite/IPv4사용!
+  socket별로 특징은 man 7 socket,ip,tcp,udp,raw 참조하는 것이 좋아보임.
+
+4-1. family(or domain)
+  communication domain(=protocol family)를 명시.
+
+  참고. PF_* vs AF_*
+   PF는 protocol families, AF는 address families를 의미.
+   역사적으로는 하나의 PF가 여러개의 AF를 지원한다라는 의도가 있었고, 그래서 PF_*는 socket()에서, AF_*는 address structure(ex struct sockaddr*)에서 사용되었음.
+   <sys/socket.h>헤더에는 PF_*, AF_*이 동일한 값으로 declare되어있으나,
+   AF_* -> PF_*로 변환(vice-versa)은 코드 맛탱이 가게 할 수 있으므로 유의필요~
+   
+4-2. type
+  communication semantic(ex. STREAM or DATAGRAM)을 명시.
+
+4-3. protocol
+  communication protocol을 명시.
+
+5. bind, listen, accept, connect, close, shutdown functions (TCP,UDP/IPv4 관점)
+bind()
+  개요 : local protocol address를 socket과 연결 시킴.
+
+  TCP,UDP/IPv4관점으로는
+    local IPv4와 Port를 socket과 연결시킴.
+    bind()하지 않은 경우, 주소를 kernel이 알아서 세팅. TCP클라이언트에서는 일반적으로 bind()하지않지만, TCP써버는 bind()를 수행(서비스포트가 known되어야하므로)
+    bind()시 주소정보에 따른 동작 테이블
+      IP addr = ANY, port = 0(=bind()안한경우와 동일) : Kernel이  선택한 IP, port로 bind
+      IP addr = ANY, port = nonzero : Kernel이 선택한 IP와, 명시된 port로 bind
+      IP addr = IP, port = 0 : 명시된 IP와, Kernel이 선택한 port로 bind
+      IP addr = IP, port = nonzero :  명시된 IP, port로 bind
+      *Kernel이 선택한다는 의미 = 연결이 맺어져야(맺어진 후) 해당 정보를 알 수 있다.
+
+      ex) server의 경우, 
+        bind()시, 설정된 주소(IP/port)로의 패킷만 수신.
+        bind()수행X시, server->client로의 IP패킷의 sourceIP는 client->server IP패킷의 destIP임.
+      ex) client의 경우, 
+        bind()시, 설정된 주소(IP/port)로 패킷을 송신.
+        bind()수행X시, 라우팅테이블기반하여 sourceIP가 결정됨.
+
+listen()
+  개요 : accept()가 가능한 상태(=incoming connection request를 수신할 수 있는) 의 socket으로 만듦.(=passive socket으로 만든다.)
+ 
+  listen()대상 socket은 SOCK_STREAM / SOCK_SEQPACKET type(connection-based socket)이어야 함.(=UDP소켓은 listen() 의미가 없음)
+
+  backlog : kernel이 수신할 connection의 maximum queue size
+    completed connection queue + incomplete connection queue 가 backlog를 넘을 수 없다.
+    completed connection queue
+      connection이 맺어진 상태인 connection들에 대한 큐.
+      TCP관점에서는 ESTABLISHED state(3-way handshake에서 마지막ACK를 받은 상태)임
+    incomplete connection queue
+      connection이 맺어지는 중 상태인 connection들에 대한 큐
+      TCP관점에서는 SYN_RCVD state(3-way handshake에서 SYN을받은 상태)임
+    incomplete connection queue 에서 completed connection queue로 이동함!(3-way handshake에서 마지막ACK를 받게되면)
+    accpet()에서는 completed connection queue로부터 연결을 처리(ex. socket생성 등)
+     *원래(historically, BSD4.2에서)는 해당 정의였으나, 실제로는 명확하지 않음이라고 함.(=코드까보라는 뜻...?) => 개념만 참조...!
+     *실제 backlog값만큼 최대 큐 갯수가 세팅되는 것이 아니라 +a가 더 있긴 함.! 
+
+accept()
+  개요 : listening socket의 pending connection queue로부터 첫번째 connection request를 추출하여,
+         통신을 위한 새로은 connected socket을 생성함.
+
+  accpet()대상 socket은 listening socket + SOCK_STREAM / SOCK_SEQPACKET type(connection-based socket)이어야 함. *listen과 동일.
+
+  pending connection queue에 항목이 없으면, accept는 요청이올때까지 block함.(nonblocking인 경우 error return)
+  
+  select / poll의 readable event를 monitor하여 accept를 notified받을 수 있음.
+
+connect()
+  개요 : socket을 대상(목적지) address와 연결시킴.
+
+  TCP인 socekt인 경우, 실제 연결을 맺음(3way handshake발생). TCP 상태가 CLOSED -> SYN_SENT -> ESTABLISHED 로 변경됨.
+  UDP인 socket인 경우, datagram의 목적지 주소가 세팅되고 + send/write() 함수 사용이 가능해짐.
+    
+close()/shutdown()
+  close() : socket연결을 끊고(with 전송버퍼에 남아있는데이터는 모두 write. in TCP case), socket descriptor 관련 리소스를 해제함.
+    내부적으로 reference counter가 0가 되어야 실제 close() 동작이 이루어진다. *파일디스크립터와 마찬가지
+
+    TCP의 경우,
+      close()후 내부적으로 queue된 송신 데이터는 전부 보낸 후에 TCP연결해제가 이루어짐.
+
+  shutdown() : read-half, write-half, both-halves에 대해 연결종료를 수행함.
+               close()와 달리 reference count와 무관하게 연결종료를 수행.
+               close()와는 달리 descriptor를 close하진 않음!
+    TCP의 경우,
+      SHUT_RD인 경우, 연결종료는 되지않으나, read는 불가하게 됨(커널내부적으로는 수신된 데이터를 모두 무시 = process가 아직 read하지 않은 데이타 + shutdown()이후에 도달한 데이터)
+      SHUT_WR인 경우, 아직 전송되지않은 남아있는 데이터 모두 전송 후 FIN을 전달함. TCP half-close상태가 됨.(데이터송신은 불가, 수신은 가능)
+      SHUT_RDWR인 경우, shutdown(SHUT_RD), shutdown(SHUT_WR) 순서로 호출한것과 동일.
+
+============================
+
+8단계 *너무 deep하게는 말고,  TCP,UDP/IPv4 기준으로 rough한 수준(ex. bind()라면 커널소스까지 까뒤집는 건 아니고 bind()는 ~~해서 local address를 바인드한다... 느낌?)에서 어떤 내용인지...
+1. multiplexing(select, poll)
+1-1. I/O모델(Unix Network Programming, 6.2)
+input operation관점으로 I/O모델을 분리했다고 보면 될 듯.(write기반은 아니고)
+
+I/O operation의 input은 크게 2가지 phase가 있고, 
+  phase 1. kernel <- network간 input data copy(data to be ready)
+  phase 2. user <- kernel간 input data copy(copy data from kernel to user process)
+
+위 phase를 어떻게 처리하냐에 따라서 아래 5가지 모델로 나뉘어짐. *blocked == sleep과 동의어.
+  blocking I/O
+    phase1 ~ phase2모두 완료될때까지 user process가 blocked인 I/O model.(ex. read()가 user buffer로 데이타를 카피해야 return한다)
+  nonblocking I/O
+    phase1은 user process blocked없음.(ex. read()가 바로 return)
+     특정시점에(읽을데이터가 있을 때) user process blocekd없이 phase2완료(ex. block없이 read()가 return) 후 return하는 I/O model.
+  I/O multiplexing
+    phase1에서는(ex. select()) user process blocked(이벤트발생할때까지 프로세스는 sleep).
+    이벤트 발생후 phase2(ex. read())는 user process blocked하지 않는 I/O model.
+  signal driven I/O
+    phase1에서는 user process가 blocked되지않음,
+    시그널발생후(SIGIO), user process blocked없이 phase2를 수행(ex. read()를 수행)
+  asynchronous I/O
+    phase1 ~ phase2가 완료될때까지 user process가 blocked 되지않는 I/O model.
+
+1-2. Synchronous I/O versus Asynchronous I/O *이것 역시 input관점으로 구분한다고 보면 될 듯.
+  Synchronous I/O : phase1~phase2까지 process의 개입이 있음.(ex. process가 blocked안되더라도 read()를 호출하면 sync I/O다.)
+    위에서 첫 4가지 I/O model(blocking, nonblocking, I/O multiplexing, signal driven I/O)가 해당
+  Asynchronous I/O : phase1~phase2까지 process의 개입이 없음.(ex. aio_read() 호출하면 phase1 ~ phase2까지 process 개입이 없음.!)
+    위에서 마지막 I/O model(asynchronous)만 해당
+  *책에서의 blocked라는 의미는 혼동의 소지가 있으므로, 나름대로 각색하여 이해함. 이게 이해하기 더 편함.
+  
+select()
+  exception조건 확인(Unix Network Programming 213p 참조) *TCP OOB는 잘 안쓰이기도한다고하고, 생소하기도하고..해서 rough하게만 확인하였음.!
+    TCP의 경우, TCP-OOB(out-of-band) data가 존재하면 exception이 발생함. 즉, 연결종료 시 exception발생은 아님(read조건에 존재함)
+    TCP OOB란?
+      OOB? : 개념적으로는, in-band(원래 데이터가 흐르는 채널)가 아닌 독립적인 다른 band로 전송되는 데이터를 Out-Of-Band data라고 함.
+               실제 구현은 2개의 별도 채널을 가질수도있꼬, 1개의 채널을 가지는 형태로(제약사항이 있음) 구현할 수도 있다.
+      TCP OOB?
+        TCP의 URG(urgent) feature 를 사용함.
+         별도채널이 아닌 in-band 채널에서 전송됨.
+        TCP OOB data는 1 byte length를 가짐.
+        TCP URG segment에는 OOB data가 포함 될 수도 있고 아닐수도 있다.(현재 TCP 통신상태(ex current window 등)에 따라 다름.)
+        TCP flow control에 의해 데이터 송수신이 stop인상태에서도, 데이터가 없는 URG segment는 전달됨(=URG segment는 데이타없이 전달될 수 있다!)
+        in Linux...
+          MSG_OOB(ex. send() 파라미터로) 로 out-of-band data를 전송.(OOB데이타는 send로 보낸데이터의 가장 마지막 바이트임!)
+          OOB Segment가 수신된 경우, SIGURG발생 or select() return(w/exception condition). 
+           이후 data를 read. recv* function에 MSG_OOB 파라미터를 세팅하여 읽어들임.(SO_OOBINLINE socket option에 따라서, socket receiver buffer에서 읽어지거나 별도 out-of-data buffer로부터 읽어짐.), 
+
+    참고. socket의 종류에 따라 exception조건은 서로 상이함!
+        
+poll()
+  poll event 종류(ex. POLLIN 등)에 대한 정확한 의미
+  POSIX 표준에는 명확하게 명시되지 않음(이라고함...) 추후 kernel 코드를 분석하는 별도 주제로 확인하는 것이 좋겠다. 이번엔 skip
+  
+2. rawsocket
+  socket() protocol field에서 IPPROTO_RAW 의미?
+    send only인 rawsocket을 생성(receving을 위해서는 packet socket(with ETH_P_IP)등을 사용해야 함.)
+  IP_HDRINCL option은 enalbed된 상태로 소켓이 생성된다고 볼 수 있음.
+
+3. packet socket
+데이터 송수신 함수 확인 *왜 확인하라고했지???
+sendmsg(), recvmsg()처럼 address 명시하는 함수사용하면 됨... 
+
+4.socket() function parameter
+domain, proto, type에 따라서 실제 사용될 프로토콜(ex. TCP/IP, UDP/IP, unix domain, etc...) 처리 핸들러를 선택하게 됨.
+정확하게는 커널코드 까봐야함.
+아래는 TCP/IP-illustrated-2 Figure 7.12참조한 내역
+  domain이 AF_INET인경우
+    type : SOCK_DGRAM, protocol : IPPROTO_UDP => UDP/IPv4
+    type : SOCK_STREAM, protocol : IPPROTO_TCP => TCP/IPv4
+    etc...
+
+5. bind, accept, connect, close, shutdown functions
+bind, connect의 진짜 의미(TCP, UDP 각각) *bind(),connect() call여부에따른 동작 테스트 해보거나.. 등
+close,shutdown 진짜 의미(TCP케이스only) *실제테스트 + 추가documents참조
+
+socket domain/type/proto모두 무관하게, bind() 든 listen()이든 connect()든 되어야 ss or netstat에서 정보가 확인 가능.
+*정확한 사유는 정확하게는 모르겠다. 이건 다음기회에...
+
+bind()
+  local address(ex. struct sockaddr_in)를 socket과 연관시킴.
+  bind()를 호출하지 않아도 실제 네트워크 통신 셋업과정에서, 시스템(kernel)이 알아서 local address를 할당함.
+  IPv4의 경우,
+    TCP이면(=SOCK_STREAM)
+      bind(...) 후 listen(...)시, local address 로 바인드된 소켓확인가능
+       그냥 listen(...)시, local address 0.0.0.0:[random port]로 LISTEN중인 소켓확인가능!
+      bind(...)후 connect(...)시, bind한 local address, connect한 foreign address로의 소켓 확인 가능!
+      *connect(...)만 하여도, random local address, connect한 foreign address로의 소켓 확인 가능!
+
+    UDP이면(=SOCK_DGRAM)
+      bind(...)시, 바인드한 주소로 소켓 확인 가능.(TCP와 똑같다!)
+      bind(...)후 connect(...)시, bind한 local address, connect한 foreign address로의 소켓 확인 가능!
+      *connect()만 하여도 ramdom local address, connect한 foregin address로의 소켓 확인 가능
+
+listen()
+  개념은 7단계로 충분해보임. 여기서는 TCP/IP socket backlog full일 경우 어떻게 동작하냐를 확인.
+  backlog = 1로 테스트 시(accept()는 하지않음) + blocking(소켓옵션아무것도 안건드림)
+    최대 2개의 client만 ESTAB상태가 됨. 이 외 client는 모두 SYN_SENT상태.
+    참고. SYN_SENT상태의 경우 최대 6회의 재시도(=총 7회(최초 1회 + 6회재시도)로 확인
+            =>커널파라미터 net.ipv4.tcp_syn_retries = 6 으로 확인되었음.(1로바꾸면 1회(=총2회) 시도)
+         재시도까지 모두 완료되면 더 이상 connect를 시도하지 않음(connect()도 리턴해버리는 것을 확인)  
+    참고. server에서 accept()하여 pending connection queue에 여유가 생기면, SYN_SENT상태 소켓 중 한개가 ESTAB으로 변경됨을 확인할 수 있음.!
+
+accept()
+  7단계로 충분해보임. skip
+
+connect()
+  명시된 foreign address로 client가 connection을 initiate.
+    TCP/IPv4의 경우 : 실제 connection을 수행(3-way handshaking)
+                    bind()가 되지않았다면, 이 때 local address가 세팅됨(by kernel)
+    UDP/IPv4의 경우 : 추후 통신에서 사용될 foreign address정보를 셋업함. 기존정보가 있다면 replaced됨.
+
+close()/shutdown()
+  개념은 7단계로 충분해보임. skip.
+  shutdown 시 send buffer 의 모든 데이터가 write가 되는 지 확인(tcpdump로) *close로는 tracing이 어려워 shutdown만 확인함.
+  shutdown(sock, SHUT_WR) 시, send buffer 모든 데이터 write확인됨.
+    테스트프로그램은 : server는 read loop수행, client는 dummy data write loop수행(with signal handler, 시그널받으면 shutdown() call수행)
+    ss로 확인 시, 3번째 필드(Send-Q) 에 데이터 존재함을 확인 *계속 변동됨(데이터를 계속 write + 실제데이터도server로보내므로)
+      ESTAB  0         4125429          127.0.0.1:60580             127.0.0.1:12345   users:(("socket_client",pid=6361,fd=3))    
+    client 시그널링 후, 소켓상태 확인. 3번째 필드(Send-Q) 0, socket상태도 FIN-WAIT-2임을 확인
+      FIN-WAIT-2  0        0               127.0.0.1:60580           127.0.0.1:12345  users:(("socket_client",pid=6361,fd=3))         
+    tcpdump로도 client -> server(port 12345)로 FIN with data 패킷 확인가능.(일반데이타 다 보낸 다음 이후 제일 마지막패킷만 FIN flag set되어보내짐.)
+     15:39:26.379165 IP localhost.56174 > localhost.12345: Flags [.], seq 353280747:353346230, ack 1, win 512, options [nop,nop,TS val 1196143225 ecr 1196143225], length 65483
+     15:39:26.379169 IP localhost.56174 > localhost.12345: Flags [.], seq 353346230:353411713, ack 1, win 512, options [nop,nop,TS val 1196143225 ecr 1196143225], length 65483
+     15:39:26.379173 IP localhost.56174 > localhost.12345: Flags [FP.], seq 353411713:353477196, ack 1, win 512, options [nop,nop,TS val 1196143225 ecr 1196143225], length 65483
+     15:39:26.379197 IP localhost.12345 > localhost.56174: Flags [.], ack 353477197, win 1664, options [nop,nop,TS val 1196143225 ecr 1196143225], length 0
+
+  테스트중 참고. TCP keep alive?
+    배경 : 테스트코드짜고 tcpdump를 봤는데, 데이터는 다 보냈는데도 패킷이 왔다갔다 하길래 구글링해보니 TCP keepalive 패킷으로 확인되었음.
+    TCP keep alive 개념 : TCP에서, 연결이 살아있는 지 확인 또는 연결을 지속하기 위해 보내지는 패킷(without data).
+                         ex. network system(ex. firewall)에서 일정시간동안 통신이 없으면 끊음 과 같은 상황을 방지하기 위한 목적.
+                         ex. remote system 장애로 연결종료패킷에 대한 FIN을 못 받는 경우, 연결이 살아있는지 아닌지를 확인할 수 있음.
+                         TCP의 경우 optional feature임.
+
+9단계 *목표 : very simple term prj
+상세 내용은 termprj directory 참조.
+
+10단계 *목표 : 정리
+결과
+
+알게된 것
+    
+코멘트
+  

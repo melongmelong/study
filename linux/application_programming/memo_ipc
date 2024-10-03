@@ -1,0 +1,155 @@
+next : 9단계 ㄱㄱ
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : linux ipc
+
+학습이유
+  linux ipc mechanism의 종류 / 차이 / 사용법에 대해 학습
+
+학습목표
+  linux ipc mechanism에 대해
+    pipe, popen/pclose
+    FIFO
+    XSI IPC
+      msg queue
+      semaphore
+      shared memory
+
+  종류/차이/사용법 심도있게(코드read / write를 자연스럽게 할 수 있는 수준)으로 학습하여 skill-up
+    
+학습자료
+  책(APUE)
+  man page
+
+학습계획
+  milestone1. 학습목표(위 참조) 도달
+  
+=======================
+7단계 *목표 : 개념확인.(이론 / 주요함수)
+1. pipe, popen/pclose
+1-1.pipe
+다음의 제약사항이 있음
+-common ancestor(=parent-child관계)인 경우에만 IPC가능
+-half-duplex(단방향임) *구현에따라 full-duplex일수도있으나 범용성이 낮음.
+
+pipe의 한쪽이 close된 경우 동작
+-wrting fd가 close인 경우, pipe read()시 return 0
+-reading fd가 close된 경우, pipe write()시, SIGPIPE발생
+
+PIPEBUF : atomic하게 pipe write/read할 수 있는 크기.(UDP datagram 같은 개념으로 보면 됨) 해당 크기보다 큰 경우, 동시에 write하면 interleaved될 수 있음(작으면 interleaved안됨)
+
+주요함수
+pipe() : 2개의 fd를 세팅해줌. fd[0] : reading, fd[1] : wrting. => fd[1]으로쓰면 fd[0]에서 읽을 수 있음.
+
+
+1-2.popen/pclose
+  pipe(), fork(), exec()를 한번에 처리해주는 함수.
+
+2. fifo
+named pipe라고도 함.
+관련없는 프로세스간(=common ancestor가 아닌) IPC가능.
+fifo는 일반 file i/o function(open,close,read,write)로 접근할 수 있다.
+
+동작특성
+-fifo가 한개라도 open()되어있지(for reading) 않는 경우, fifo로 write시 SIGPIPE발생
+-fifo 마지막 writer의 close()한경우, fifo read()시 EOF return.
+-PIPE_BUF 사이즈까지만 atomic(=no interleaved) read/write를 지원함.
+
+주요함수
+mkfifo() : fifo를 생성
+
+3.XSI IPC
+-id and key
+id
+XSI IPC object에 대한 id.
+XSI IPC object(ex. message queue)는 id(integer형태)로 식별함.(file descriptor처럼)
+서로 다른 프로세스들은 IPC object로 접근하기 위해 해당 id값을 사용하여야함.
+
+key
+XSI IPC의 id를 가져오기 위한 인터페이스.
+동일 XSI IPC object접근하기 위해서는 해당 object의 id를 알아야하며, 용이하게 하기 위해 key를(key_t 타입) 제공함
+ftok() 로 동일 input에 대해 항상 일정한 key값을 획득할 수 있으며,
+해당 key를 이용하여 XSI IPC object에 접근할 수 있음.(ex. msgget())
+*IPC_PRIVATE : IPC object를 무조건 생성하라는 특별한 key값.
+
+참고. XSI IPC 공유 방법.
+1. 프로세스에서 XSI IPC 생성시 key를 IPC_PRIVATE(=IPC 무조건 생성을 의미)로 세팅하여 생성, return된 id값을 다른 프로세스로 공유(ex. file로 전달)하여 공유된 XSI IPC접근 시 id값을 사용.
+2. 사전에 협의된 key값을 사용. get function(ex. msgget()) 에 key를 전달하여 id값을 얻어와서 XSI IPC접근.
+3. 사전에 협의된 pathname,id를 사용 => ftok()로 key값으로 변환하여 사용함. 이후 과정은 위 '2.사전협의 key값 사용'과 동일
+
+-permission
+각 IPC object는 owner,permission이 존재(file처럼)
+struct ipc_perm 구조체로 표기
+file과는 달리 exe permission은 없고, r/w permission만 존재함.
+owner/permission은 IPC object 생성시점에 세팅(owner는 calling process의 euid, egid, mode는 인자로전달된 값)되며, 이후 수정이가능함
+
+IPC object의 owner
+  uid vs cuid : uid(owner's uid)는 변경가능(*ctl()함수를 통해), cuid(creator's uid)는 변경불가
+  gid vs cgid : uid vs cuid와 동일(guid로만 변경)
+
+-주요 특징
+모든 IPC object는 systemwide.
+not have reference count.(IPC object를 참조하는 process가 다 종료되도, IPC object는 상태변경없이 그대로 남아있음)
+id domain이 다르기때문에, file관련 명령어(ex ls, read/write() 등)로 접근 불가함.
+
+3-2. Message Queue
+msgget() : queue object를 생성하여 id return 또는 이미존재하는 object id를 return
+msgsnd() : queue object로 메시지를 write
+msgrcv() : queue object로부터 메시지를 read.
+msgctl() : queue object 제어.(ex. queue 제거, msqid_ds get 등)
+struct msqid_ds : message queue object 상태를 나타내는 structure. 각 object마다 가지고 있음.
+
+3-3. Semaphores
+semget() : semaphore object를 생성하여 id return 또는 이미존재하는 object id를 return
+semctl() : semaphore object를 제어.(ex semaphore값을 세팅, semaphore값을 get)
+semop() : semaphore value를 increment(=unlock), decrement(=lock)과 같은 기능을 수행.
+struct semid_ds : semaphore object 상태를 나타내는 structure. 각 object마다 가지고 있음.
+
+semop flag파라미터에 SEM_UNDO세팅된 경우, 프로세스 종료 시, semaphore value에 대해 adjustment처리를 수행(=커널내부적으로 lock, unlock 카운팅을 하고있다가, undo해준다는 의미.)
+
+*참고. POSIX semaphore mechanism도 존재함.
+
+3-4. Shared Memory
+shmget() : shared memory object를 생성하여 id return 또는 이미존재하는 object id를 return
+shmctl() : share memory object 제어.(ex. object 제거, shmid_ds get 등)
+shmat() : shared memory object에 의해 할당된 메모리영역을 process address space로 매핑.
+shmdt() : shmat()에 의해 할당된 메모리영역을 detach.
+struct shmid_ds : shared memory object 상태를 나타내는 structure. 각 object마다 가지고 있음.
+
+============================
+8단계 *목표 : 실습.(실제 코드 돌려가보면서 실습 + 추가정리)
+XSI IPC는 test프로그램 한번씩 돌려보기.(특히 permission 동작도 같이 확인)
+  key와 id의 경우, system-wide함.(ipcs로 조회가능) 
+    즉, system-wide한 key값을 통해 id를 얻어오고 해당id에 대응하는, IPC object얻을 수 있음
+    또는, system-wide한 id값으로 바로 IPC object얻을 수 있음(ex. shmget없이 shmat바로 호출)
+   *but, key값은 고정되어있으나(리부팅 / IPC 재생성등에 무관하게), id는(사용key는 동일하지만, IPC object 재생성마다 변경될수있음) 고정되어있지 않으므로 id값바로 참조하는 것은 참고만...!
+  참고. ipcs, ipcrm, ipcmk로 XSI IPC structure를 조회(key, id모두 확인 가능),삭제,생성 가능함.
+    *내부적으로 XSI IPC 관련 system call을 사용함.(strace로 확인) *조회제외(조회는 proc fs로부터 추출, ex. cat /proc/sysvipc/shm)
+  IPC object의 경우, permission을 신경써야함. 
+    IPC object의 경우 IPC object operation시점에(ex. 생성(ex. msgget), msgsnd 등등의 위치에서) permission check가 수행되며,
+     아래 3가지 중 1개라도 만족하면, IPC object permission check를 통과함 그 외면 denied(operation수행안됨).(https://pubs.opengroup.org/onlinepubs/007904975/functions/xsh_chap02_07.html(=Section 2.7, XSI Interprocess Communication)참조)
+      0. superuser는 항상 통과! (생성된 IPC object의 owner/permission 무관하게 모든 operation이 가능!(ex. msg-queue 인 경우, msg-queue가 read권한으로 생성되었어도, write가 가능. 테스트하니 되더라...)
+      1. The effective user ID of the process matches xxx_perm.cuid or xxx_perm.uid in the data structure associated with the IPC identifier, and the appropriate bit of the user field in xxx_perm.mode is set.
+      2. The effective user ID of the process does not match xxx_perm.cuid or xxx_perm.uid but the effective group ID of the process matches xxx_perm.cgid or xxx_perm.gid in the data structure associated with the IPC identifier, and the appropriate bit of the group field in xxx_perm.mode is set.
+      3. The effective user ID of the process does not match xxx_perm.cuid or xxx_perm.uid and the effective group ID of the process does not match xxx_perm.cgid or xxx_perm.gid in the data structure associated with the IPC identifier, but the appropriate bit of the other field in xxx_perm.mode is set.
+       쉽게말해, 생성된IPC object의 owner/permission과 IPC operation 수행하는 calling process의 owner/permission이 다르면 동작 수행이 불가(permision denied로 인해서!)
+  참고. IPC object remove의 경우, superuser이거나 calling process euid == IPC object uid or cuid 인 경우만 가능함.(permission은 무관함. + gid도 무용임.(같은 그룹이라도 삭제못함 uid가 같아야함.))
+  참고. 공유메모리 IPC object의 경우, rw권한 모두 set아닌경우 shmat가 실패(permission denied에 의해)로보임.!(포인터 참조가 되어 read/write다 되어야하므로 예외적으로 이러케 구현된 듯? 정확한 문서/코드등은 확인 안하고 추측만... 나중에 시간되면 찾아봐도 좋을 듯.)
+  
+9단계 *목표 : very simple term prj
+  상세 내용은 termprj directory 참조.
+
+10단계 *목표 : 정리
+결과
+
+알게된 것
+    
+코멘트
+  

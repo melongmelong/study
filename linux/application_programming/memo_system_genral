@@ -1,0 +1,411 @@
+next : 9단계 ㄱㄱ
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : linux system programming 일반
+
+학습이유
+  linux system programming 일반내용중, 자주쓰거나 잘모르는 항목에 대해서 심도있게(코드read / write를 자연스럽게 할 수 있는 수준) 학습하여 skill-up
+
+학습목표
+  아래 항목에 대해
+    ownership/permission
+    process
+    thread
+    signal
+    terminal(optional)
+  심도있게(코드read / write를 자연스럽게 할 수 있는 수준)으로 학습하여 skill-up
+    
+학습자료
+  책(APUE)
+  man page
+
+학습계획
+  milestone1. 학습목표(위 참조) 도달
+  
+=======================
+7단계 *목표 : 개념확인.(이론 / 주요함수)
+-ownership/permission
+1.ID
+linux의 모든 프로세스는 다음 ID들과 관련있음
+real user ID, real group ID
+  who we really are을 의미
+  시스템 login할 때 세팅됨.
+effective user ID, effective group ID, supplementary group IDs
+  file access permission check에 사용
+  프로세스실행 때 세팅.(아래 시나리오 참조)
+saved set-user-ID, set-group-ID
+  exec functions에 의해 euid, egid의 copy된 값.
+  *exec functions이 실행하는 파일에 set-user-ID/set-group-ID bit가 set되어있다면, 실행파일의 UID/GID로 copy됨.
+
+시나리오
+  프로그램 실행시,
+  기본적으로 effective user ID, effective group ID은 real user ID, real group ID로 세팅됨.
+  set-user-ID bit, set-group-ID bit를 통해 euid, egid를 file의 owner(st_uid), group owner(st_gid)로 세팅할 수 있음.(ex. 특정 프로세스가 superuser권한을 가지고 동작 필요할때)
+
+2.owner
+모든 파일은 owner, group owner가 존재.
+owner(file의 uid) : st_uid(stat structure)
+group owner(file의 gid) : st_gid(stat structure)
+
+파일생성시,
+  owner는 process의 euid로 세팅
+  group owner는 process의 egid로 세팅 or file을 포함하는 directory의 group owner. *구현에따라 둘 중 하나임. 리눅스는 테스트 시 전자로 확인.
+
+3.file permission
+리눅스의 모든 파일(normal, directory, special file등 모든 타입)은 permission(read, write, execute)을 가짐
+
+st_mode(stat structure)에 정보가 있음
+
+sticky bit(saved text bit)
+  과거에는 프로그램 실행을 좀 더 빠르게 하기 위한 permission bit였음 *더이상 해당방식은 의미가없음!(사라짐)
+  현재에 와서 saved text bit라는 이름을 가지게 되었음
+  현재 용도는 특정 디렉토리의 파일명 변경에 대한 check를 수행함. 조건은 다음과 같음
+    sticky bit set인 경우, 아래 셋 중 하나를 만족해야 파일명 변경 가능
+      file의 owner
+      directory의 owner
+      superuser
+
+권한은 user(=owner)-rwe, group-rwe, other-rwe *rwe(read/write/execute) 9개 로 구성됨.(=즉 파일 소유자에대한 권한, 파일 그룹에 대한 권한, 그 외에 대한 권한)
+  write : 파일에 쓰기가 가능 *파일생성/디렉토리생성을 위해서는 execute 퍼미션도 필요!
+  read : 파일로부터 읽기가 가능 *디렉토리의 경우 디렉토리내 list조회만 가능. search는 불가.
+  execute : 파일 실행이 가능 *디렉토리의 경우는 search가 가능.
+  ex) 특정 경로(ex. /knwtest/tmp.txt) write 위해서
+      /(execute), /knwtest(execute), /knwtest/tmp.txt(write) 처럼 3파일 모두에 적절한 permission이 필요
+
+file permission check는(파일에 대한 open, create 등등), file owner/group owner와 process의 euid/egid/supllementary group ID 기반으로 수행되며, 대략적인 알고리즘은 다음의 순서를 따름.
+  1. process euid가 superuser이면, 모두 허용
+  2. process euid == file owner, permission(file의 user-rwe)에 따라 허용/차단
+  3. process egid((or supplementary group ID중 하나라도) == file group owner, permission(file의 group-rwe)에 따라 허용/차단
+  4. euid/egid와 무관하게 permission(file의 other-rwe)에 따라 허용/차단
+  *주의. euid == file owner이고 file의 user-rwe가 차단이면, 3/4는 검사되지 않음!
+
+4.functions
+4-1.access()
+ruid, rgid로 file permission을 체크(위 file permission check에서 euid, egid를 ruid, rgid로 생각하면 됨.)
+
+4.2.umask()
+process가 file create(ex. open(), creat())시점의 file permission을 masking(=set된 permission은 open, creat에서 permission을 주어도 clear됨!) => 파일생성시의 permission은, umask값에 의해 마스킹(disable)처리 됨.
+즉, 각 process는 umask 정보를 가지고 있다로 볼 수 있음.
+
+4.3.chmod()
+file의 permission을 변경
+
+4.4.chown()
+file의 owner를 변경
+owner변경은 다음을 만족해야 가능
+  superuser : owner, group owner모두 변경 가능.
+  non-superuser : group owner만 변경 가능.(자신(process)가 속한 그룹으로만)
+--------------------------------------------------------------------------------------------------------
+  
+-process
+1.process environment
+  1. process termination
+    프로세스 종료방법은 여러가지(ex. main에서 return, exit함수류 호출 등)
+    _exit() vs exit() 
+      exit() : process cleanup handler + fclose를 실행 후 프로세스 종료(return to kernel)
+      _exit() : process cleanup handler같은 전처리 없이 프로세스 종료
+
+    atexit()
+      cleanup handler를 등록하는 함수
+      exit()호출 시, 등록된 순서의 역순(like stack)으로 handler가 호출 됨.
+
+  2. setjmp / longjmp function
+    간단하게는 non-local goto syntax 로 보면 됨.
+    function의 stack frame간 branch가 가능함.
+    setjmp() : longjmp()호출 시 돌아갈 위치를 setting. longjmp()호출시 해당 위치로(line? insturction?) 돌아옴.(stack 정보들도 복구)
+    longjmp() : 인자로 넘어온 jmp_buf로 branch를 수행. 이때 stack은 unwind됨.(=setjmp()에 의해서 저장된 정보들로 restore된다)
+    branch 후의 variable값은 case by case임.(특별한 rollback절차없이 stack frame pointer만 바껴서이지 않을까 싶음, 사용에 주의!필요)
+    
+  3. resource limit
+    process마다 resource의 limit이있음
+    soft limit, hard limit이 존재(soft limit은 hard limit을 초과할 수 없음)
+    setrlimit()
+      process는 자신의 soft limit, hard limit변경.
+      soft limit은 hard limit보다 작거나 같은 값으로 조정가능
+      hard limit은 soft limit보다 같거나 큰 값범위에서 줄이는(줄이기전 지금 값 기준) 것이 가능
+      hard limit은 superuser만 늘릴 수 잇음.
+    getrlimit()
+       현재 process 자신의 resource limit을 get
+
+  4. PID
+    process는 unique한 ID가 있음.
+    이 외에도 ID get하는 function들있음(getpid, getppid, getuid, geteuid, getgid, getegid)
+
+  5. fork, vfork
+    fork vs vfork
+      둘 다 child process생성, 용법은 동일
+      차이점 : vfork는 parent address space를 그대로 사용. + child가 먼저 실행(schedule)하는 것이 보장됨.
+              해당 특성으로 vfork는 바로 exec를 수행하는 child에 사용하면 좋음.
+            *parent address space에서 구동되므로(fork는 process space가 분리됨!), function call, variable 값수정 등이 일어나면 parent에서 문제가 발생할 수 있음.(값, stackframe등이 변경되었으므로) 
+
+  6. process termination
+    종료함수/방법은 1.process environment의 1항목 참조.
+
+    parent-child관계에서
+      parent가 먼저 종료인 경우, child는 새로운부모(PID 1)을 가지게 됨(by kernel)
+      child가 먼저 종료인 경우, parent가 wait완료(wait/waitpid)로 child정보를 얻기전까지는 child는 zombie상태.(주요리소스해제 등 종료는 수행되었으나, exit status등의 일부 정보는 가지고있는 상태) *parent가 PID 1인 케이스면, PID 1이 알아서 wait완료를 수행함.
+
+    wait/waitpid
+      둘다 child process의 종료를 wait함.
+      차이점 : wait는 child중 하나라도 종료할때까지 무조건 대기, waitpid는 여러옵션(기다릴 child 선택, block여부 선택 등)이 존재.
+      이 외 추가적인 function(waitid, wait3, wait4)도 존재 *wait/waitpid가 제공하지 않는 다른 옵션(ex child의 리소스정보 획득)이 있음.
+
+  7. exec
+    7가지의 exec류 function이 있음
+    각각 받는 인자가 다르다고 보면 되고, exec류 함수의 pre/postfix에 따른 의미는 아래와 같음.
+      'p' : pathname을 전달받음.(absolute가 아닌 경우 PATH environment variable을 기준으로 찾음, 없다면 shell(with 실행인자로 path)을 구동함(shell script로 인식함)). 참고. 파일이 #!으로시작하면, interprter file로 실행해버림.
+      'l' : 가변 arg list를 전달받음 *NULL로 종료
+      'e' : 환경변수를 인자로 받음 *없는 경우 parent의 거을 그대로 상속(environ variable)
+      'f' : pathname대신 fd를 인자로 받음.
+    exec수행하여도, parent로부터의 일부 attribute들(ex. PID, RUID, RGID, EUID, EGID, fd(flag에따라 다르긴함 등))은 그대로 상속받음.
+
+  8. Process UID, GID
+    process의 EUID, EGID는, exec류 function에 의해서 변경가능.
+      exec function이 실행하는 파일의 set-user-ID bit, set-group-ID bit가 set된 경우,
+      해당 파일의 UID(=owner), GID(=group owner)로 process의 EUID, EGID가 세팅됨.
+    setuid/setgid function
+       기본적으로 process의 RUID/EUID/saved-set-user-ID(setuid)/, RGID/EGID/saved-set-group-ID(setgid) 한번에 모두를 세팅한다.
+       프로세스가 superuser권한이면, 모든ID(real, effective, saved)를 아무값으로 세팅가능.
+       그 외의 권한이면, EUID(setuid)/EGID(setgid)만 현재프로세스의 RUID/saved-set-user-ID, RGID/saved-set-group-ID로 변경가능함.
+      *seteuid/setegid(effective id만 변경)과 같은 추가함수들도 존재함.
+    EUID, EGID가 process의 권한체크에 사용된다고 보면 됨(3. file permission내용 참고)
+
+  9. daemon process
+    daemon characteristics
+       주요 특징 3가지
+        process와 연관된 controlling terminal이 없음.
+        process의 session leader, group leader(거의 대부분의 프로세스)
+        parent는 PID 1 process임(거의 대부분의 프로세스)
+
+    coding rules
+      아래 흐름으로 수행하며, daemon process에서 기대되지 않은 동작(ex. 불필요 fd가 open, 기대되지않은 signal처리, 기대되지 않은 terminal in/output 등)을 막기 위함임.
+     on original process(최초 실행되는 프로세스)
+       fd 0,1,2 제외하고 모두 close. 
+        모든 signal handler를 default로 세팅.
+       clear signal mask(sigprocmask()) 
+       environment 정리(ex. environment variable)
+       fork()
+     on child process
+       setsid()
+       fork() *controlling terminal과(혹시 모르게 연관될 수 있음, tty_open시 O_NOCTTY 플래그 안준케이스 등) 확실하게 연관을 없애기 위함임.
+       exit()
+     on 2nd-child process(=daemon process)
+       redirect fd 0,1,2 to /dev/null
+       clear file create mask reset(umask())
+       cwd setting(chdir())
+       write pid
+     on original process
+       exit() *daemonizing 완료 후 수행.
+
+  기타
+    system() : shell command로써 인자로넘어온 문자열을 실행.(shell command가 아니면, 개발자가 챙겨야할 것들이 좀 더 있음)
+    process accounting정보(ex. 실행시간)도 획득할 수 있는 방법이 있음.(man acct 참조)
+
+-signal
+1. signal concept
+  signal은 31가지가 있음(기본적으로)
+  signal number 0은 null-signal이라고 함.
+  이 외 추가시그널(ex. XSI spec)이 있을 수 있음.
+  다양한 원인에 의해서 signal 발생가능(ex. kill(), h/w or s/w condition 등)
+  
+  signal의 3가지 주요상태(reliable-signal)
+    generated(or sent to process) : process로 signal이 전달됨을 의미
+    delivered : process가 signal에 대한 action을 수행함을 의미
+    pending : signal이 generated - delivered사이에 존재
+  
+  signal block 
+    process는 signal delivered를 block할 수 있음.
+    block된 signal은 unblock할때까지 pending상태. => 즉 signal blocking은 generated를 막는건아니고, delivered를 막는다!
+    signal mask : 현재 process가 block중인 signal정보.
+
+  signal이 여러번 generated되었을 때
+    서로 다른 종류의 signal이 generated된 경우, generated 순서 상관없이 랜덤하게 delivered됨.
+    동일 signal이 여러번 generated인 경우, 하나만 delivered됨.(queue없음!)
+    *real time signal은 동일 signal에 대핸 queuing을 지원.
+
+  disposition : signal 전달받았을때의 action(어떻게 동작할 것인가)
+    ignore(SIGKILL, SIGTOP은 ignore불가), catch, default 3가지 옵션이 존재함.
+
+  signal permission
+    signal을 generate를 위해서는 적절하 ㄴ권한 필요.
+     기본개념은
+      superuser는 모든 프로세스로 generate가능.
+      signal generate process ruid/euid == signal delivered process ruid/euid
+
+  systemcall interrupt
+    systemcall 수행 중(=정확히는 systemcall block되어있을 때), signal발생(caught) 시, 아래 2가지 실행옵션이 있음
+    1. systemcall failed. 
+      systemcall은 error return and errno setting(to EINTR)됨.
+
+    2. automatic restart
+        자동으로 재시작됨(=interrupted systemcall시, interrupted된 시점에 return을 check하지 않음)
+       optional(ex. sigaction()의 SA_RESTART flag)하게 세팅 가능함.
+        지원하는 function목록이 정해져있음. (man page참조)
+
+  async-signal-safe function
+    signal handler 내에서 call해도 안전한 function.
+    
+     일반적으로 reentrant function이면 async-signal-safe function임. non-reentrant function은 async-signal-safe function이 아님.!
+    *reentrant function : function이 도중에 중단되었다 다시 실행되도 문제없음.(ex. malloc()실행중 signal handler가 실행이되고(by signal) signal handler에서 malloc을 호출하는 경우.... static variable쓰는 function은 일반적으로 reentrant하지않다)  
+
+2. function
+  kill() / raise() : signal을 process로 generate함
+    kill : 특정 process로 signal generate가능.
+    raise : 자신한테 signal generate가능.
+  
+  alarm() / puase()
+    alarm() : 특정시간 후에 SIGALARM을 generate. *process당 1번 호출만가능(중복호출시, timeout을 overwrite함)
+    pause() : signal delivered될때까지를 기다림.
+
+  sig*set()
+    signal set(sigset_t)을 조작하는 함수들.
+    sigset_t : sigprocmask(), sigpending() 등 signal관련 함수들에서 사용 됨
+
+  sigprocmask() : process의 signal mask를 control(set/get ...)
+  sigpending() : process의 pending signal정보를 get
+  sigaction() : signal의 dispostion을 control(set/get ...)
+  
+  sigsetjmp/siglongjmp() : setjmp, longjmp의 signal handler내에서 사용가능한 버전(단순히 sigsetsjmp시점의 process signal mask를 save/restore 차이가 있음)
+    signal mask가 세팅(=signal blocking)을 하기때문에 signal을 전달받을 수 없다거나... 할 수 있음.
+
+  sigsuspend() : signal mask restore와 process sleep을(=pasue()) atomic 하게 수행하는 함수.
+    *atomic하지 않으면, signal이 lost되어 process가 영원히 sleep가능
+
+  system() function의 경우 calling process의 signal관련하여 SIGINT, SIGQUIT(ignore) SIGCHLD(blocking) 를 수행하므로 사용 시 고려필요
+
+-thread *POSIX thread 기준으로...
+  thread id
+    pthread_t 구조체로 threadid를 표기
+    pthread_self() : calling thread의 thread id를 가져옴
+
+  thread detach
+    pthread_detach로 thread를 detach시킬 수 있음
+    non-detached thread에 대해서 pthread_join이 수행되지 않으면, 일부리소스가 점유됨
+    detached thread인 경우, 종료되면 리소스가 바로 해제됨(pthread_join없이) *단 pthread_join()으로 return value등을 알 수는 없다.
+
+  thread creation / termination
+    termination
+      thread종료는 3가지 케이스(thread func에서 return, 다른 thread에 의해 cancel, pthread_exit() 호출)
+      thread로 signal전달(action이 프로세스 종료) or thread중 하나라도 exit()호출하면 프로세스가 종료됨.
+
+    함수
+     pthread_create() : thread를 생성 *여러개 생성 시 순서는 랜덤임
+     pthread_exit() : thread를 종료
+     pthread_join() : 명시된 thread가 종료될때까지 calling thread를 block시킴.(wait() 비슷)
+                      detach안된 thread에 대해서 pthread_join이 수행되지 않으면, 일부리소스가 점유됨(zombie thread. zombie process비슷함)
+     pthread_cancle() : 특정 thread를 종료시킴
+                        cancle당하는 thread는, cancellation point까지 실행되다라, cancellation point에서 실제 cancel작업을 수행하게 됨
+                        cancellation point : cancle당한 thread가 cancel작업 수행을 test하고 조건에 부합하면 cancel작업을 수행하는 지점. POSIX에서는 cancellation point가 될 수 있는 함수들을 지정해놓았음.!(=해당 함수에 도달하면 cancel작업을 수행한다)
+     pthread_cleanup_push/pop : thread가 종료될때 수행될 thread-cleanup-handler를 등록/조작할 수 있음.(프로세스의 atexit처럼)
+                                
+  syncronization
+    thread간 race condition가 발생할 수 있으므로 syncronization이 필요함
+    mutex
+      가장기본형태 mutex : pthread_mutex_init/destory/lock/trylock/timedlcok/unlock()로 제어
+     read-write mutex :  pthread_rwlock_*로 제어(종류는 기본형태 mutex와 동일함)
+
+    spin-lock
+      busy-waiting을 수행(mutex와 달리 thread는 sleep하지않음)
+      pthread_spin_*()로 제어
+      busy-waiting이므로, mutex보다 무조건 빠를거라 생각하지만, 실구현에 따라 성능은 비슷할수도있음(ex. mutex구현이 특정시간은 busy-wait후 block한다거나...)
+
+    condition variable
+      pthread_cond_*() 로 제어함
+       기본원리는, pthread_cond_wait()로 대기상태로 진입, 이후 다른 thread에서 pthread_cond_signal()로 대기상태 진입한 thread를 꺠움. 이를 atomic하게 동작하기 위해 mutex가 관여한다... 
+        pthread_cond_wait() : calling thread는 대기상태로 진입(with mutex unlock)
+        pthread_cond_signal() : pthread_cond_wait()로 대기중인 thread하나를 wake-up
+
+    barrier
+      기본원리는 여러개의 thread들이 특정 point에(pthread_barrier_wait()) calling thread를 wait시키고, 모든 thread들이 도달하면 wakeup하여 실행을 계속하게 됨.
+     *condition variable과 비슷한 목적?
+     pthread_barrier_*()로 제어함.
+
+  limit
+    thread에 대해서도 resource limit(ex. 하나의 프로세스에 존재할 수 있는 최대 thread갯수 등)이 존재
+    sysconf()로 query할 수 있음
+  
+  attribute
+    posix thread는 thread와 sync 등등에 대한 동작 attribute를 제공
+    기본적으로, 각 attribute마다 object structure가 존재하고, 해당 object에 대한 init,destroy,set,get함수가 제공되어짐.
+    attribute가 존재하는 posix thread의 각 항목은 다음과 같음(=posix thread에서 제공하는 기능에 대해서는 attribute가 존재)
+      thread(attr예시 : thread stack의 최대크기, detach 상태세팅 등)
+      mutex(attr예시 : 하나의 process내의 모든 thread가 mutex를 공유하도록 할것이냐(process-shared attribute) 등)
+      reader-writer lock(attr예시 : process-shared attribute *바로 위 mutex 내용 참조)
+      condition variable (attr예시 : process-shared attribute)
+      barrier(attr예시 : process-shared attribute)
+      cancel option(attr예시 : cancellation point추가(pthread_testcancel()) *얘는 attribute object structure는 없음(=컨트롤 방식이 다르다.)
+  
+  thread-safe
+    thread-safe : multiple thread에서 동시에 call하여도 안전한(=정상동작하는) 함수를 thread-safe function이라고 함.
+    thread-safe function이 async-signal safe fuction(signal항목참조)은 아님!
+
+  thread-specific data
+    특정 thread만 접근(load, store)가능한 data를 지원하는 mechanism이있음.
+    but, 해당 mechanism은 함수를 통한 제한만(=lock거는 것처럼. lock도 pair안맞추거나 잘못쓰면 정상동작 안한다...) 제공할 뿐이고, 실제 접근에 제한을 걸지는 않음.
+
+  signal
+    thread별로 signal mask는 가지고있음
+    thread는 signal disposition은 공유
+    ex) 프로세스 내 하나의 thread는 SIGINT를 block할 수 있으나, SIGINT에 대한 handler는 모든 thread가 공유함.! 
+
+    process로 시그널이 delivered된 경우, 특정 하나의 thread만 signal을 전달받음.
+
+    thread에 대한 signal mask, thread로의 signal전달 하기 위한 pthread function이 존재.
+
+  fork
+    fork된 child프로세스는 parent가 multhread인 경우라도 오직 하나의 thread를 가지고 생성됨. but, thread관련 resource들(mutex와 같은 pthread object들)정보는 그대로 inherited됨.
+     이로 인한 문제들이 있을 수 있으므로 다음의 제약사항 및 guide가 있음
+       fork이후~execv call까지는 child는 async-signal-safe function만 사용가능
+       pthread_atfork() 로 child fork시 수행될 handler를 등록하여, resource해제등을 하는 것이 도움이 됨.
+
+============================
+8단계 *목표 : 실습.(실제 코드 돌려가보면서 실습 + 추가정리)
+-ownership/permission
+real ID는 언제 세팅되는가?
+  login program(superuser process임)에 의해서 세팅됨(by setuid, setgid function을 호출함)
+    login한 user(PAM으로 인증됨)의 passwd record에 기록된 uid, gid로세팅 후, program을 실행(by exec*()) *util-linux소스참조
+    superuser로 실행되므로(추측이지만... 일단 skip!) ruid, euid, saved-set-uid rgid, egid, saved-set-gid가 모두 변경된다.
+  cat /proc/[pid of bash]/status의 Uid, Gid를 확인해보면, 로그인한 user의 uid,gid(/etc/passwd에 기록되어있는)로 세팅되어있다.!
+
+-process
+setjmp / longjmp : stack unwind되는게 맞는지?(=calltrace에 포함안된 곳으로 이동이 되는 지?)
+  불가하다.! (테스트 시 calltrace포함안된 곳으로 이동은 되는데, 운이좋아서 된 듯. 실제로는 안된다고 보는게 맞음)
+  man page 내용 일부 발췌
+    If the function which called setjmp() returns before longjmp() is called, the behavior is undefined.
+  stack이 이미 해제되어 undefined상태이므로...로 보면 될 듯함.
+  즉 setjmp/longjmp는 같은 calltrace 선상에 있는 경우만 가능하다로 보면 됨.
+
+-signal
+excution of signal handlers(man 7 signal 항목참조)
+signal handler는 kernel mode -> user mode로 mode변환될때마다 pending signal(block이아닌)이 있는지 체크를 수행하여 signal delivering을 함.
+큰 순서는 다음과 같음
+1. signal handler실행을 위한 준비수행
+  deliver할 signal에 대해 pending signal목록에서 제거
+  signal관련 context를 stack frame에 저장(stack frame은 signal context저장하기 위한 특수목적임)
+    *context정보 : program counter register(signal handler종료후 return할 주소), signal mask 등등이 있음.
+  (sigaction() 시, signal mask세팅한 경우라면) 해당 signal mask로 세팅함(=signal을 block한다)
+2. signal handler 실행을 위한 stack frame을 생성.
+  signal handler의 첫번째 주소로 program counter세팅 
+  return address 설정(signal trampoline으로)
+3. user mode로 전환. signal handler가 실행된다.
+4. signal handler가 return, signal trampoline code가 수행(jump~)
+5. signal trampoline code에서는 최종적으로 sigreturn()을 호출하여 signal handler에 의해 중단된 코드부터 재수행.
+  *sigreturn() : 1.에서 저장한 context정보를 restore. 즉, user mode로 돌아가서, signal handler에 의해 중단된 시점부터 다시 실행을 하게 됨.
+
+9단계 *목표 : very simple term prj
+상세 내용은 termprj directory 참조.
+
+10단계 *목표 : 정리
+결과
+
+알게된 것
+    
+코멘트
+  
