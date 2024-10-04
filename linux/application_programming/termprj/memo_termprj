@@ -1,0 +1,26 @@
+9단계. term project
+
+simple echo server, echo client 스펙
+  server
+    server는 다중 클라이언트에게 동시 서비스 가능하다.
+      *서버구조는 multi-process, multi-thread, multi-plexing(select, poll 둘다) 3가지방법 각각으로 모두 구현한다. 이는 프로그램 파라미터로 선택할 수 있다.
+    signal(SIGUSR)을 받으면 클라이언트로 특정메시지를 broadcast한다.
+       메시지는 configurable하다.(파일에다쓴다.), 설정파일이 없으면 default는 "broadcast" 이다.
+      broadcast메시지는 interleaved되선 안된다.(추가시점은 적당한 곳, interleaved만 안되면 됨.)
+    echoed데이타는 interleaved 되지않고, 수신순서대로 client로 다시 전달되어야 한다.
+    client로부터 일정시간 echo-back할 데이터가 수신되지않으면, client 연결을 종료한다.(with 관련 리소스해제)
+    signal(SIGINT)를 받으면, 리소스를 모두 해제후 종료한다.
+  client
+    사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
+    signal(SIGINT) or 파일read가 완료되면 서버로부터 모든 데이터를 echoed-back 및 리소스를 모두 해제 후 종료한다.
+
+원칙
+  TDD를 수행한다.
+    행위중심. 메서드중심이 아닌 형태로
+    테스트코드도 산출되어야 한다.
+    테스트 프래임워크는 CUnit을 사용한다.
+  code complete내용을 참고삼아 코드를 작성해본다.
+
+
+
+
