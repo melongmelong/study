@@ -48,7 +48,18 @@ struct context_conn* server_accept(struct context_server *context_server)
 
 	context_server->cnt_conn++;
 
-	return NULL;
+	return context_conn;
+}
+
+void server_close(struct context_server *context_server, struct context_conn *context_conn)
+{
+	if (context_server == NULL || context_conn == NULL) {
+		return;
+	}
+
+	context_server->transport.close(context_conn->sock);
+
+	context_server->cnt_conn--;
 }
 
 int server_get_cnt_conn(struct context_server *context_server)

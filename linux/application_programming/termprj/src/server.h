@@ -3,6 +3,8 @@
 
 #include <stddef.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -13,6 +15,7 @@ struct transport {
 	int (*bind)(int , const struct sockaddr*, socklen_t);
 	int (*listen)(int, int);
 	int (*accept)(int, struct sockaddr*, socklen_t*);
+	int (*close)(int);
 };
 
 struct context_server {
@@ -30,6 +33,7 @@ struct context_conn {
 
 struct context_server* server_init(char *ip, int port, struct transport *transport);
 struct context_conn* server_accept(struct context_server *context_server);
+void server_close(struct context_server *context_server, struct context_conn *context_conn);
 int server_get_cnt_conn(struct context_server *context_server);
 
 #endif
