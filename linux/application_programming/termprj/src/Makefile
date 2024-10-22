@@ -3,7 +3,7 @@
 TARGET=server
 
 #expose obj for external use(ex. testcase)
-SRCS=server.c
+SRCS=server.c client.c
 OBJS=$(patsubst %.c,%.o,$(SRCS))
 
 #only internal obj not to be seen to external(ex. testcase)
