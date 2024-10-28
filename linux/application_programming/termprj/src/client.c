@@ -30,3 +30,16 @@ struct context_client* client_init(char *ip, int port, struct transport_client *
 
 	return context_client;
 }
+
+void client_close(struct context_client **context_client)
+{
+	if (context_client == NULL || *context_client == NULL) {
+		return;
+	}
+
+	(*context_client)->transport.close((*context_client)->sock);
+
+	free(*context_client);
+
+	*context_client = NULL;
+}

@@ -8,7 +8,7 @@ int main(int argc, char **argv)
 		.bind = bind,
 		.listen = listen,
 		.accept = accept,
-		.accept = close 
+		.close = close 
 	};
 	struct context_conn *context_conn = NULL;
 

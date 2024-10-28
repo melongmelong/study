@@ -12,7 +12,7 @@
 
 struct transport_client {
 	int (*socket)(int, int , int);
-	int (*connect)(int, struct sockaddr*, int);
+	int (*connect)(int, struct sockaddr*, socklen_t);
 	int (*close)(int);
 };
 
@@ -23,5 +23,6 @@ struct context_client {
 };
 
 struct context_client* client_init(char *ip, int port, struct transport_client *transport);
+void client_close(struct context_client **context_client);
 
 #endif

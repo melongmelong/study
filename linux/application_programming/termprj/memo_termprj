@@ -1,4 +1,4 @@
-9단계. term project
+9단계. term project(client close function구현(spec 2-2마무리), 소스코드 리팩토링 진행필요)
 
 simple echo server, echo client 스펙
   server
@@ -52,8 +52,13 @@ Resolves: #123                                                                  
   
 TDD cycle
   spec1. server는 다중 클라이언트에게 동시 서비스 가능하다.
-    spec1-1. 동시에 여러개의 클라이언트의 접속요청을 수신가능하다. => MOCKup code 사용하도록 빌드하도록 Makefile수정
-      
+    (v)spec1-1. 동시에 여러개의 클라이언트의 접속요청을 수신가능하다.
+    (v)spec1-2. 서버가 연결을 종료하면, 클라이언트와의 연결을 종료한다.
+
+  spec2. client는 사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
+    (v)spec2-1. client는 서버로 접속요청이 가능하다.
+    (v)spec2-2. client는 서버와 연결종료가 가능하다.
+  
 
 
 

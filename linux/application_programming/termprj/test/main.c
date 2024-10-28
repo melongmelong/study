@@ -92,7 +92,13 @@ static int fake_transport_client_sock(int domain, int type, int protocol)
 	return 0;
 }
 
-static int fake_transport_client_connect(int sock, struct sockaddr *addr, int addrlen)
+static int fake_transport_client_connect(int sock, struct sockaddr *addr, socklen_t addrlen)
+{
+	// return 0 for meaning success
+	return 0;
+}
+
+static int fake_transport_client_close(int sock)
 {
 	// return 0 for meaning success
 	return 0;
@@ -100,17 +106,30 @@ static int fake_transport_client_connect(int sock, struct sockaddr *addr, int ad
 
 struct transport_client transport_client = {
 	.socket = fake_transport_client_sock,
-	.connect = fake_transport_client_connect
+	.connect = fake_transport_client_connect,
+	.close = fake_transport_client_close
 };
 
 void test_client_connect_to_server(void)
 {
 	//test for spec2-1
 	struct context_client *context_client = NULL;
-	struct context_conn_client *context_conn_client = NULL;
 
 	context_client = client_init("127.0.0.1", 12345, &transport_client);
 	CU_ASSERT(context_client != NULL);
+	
+	client_close(&context_client);
+	CU_ASSERT(context_client == NULL);
+}
+
+void test_client_close_by_client(void)
+{
+	//test for spec2-2
+	struct context_client *context_client = NULL;
+
+	context_client = client_init("127.0.0.1", 12345, &transport_client);
+	client_close(&context_client);
+	CU_ASSERT(context_client == NULL);
 }
 
 int main(int argc, char **argv)
@@ -125,6 +144,7 @@ int main(int argc, char **argv)
 	CU_add_test(test_suite, "test_server_close_by_server", test_server_close_by_server);
 
 	CU_add_test(test_suite, "test_client_connect_to_server", test_client_connect_to_server);
+	CU_add_test(test_suite, "test_client_close_by_client", test_client_close_by_client);
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);
 	CU_basic_run_tests();
