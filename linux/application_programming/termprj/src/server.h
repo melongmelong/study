@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -16,6 +17,8 @@ struct transport {
 	int (*listen)(int, int);
 	int (*accept)(int, struct sockaddr*, socklen_t*);
 	int (*close)(int);
+	int (*write)(int, char *, size_t);
+	int (*read)(int, char *, size_t);
 };
 
 struct context_server {
@@ -39,5 +42,8 @@ void server_deinit(struct context_server **context_server);
 struct context_conn* server_accept(struct context_server *context_server);
 void server_close(struct context_server *context_server, struct context_conn *context_conn);
 int server_get_cnt_conn(struct context_server *context_server);
+
+void server_write(struct context_server *context_server, struct context_conn *context_conn, char *write_buf, size_t write_buf_len);
+void server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len);
 
 #endif

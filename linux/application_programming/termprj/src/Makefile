@@ -22,7 +22,7 @@ $(shell echo SRC_OBJS=$(addprefix $(CURDIR)/,$(OBJS)) 1>>$(CURDIR)/../test/Makef
 all: $(SERVER_TARGET) $(CLIENT_TARGET)
 
 clean:
-	rm -rf $(OBJS) $(_OBJS) $(TARGET) $(CURDIR)/../test/Makefile.include
+	rm -rf $(OBJS) $(_OBJS) $(SERVER_TARGET) $(CLIENT_TARGET) $(_SERVER_OBJS) $(_CLIENT_OBJS) $(CURDIR)/../test/Makefile.include
 
 $(SERVER_TARGET): $(OBJS) $(_SERVER_OBJS)
 	gcc -o $@ $(OBJS) $(_SERVER_OBJS)

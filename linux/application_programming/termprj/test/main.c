@@ -34,12 +34,32 @@ static int fake_transport_close(int sock)
 	return 0;
 }
 
+char g_server_echo_test_buf[1024] = "";
+
+static int fake_transport_write(int sock, char *write_buf, size_t write_buf_len)
+{
+	memcpy(g_server_echo_test_buf, write_buf, write_buf_len);
+
+	// return 0 for meaning success
+	return 0;
+}
+
+static int fake_transport_read(int sock, char *read_buf, size_t read_buf_len)
+{
+	memcpy(read_buf, "server hello", read_buf_len);
+
+	// return 0 for meaning success
+	return 0;
+}
+
 struct transport transport = {
 	.socket = fake_transport_sock,
 	.bind = fake_transport_bind,
 	.listen = fake_transport_listen,
 	.accept = fake_transport_accept,
-	.close = fake_transport_close
+	.close = fake_transport_close,
+	.write = fake_transport_write,
+	.read = fake_transport_read
 };
 
 void test_server_accept_multi_client(void)
@@ -105,6 +125,25 @@ void test_server_deinit(void)
 	CU_ASSERT(context_server == NULL);
 }
 
+void test_server_echo(void)
+{
+	//test for spec1-4
+	struct context_server *context_server = NULL;
+	struct context_conn *context_conn = NULL;
+	char read_data[1024] = "";
+
+	context_server = server_init("127.0.0.1", 12345, &transport);
+
+	context_conn = server_accept(context_server);
+
+	server_read(context_server, context_conn, read_data, sizeof(read_data));
+	server_write(context_server, context_conn, read_data, strlen(read_data) + 1);
+
+	server_deinit(&context_server);
+
+	CU_ASSERT(strcmp(g_server_echo_test_buf, read_data) == 0);
+}
+
 static int fake_transport_client_sock(int domain, int type, int protocol)
 {
 	// return 0 for meaning success
@@ -123,10 +162,30 @@ static int fake_transport_client_close(int sock)
 	return 0;
 }
 
+char g_client_echo_test_buf[1024] = "";
+
+static int fake_transport_client_write(int sock, char *write_buf, size_t write_buf_len)
+{
+	memcpy(g_client_echo_test_buf, write_buf, write_buf_len);
+
+	// return 0 for meaning success
+	return 0;
+}
+
+static int fake_transport_client_read(int sock, char *read_buf, size_t read_buf_len)
+{
+	memcpy(read_buf, g_client_echo_test_buf, read_buf_len);
+
+	// return 0 for meaning success
+	return 0;
+}
+
 struct transport_client transport_client = {
 	.socket = fake_transport_client_sock,
 	.connect = fake_transport_client_connect,
-	.close = fake_transport_client_close
+	.close = fake_transport_client_close,
+	.write = fake_transport_client_write,
+	.read = fake_transport_client_read
 };
 
 void test_client_connect_to_server(void)
@@ -151,6 +210,22 @@ void test_client_close_by_client(void)
 	CU_ASSERT(context_client == NULL);
 }
 
+void test_client_echo(void)
+{
+	//test for spec2-3
+	struct context_client *context_client = NULL;
+	char write_data[1024] = "client hello", read_data[1024] = "";
+
+	context_client = client_init("127.0.0.1", 12345, &transport_client);
+
+	client_write(context_client, write_data, strlen(write_data) + 1);
+	client_read(context_client, read_data, sizeof(read_data));
+
+	client_close(&context_client);
+
+	CU_ASSERT(strcmp(write_data, read_data) == 0);
+}
+
 int main(int argc, char **argv)
 {
 	CU_pSuite test_suite = NULL;
@@ -162,9 +237,11 @@ int main(int argc, char **argv)
 	CU_add_test(test_suite, "test_server_accept_multi_client", test_server_accept_multi_client);
 	CU_add_test(test_suite, "test_server_close_by_server", test_server_close_by_server);
 	CU_add_test(test_suite, "test_server_deinit", test_server_deinit);
+	CU_add_test(test_suite, "test_server_echo", test_server_echo);
 
 	CU_add_test(test_suite, "test_client_connect_to_server", test_client_connect_to_server);
 	CU_add_test(test_suite, "test_client_close_by_client", test_client_close_by_client);
+	CU_add_test(test_suite, "test_client_echo", test_client_echo);
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);
 	CU_basic_run_tests();

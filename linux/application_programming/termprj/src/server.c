@@ -99,3 +99,21 @@ int server_get_cnt_conn(struct context_server *context_server)
 
 	return context_server->cnt_context_conn;
 }
+
+void server_write(struct context_server *context_server, struct context_conn *context_conn, char *write_buf, size_t write_buf_len)
+{
+	if (context_server == NULL || context_conn == NULL || write_buf == NULL) {
+		return;
+	}
+
+	context_server->transport.write(context_conn->sock, write_buf, write_buf_len);
+}
+
+void server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len)
+{
+	if (context_server == NULL || context_conn == NULL || read_buf == NULL) {
+		return;
+	}
+
+	context_server->transport.read(context_conn->sock, read_buf, read_buf_len);
+}

@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdio.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -14,6 +15,8 @@ struct transport_client {
 	int (*socket)(int, int , int);
 	int (*connect)(int, struct sockaddr*, socklen_t);
 	int (*close)(int);
+	int (*write)(int, char *, size_t);
+	int (*read)(int, char *, size_t);
 };
 
 struct context_client {
@@ -24,5 +27,8 @@ struct context_client {
 
 struct context_client* client_init(char *ip, int port, struct transport_client *transport);
 void client_close(struct context_client **context_client);
+
+void client_write(struct context_client *context_client, char *write_buf, size_t write_buf_len);
+void client_read(struct context_client *context_client, char *read_buf, size_t read_buf_len);
 
 #endif
