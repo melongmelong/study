@@ -27,11 +27,29 @@ struct context_server* server_init(char *ip, int port, struct transport *transpo
 	return context_server;
 }
 
+void server_deinit(struct context_server **context_server)
+{
+	int idx = 0;
+
+	for (idx = 0; idx < MAX_CONTEXT_CONN; idx++) {
+		server_close(*context_server, (*context_server)->context_conn[idx]);
+	}
+
+	free(*context_server);
+	*context_server = NULL;
+}
+
 struct context_conn* server_accept(struct context_server *context_server)
 {
 	struct context_conn *context_conn = NULL;
+	int idx = 0;
 
 	if (context_server == NULL) {
+		return NULL;
+	}
+
+	for (idx = 0; context_server->context_conn[idx]; idx++);
+	if (idx == MAX_CONTEXT_CONN) {
 		return NULL;
 	}
 
@@ -45,21 +63,32 @@ struct context_conn* server_accept(struct context_server *context_server)
 		free(context_conn);
 		return NULL;
 	}
+	
+	context_conn->context_server = context_server;
 
-	context_server->cnt_conn++;
+	context_server->context_conn[idx] = context_conn;
+	context_server->cnt_context_conn++;
 
 	return context_conn;
 }
 
 void server_close(struct context_server *context_server, struct context_conn *context_conn)
 {
+	int idx = 0;
+
 	if (context_server == NULL || context_conn == NULL) {
 		return;
 	}
 
+	for (idx = 0; context_server->context_conn[idx] != context_conn; idx++);
+	if (idx == MAX_CONTEXT_CONN) {
+		return;
+	}
+	
 	context_server->transport.close(context_conn->sock);
-
-	context_server->cnt_conn--;
+	context_server->cnt_context_conn--;
+	free(context_server->context_conn[idx]);
+	context_server->context_conn[idx] = NULL;
 }
 
 int server_get_cnt_conn(struct context_server *context_server)
@@ -68,5 +97,5 @@ int server_get_cnt_conn(struct context_server *context_server)
 		return -1;
 	}
 
-	return context_server->cnt_conn;
+	return context_server->cnt_context_conn;
 }

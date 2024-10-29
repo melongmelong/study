@@ -42,7 +42,6 @@ struct transport transport = {
 	.close = fake_transport_close
 };
 
-
 void test_server_accept_multi_client(void)
 {
 	//test for sepc1-1
@@ -84,6 +83,26 @@ void test_server_close_by_server(void)
 	cnt_client = server_get_cnt_conn(context_server);
 
 	CU_ASSERT(cnt_client == 3);
+}
+
+void test_server_deinit(void)
+{
+	//test for sepc1-3
+	struct context_server *context_server = NULL;
+	struct context_conn *context_conn[5] = {NULL, };
+	int cnt_client = 0;
+
+	context_server = server_init("127.0.0.1", 12345, &transport);
+
+	context_conn[0] = server_accept(context_server);
+	context_conn[1] = server_accept(context_server);
+	context_conn[2] = server_accept(context_server);
+	context_conn[3] = server_accept(context_server);
+	context_conn[4] = server_accept(context_server);
+
+	server_deinit(&context_server);
+
+	CU_ASSERT(context_server == NULL);
 }
 
 static int fake_transport_client_sock(int domain, int type, int protocol)
@@ -142,6 +161,7 @@ int main(int argc, char **argv)
 	
 	CU_add_test(test_suite, "test_server_accept_multi_client", test_server_accept_multi_client);
 	CU_add_test(test_suite, "test_server_close_by_server", test_server_close_by_server);
+	CU_add_test(test_suite, "test_server_deinit", test_server_deinit);
 
 	CU_add_test(test_suite, "test_client_connect_to_server", test_client_connect_to_server);
 	CU_add_test(test_suite, "test_client_close_by_client", test_client_close_by_client);
