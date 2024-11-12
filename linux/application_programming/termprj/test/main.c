@@ -1,3 +1,5 @@
+#include <unistd.h>
+
 #include "CUnit/Basic.h"
 #include "CUnit/Console.h"
 
@@ -226,6 +228,50 @@ void test_client_echo(void)
 	CU_ASSERT(strcmp(write_data, read_data) == 0);
 }
 
+static int g_fd_org_stdin, g_fd_new_stdin, g_pipe_fd[2];
+
+static void pre_test_client_input_from_stdin(void)
+{
+	g_fd_org_stdin = dup(STDIN_FILENO);
+	pipe(g_pipe_fd);
+	close(STDIN_FILENO);
+	g_fd_new_stdin = dup(g_pipe_fd[0]);
+	close(g_pipe_fd[0]);
+}
+
+static void post_test_client_input_from_stdin(void)
+{
+	close(STDIN_FILENO);
+	dup(g_fd_org_stdin);
+	close(g_fd_org_stdin);
+}
+
+void test_client_input_from_stdin(void)
+{
+	//test for spec2-4
+	#define LINE1 "line1"
+	#define LINE2 "line2"
+	#define LINE3 "line3"
+	char *input_stream = LINE1"\n"LINE2"\n"LINE3;
+	char *line = NULL;
+
+	pre_test_client_input_from_stdin();
+
+	write(g_pipe_fd[1], input_stream, strlen(input_stream) + 1);
+	close(g_pipe_fd[1]);
+
+	line = client_input_from_stdin();
+	CU_ASSERT(strcmp(line, LINE1) == 0);
+
+	line = client_input_from_stdin();
+	CU_ASSERT(strcmp(line, LINE2) == 0);
+	
+	line = client_input_from_stdin();
+	CU_ASSERT(strcmp(line, LINE3) == 0);
+	
+	post_test_client_input_from_stdin();
+}
+
 int main(int argc, char **argv)
 {
 	CU_pSuite test_suite = NULL;
@@ -242,6 +288,7 @@ int main(int argc, char **argv)
 	CU_add_test(test_suite, "test_client_connect_to_server", test_client_connect_to_server);
 	CU_add_test(test_suite, "test_client_close_by_client", test_client_close_by_client);
 	CU_add_test(test_suite, "test_client_echo", test_client_echo);
+	CU_add_test(test_suite, "test_client_input_from_stdin", test_client_input_from_stdin);
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);
 	CU_basic_run_tests();

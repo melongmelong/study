@@ -61,3 +61,17 @@ void client_read(struct context_client *context_client, char *read_buf, size_t r
 	
 	context_client->transport.read(context_client->sock, read_buf, read_buf_len);
 }
+
+char* client_input_from_stdin(void)
+{
+	static char line[1024] = "", *newline = NULL;
+
+	fgets(line, sizeof(line), stdin);
+	
+	newline = strrchr(line, '\n');
+	if (newline) {
+		*newline = '\0';
+	}
+
+	return line;
+}

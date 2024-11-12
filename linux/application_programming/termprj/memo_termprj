@@ -1,4 +1,4 @@
-9단계. term project(기본 에코동작 확인함, 나머지 스펙구현 ㄱㄱ)
+9단계. term project(spec 2-5 ㄱㄱ)
 
 simple echo server, echo client 스펙
   server
@@ -61,6 +61,8 @@ TDD cycle
     (v)spec2-1. client는 서버로 접속요청이 가능하다.
     (v)spec2-2. client는 서버와 연결종료가 가능하다.
     (v)spec2-3. client는 write한데이터를 그대로 echo-back받는다.
+    (v)spec2-4. client는 사용자로부터 입력을 받고, 개행문자가 입력된 경우, server로 전송한다.
+    spec2-5. SIGINT를 전달받은 경우, 프로그램을 종료한다.
   
 
 

@@ -30,9 +30,11 @@ int main(int argc, char **argv)
 
 	context_conn = server_accept(context_server);
 
-	server_read(context_server, context_conn, read_data, sizeof(read_data));
-	server_write(context_server, context_conn, read_data, strlen(read_data) + 1);
-	printf("read:%s\n", read_data);
+	while (1) {
+		server_read(context_server, context_conn, read_data, sizeof(read_data));
+		server_write(context_server, context_conn, read_data, strlen(read_data) + 1);
+		printf("read:%s\n", read_data);
+	}
 
 	server_close(context_server, context_conn);
 
