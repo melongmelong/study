@@ -22,9 +22,15 @@ int main(int argc, char **argv)
 	ip = argv[1];
 	port = argv[2];
 
+	client_init_signal();
+
 	context_client = client_init(ip, atoi(port), &transport);
 
 	while (1) {
+		if (is_exit) {
+			break;
+		}
+
 		write_data = client_input_from_stdin();
 		client_write(context_client, write_data, strlen(write_data) + 1);
 		client_read(context_client, read_data, sizeof(read_data));
@@ -32,7 +38,10 @@ int main(int argc, char **argv)
 		printf("read : %s\n", read_data);
 	}
 
+	printf("exit.\n");
+
 	client_close(&context_client);
+	client_deinit_signal();
 
 	return 0;
 }

@@ -6,6 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <signal.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -32,5 +33,9 @@ void client_write(struct context_client *context_client, char *write_buf, size_t
 void client_read(struct context_client *context_client, char *read_buf, size_t read_buf_len);
 
 char* client_input_from_stdin(void);
+
+extern int is_exit;
+void client_init_signal(void);
+void client_deinit_signal(void);
 
 #endif

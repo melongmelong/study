@@ -75,3 +75,29 @@ char* client_input_from_stdin(void)
 
 	return line;
 }
+
+int is_exit = 0;
+static struct sigaction oldact;
+
+static void sigint_handler(int signo)
+{
+	is_exit = 1;
+}
+
+void client_init_signal(void)
+{
+	struct sigaction act;
+
+	memset(&act, 0, sizeof(act));
+
+	act.sa_handler = sigint_handler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+
+	sigaction(SIGINT, &act, &oldact);
+}
+
+void client_deinit_signal(void)
+{
+	sigaction(SIGINT, &oldact, NULL);
+}

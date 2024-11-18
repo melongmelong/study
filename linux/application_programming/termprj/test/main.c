@@ -272,6 +272,18 @@ void test_client_input_from_stdin(void)
 	post_test_client_input_from_stdin();
 }
 
+void test_client_exit_on_signal(void)
+{
+	//test for spec2-5	
+	client_init_signal();
+
+	raise(SIGINT);
+	
+	client_deinit_signal();
+
+	CU_ASSERT(is_exit == 1);
+}
+
 int main(int argc, char **argv)
 {
 	CU_pSuite test_suite = NULL;
@@ -289,6 +301,7 @@ int main(int argc, char **argv)
 	CU_add_test(test_suite, "test_client_close_by_client", test_client_close_by_client);
 	CU_add_test(test_suite, "test_client_echo", test_client_echo);
 	CU_add_test(test_suite, "test_client_input_from_stdin", test_client_input_from_stdin);
+	CU_add_test(test_suite, "test_client_exit_on_signal", test_client_exit_on_signal);
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);
 	CU_basic_run_tests();
