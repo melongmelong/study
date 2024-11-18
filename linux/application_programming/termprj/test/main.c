@@ -260,13 +260,13 @@ void test_client_input_from_stdin(void)
 	write(g_pipe_fd[1], input_stream, strlen(input_stream) + 1);
 	close(g_pipe_fd[1]);
 
-	line = client_input_from_stdin();
+	line = client_input_from_file(stdin);
 	CU_ASSERT(strcmp(line, LINE1) == 0);
 
-	line = client_input_from_stdin();
+	line = client_input_from_file(stdin);
 	CU_ASSERT(strcmp(line, LINE2) == 0);
 	
-	line = client_input_from_stdin();
+	line = client_input_from_file(stdin);
 	CU_ASSERT(strcmp(line, LINE3) == 0);
 	
 	post_test_client_input_from_stdin();
@@ -282,6 +282,38 @@ void test_client_exit_on_signal(void)
 	client_deinit_signal();
 
 	CU_ASSERT(is_exit == 1);
+}
+
+void test_client_input_from_file(void)
+{
+	//test for spec2-6
+	#define LINE1 "line1"
+	#define LINE2 "line2"
+	#define LINE3 "line3"
+	char *test_file_path = "test.txt", *test_data= LINE1"\n"LINE2"\n"LINE3"\n";
+	char *line = NULL;
+	FILE *fp = NULL;
+
+	// write testdata
+	fp = fopen(test_file_path, "w");
+	fwrite(test_data, strlen(test_data) + 1, 1, fp);
+	fclose(fp);
+
+	// test
+	fp = fopen(test_file_path, "r");
+
+	line = client_input_from_file(fp);
+	CU_ASSERT(strcmp(line, LINE1) == 0);
+
+	line = client_input_from_file(fp);
+	CU_ASSERT(strcmp(line, LINE2) == 0);
+
+	line = client_input_from_file(fp);
+	CU_ASSERT(strcmp(line, LINE3) == 0);
+
+	fclose(fp);
+
+	unlink(test_file_path);
 }
 
 int main(int argc, char **argv)
@@ -302,6 +334,7 @@ int main(int argc, char **argv)
 	CU_add_test(test_suite, "test_client_echo", test_client_echo);
 	CU_add_test(test_suite, "test_client_input_from_stdin", test_client_input_from_stdin);
 	CU_add_test(test_suite, "test_client_exit_on_signal", test_client_exit_on_signal);
+	CU_add_test(test_suite, "test_client_input_from_file", test_client_input_from_file);
 
 	CU_basic_set_mode(CU_BRM_VERBOSE);
 	CU_basic_run_tests();

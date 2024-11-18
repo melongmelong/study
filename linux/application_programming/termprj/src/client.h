@@ -32,7 +32,7 @@ void client_close(struct context_client **context_client);
 void client_write(struct context_client *context_client, char *write_buf, size_t write_buf_len);
 void client_read(struct context_client *context_client, char *read_buf, size_t read_buf_len);
 
-char* client_input_from_stdin(void);
+char* client_input_from_file(FILE *fp);
 
 extern int is_exit;
 void client_init_signal(void);

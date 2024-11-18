@@ -1,4 +1,4 @@
-9단계. term project(spec 2-5 ㄱㄱ)
+9단계. term project(spec 2-5 ㄱㄱ. TC다만들었고, client에 종료기능도 넣었음. 마무리하고 다음거 ㄱㄱ)
 
 simple echo server, echo client 스펙
   server
@@ -60,9 +60,10 @@ TDD cycle
   spec2. client는 사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
     (v)spec2-1. client는 서버로 접속요청이 가능하다.
     (v)spec2-2. client는 서버와 연결종료가 가능하다.
-    (v)spec2-3. client는 write한데이터를 그대로 echo-back받는다.
+    (v)spec2-3. client는 서버로 write한데이터를 그대로 echo-back받는다.
     (v)spec2-4. client는 사용자로부터 입력을 받고, 개행문자가 입력된 경우, server로 전송한다.
-    spec2-5. SIGINT를 전달받은 경우, 프로그램을 종료한다.
+    (v)spec2-5. SIGINT를 전달받은 경우, 리소스를 해제(ex. 통신해제) 프로그램을 종료한다.
+    (v)spec2-6. client는 파일패스를 입력받고, 해당 파일을 라인단위로 읽어서 server로 보내고 echo-back받는다.
   
 
 
