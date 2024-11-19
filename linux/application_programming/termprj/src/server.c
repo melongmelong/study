@@ -117,3 +117,29 @@ void server_read(struct context_server *context_server, struct context_conn *con
 
 	context_server->transport.read(context_conn->sock, read_buf, read_buf_len);
 }
+
+int is_server_exit = 0;
+static struct sigaction oldact;
+
+static void sigint_handler(int signo)
+{
+	is_server_exit = 1;
+}
+
+void server_init_signal(void)
+{
+	struct sigaction act;
+
+	memset(&act, 0, sizeof(act));
+
+	act.sa_handler = sigint_handler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+
+	sigaction(SIGINT, &act, &oldact);
+}
+
+void server_deinit_signal(void)
+{
+	sigaction(SIGINT, &oldact, NULL);
+}

@@ -35,7 +35,7 @@ int main(int argc, char **argv)
 	context_client = client_init(ip, atoi(port), &transport);
 
 	while (1) {
-		if (is_exit) {
+		if (is_client_exit) {
 			break;
 		}
 
@@ -44,8 +44,12 @@ int main(int argc, char **argv)
 			break;
 		}
 
-		client_write(context_client, write_data, strlen(write_data) + 1);
-		client_read(context_client, read_data, sizeof(read_data));
+		if (client_write(context_client, write_data, strlen(write_data) + 1) <= 0) {
+			break;
+		}
+		if (client_read(context_client, read_data, sizeof(read_data)) <= 0) {
+			break;
+		}
 		printf("write : %s\n", write_data);
 		printf("read : %s\n", read_data);
 	}

@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <signal.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -29,12 +30,12 @@ struct context_client {
 struct context_client* client_init(char *ip, int port, struct transport_client *transport);
 void client_close(struct context_client **context_client);
 
-void client_write(struct context_client *context_client, char *write_buf, size_t write_buf_len);
-void client_read(struct context_client *context_client, char *read_buf, size_t read_buf_len);
+int client_write(struct context_client *context_client, char *write_buf, size_t write_buf_len);
+int client_read(struct context_client *context_client, char *read_buf, size_t read_buf_len);
 
 char* client_input_from_file(FILE *fp);
 
-extern int is_exit;
+extern int is_client_exit;
 void client_init_signal(void);
 void client_deinit_signal(void);
 

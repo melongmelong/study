@@ -1,4 +1,4 @@
-9단계. term project(spec 2-5 ㄱㄱ. TC다만들었고, client에 종료기능도 넣었음. 마무리하고 다음거 ㄱㄱ)
+9단계. term project(spec 1-5 ㄱㄱ, 종료가 깔끔하게 안됨. 이거 제약사항으로가는 방향으로 진행 ㄱㄱ)
 
 simple echo server, echo client 스펙
   server
@@ -56,6 +56,7 @@ TDD cycle
     (v)spec1-2. 서버가 연결을 종료하면, 클라이언트와의 연결을 종료한다.
     (v)spec1-3. 서버가 종요뢰는 경우, 서버와 관련된 모든 리소스들을 해제한다.
     (v)spec1-4. 서버는 read한데이터를 그대로 echo-back한다.
+    spec1-5. SIGINT를 전달받은 경우, 연결된 리소스를 모두 해제(ex. 통신해제) 후 프로그램을 종료한다
 
   spec2. client는 사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
     (v)spec2-1. client는 서버로 접속요청이 가능하다.

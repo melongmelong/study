@@ -6,6 +6,8 @@
 #include <string.h>
 #include <unistd.h>
 #include <stdio.h>
+#include <signal.h>
+#include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <arpa/inet.h>
@@ -45,5 +47,9 @@ int server_get_cnt_conn(struct context_server *context_server);
 
 void server_write(struct context_server *context_server, struct context_conn *context_conn, char *write_buf, size_t write_buf_len);
 void server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len);
+
+extern int is_server_exit;
+void server_init_signal(void);
+void server_deinit_signal(void);
 
 #endif

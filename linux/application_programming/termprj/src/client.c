@@ -44,22 +44,30 @@ void client_close(struct context_client **context_client)
 	*context_client = NULL;
 }
 
-void client_write(struct context_client *context_client, char *write_buf, size_t write_buf_len)
+int client_write(struct context_client *context_client, char *write_buf, size_t write_buf_len)
 {
+	int ret = 0;
+
 	if (context_client == NULL || write_buf == NULL) {
-		return;
+		return -1;
 	}
 
-	context_client->transport.write(context_client->sock, write_buf, write_buf_len);
+	ret = context_client->transport.write(context_client->sock, write_buf, write_buf_len);
+
+	return ret;
 }
 
-void client_read(struct context_client *context_client, char *read_buf, size_t read_buf_len)
+int client_read(struct context_client *context_client, char *read_buf, size_t read_buf_len)
 {
+	int ret = 0;
+
 	if (context_client == NULL || read_buf == NULL) {
-		return;
+		return -1;
 	}
 	
-	context_client->transport.read(context_client->sock, read_buf, read_buf_len);
+	ret = context_client->transport.read(context_client->sock, read_buf, read_buf_len);
+
+	return ret;
 }
 
 char* client_input_from_file(FILE *fp)
@@ -80,12 +88,12 @@ char* client_input_from_file(FILE *fp)
 	return line;
 }
 
-int is_exit = 0;
+int is_client_exit = 0;
 static struct sigaction oldact;
 
 static void sigint_handler(int signo)
 {
-	is_exit = 1;
+	is_client_exit = 1;
 }
 
 void client_init_signal(void)
