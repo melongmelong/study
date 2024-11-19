@@ -37,8 +37,12 @@ int main(int argc, char **argv)
 			break;
 		}
 
-		server_read(context_server, context_conn, read_data, sizeof(read_data));
-		server_write(context_server, context_conn, read_data, strlen(read_data) + 1);
+		if (server_read(context_server, context_conn, read_data, sizeof(read_data)) <= 0) {
+			break;
+		}
+		if (server_write(context_server, context_conn, read_data, strlen(read_data) + 1) <= 0) {
+			break;
+		}
 		printf("read:%s\n", read_data);
 	}
 

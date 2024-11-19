@@ -45,8 +45,8 @@ struct context_conn* server_accept(struct context_server *context_server);
 void server_close(struct context_server *context_server, struct context_conn *context_conn);
 int server_get_cnt_conn(struct context_server *context_server);
 
-void server_write(struct context_server *context_server, struct context_conn *context_conn, char *write_buf, size_t write_buf_len);
-void server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len);
+int server_write(struct context_server *context_server, struct context_conn *context_conn, char *write_buf, size_t write_buf_len);
+int server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len);
 
 extern int is_server_exit;
 void server_init_signal(void);
