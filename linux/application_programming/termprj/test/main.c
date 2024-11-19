@@ -146,6 +146,18 @@ void test_server_echo(void)
 	CU_ASSERT(strcmp(g_server_echo_test_buf, read_data) == 0);
 }
 
+void test_server_exit_on_signal(void)
+{
+	//test for spec1-5
+	server_init_signal();
+
+	raise(SIGINT);
+	
+	server_deinit_signal();
+
+	CU_ASSERT(is_server_exit == 1);
+}
+
 static int fake_transport_client_sock(int domain, int type, int protocol)
 {
 	// return 0 for meaning success
@@ -314,17 +326,6 @@ void test_client_input_from_file(void)
 	fclose(fp);
 
 	unlink(test_file_path);
-}
-
-void test_server_exit_on_signal(void)
-{
-	server_init_signal();
-
-	raise(SIGINT);
-	
-	server_deinit_signal();
-
-	CU_ASSERT(is_server_exit == 1);
 }
 
 int main(int argc, char **argv)

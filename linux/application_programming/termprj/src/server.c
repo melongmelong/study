@@ -84,7 +84,7 @@ void server_close(struct context_server *context_server, struct context_conn *co
 	if (idx == MAX_CONTEXT_CONN) {
 		return;
 	}
-	
+
 	context_server->transport.close(context_conn->sock);
 	context_server->cnt_context_conn--;
 	free(context_server->context_conn[idx]);
@@ -135,11 +135,22 @@ void server_init_signal(void)
 	act.sa_handler = sigint_handler;
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
-
 	sigaction(SIGINT, &act, &oldact);
+	
+	act.sa_handler = SIG_IGN;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	sigaction(SIGPIPE, &act, NULL);
 }
 
 void server_deinit_signal(void)
 {
+	struct sigaction act;
+
 	sigaction(SIGINT, &oldact, NULL);
+
+	act.sa_handler = SIG_DFL;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	sigaction(SIGPIPE, &act, NULL);
 }

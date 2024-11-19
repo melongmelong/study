@@ -26,6 +26,8 @@ int main(int argc, char **argv)
 	ip = argv[1];
 	port = argv[2];
 
+	server_init_signal();
+
 	context_server = server_init(ip, atoi(port), &transport);
 
 	context_conn = server_accept(context_server);
@@ -40,9 +42,13 @@ int main(int argc, char **argv)
 		printf("read:%s\n", read_data);
 	}
 
+	printf("server close!\n");
+
 	server_close(context_server, context_conn);
 
 	server_deinit(&context_server);
+
+	server_deinit_signal();
 
 	return 0;
 }
