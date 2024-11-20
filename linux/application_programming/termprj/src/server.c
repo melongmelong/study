@@ -61,10 +61,11 @@ struct context_conn* server_accept(struct context_server *context_server)
 	context_conn->sock = context_server->transport.accept(context_server->sock_listen, (struct sockaddr*)&context_conn->sockaddr_in_peer, &context_conn->sockaddr_in_peer_len);
 	if (context_conn->sock < 0) {
 		free(context_conn);
-		return NULL;
+		return (struct context_conn*)-1;
 	}
 	
 	context_conn->context_server = context_server;
+	context_conn->timestamp = time(NULL);
 
 	context_server->context_conn[idx] = context_conn;
 	context_server->cnt_context_conn++;
@@ -105,7 +106,7 @@ int server_write(struct context_server *context_server, struct context_conn *con
 	int ret = 0;
 
 	if (context_server == NULL || context_conn == NULL || write_buf == NULL) {
-		return -1;
+		return -2;
 	}
 
 	ret = context_server->transport.write(context_conn->sock, write_buf, write_buf_len);
@@ -118,20 +119,30 @@ int server_read(struct context_server *context_server, struct context_conn *cont
 	int ret = 0;
 
 	if (context_server == NULL || context_conn == NULL || read_buf == NULL) {
-		return -1;
+		return -2;
 	}
 
 	ret = context_server->transport.read(context_conn->sock, read_buf, read_buf_len);
 
+	if (ret > 0) {
+		context_conn->timestamp = time(NULL);
+	}
+	
 	return ret;
 }
 
-int is_server_exit = 0;
+int is_server_exit = 0, is_server_alarm = 0;
 static struct sigaction oldact;
 
 static void sigint_handler(int signo)
 {
 	is_server_exit = 1;
+}
+
+static void sigalrm_handler(int signo)
+{
+	is_server_alarm = 1;
+	alarm(1);
 }
 
 void server_init_signal(void)
@@ -149,6 +160,12 @@ void server_init_signal(void)
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
 	sigaction(SIGPIPE, &act, NULL);
+
+	act.sa_handler = sigalrm_handler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	sigaction(SIGALRM, &act, NULL);
+	alarm(1);
 }
 
 void server_deinit_signal(void)
@@ -161,4 +178,27 @@ void server_deinit_signal(void)
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
 	sigaction(SIGPIPE, &act, NULL);
+
+	act.sa_handler = SIG_DFL;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	sigaction(SIGALRM, &act, NULL);
+	alarm(0);
+}
+
+int server_check_conn_timeout(struct context_server *context_server, struct context_conn *context_conn)
+{
+	time_t curr_timestamp;
+
+	if (context_server == NULL || context_conn == NULL) {
+		return 0;
+	}
+
+	curr_timestamp = time(NULL);
+
+	if (curr_timestamp - context_conn->timestamp >= TIMEOUT_CONN) {
+		return 1;
+	}
+
+	return 0;
 }

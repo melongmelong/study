@@ -15,6 +15,7 @@ int main(int argc, char **argv)
 	};
 	struct context_conn *context_conn = NULL;
 	char read_data[1024] = "";
+	int ret = 0;
 
 	comm = argv[0];
 
@@ -30,20 +31,33 @@ int main(int argc, char **argv)
 
 	context_server = server_init(ip, atoi(port), &transport);
 
-	context_conn = server_accept(context_server);
+	do {
+		context_conn = server_accept(context_server);
+	} while ((int)context_conn == -1 && errno == EINTR);
 
 	while (1) {
 		if (is_server_exit) {
 			break;
 		}
 
-		if (server_read(context_server, context_conn, read_data, sizeof(read_data)) <= 0) {
-			break;
+		if (is_server_alarm) {
+			is_server_alarm = 0;
+
+			if (server_check_conn_timeout(context_server, context_conn)) {
+				printf("client timeout!\n");
+				break;
+			}
 		}
-		if (server_write(context_server, context_conn, read_data, strlen(read_data) + 1) <= 0) {
-			break;
+
+		if ((ret = server_read(context_server, context_conn, read_data, sizeof(read_data))) <= 0) {
+			if (ret < 0 && errno == EINTR)	continue;
+			else	break;
 		}
-		printf("read:%s\n", read_data);
+		printf("read(%s)\n", read_data);
+		if ((ret = server_write(context_server, context_conn, read_data, strlen(read_data) + 1)) <= 0) {
+			if (ret < 0 && errno == EINTR)	continue;
+			else	break;
+		}
 	}
 
 	printf("server close!\n");

@@ -1,4 +1,4 @@
-9단계. term project(spec 1-5 ㄱㄱ, 종료가 깔끔하게 안됨. 이거 제약사항으로가는 방향으로 진행 ㄱㄱ)
+9단계. term project(spec 1-6 ㄱㄱ, signal 처리가 핵심인듯. alarm으로 어떻게든 조져보자... 지금 아무것도 안됨. ㅎ)
 
 simple echo server, echo client 스펙
   server
@@ -8,7 +8,7 @@ simple echo server, echo client 스펙
        메시지는 configurable하다.(파일에다쓴다.), 설정파일이 없으면 default는 "broadcast" 이다.
       broadcast메시지는 interleaved되선 안된다.(추가시점은 적당한 곳, interleaved만 안되면 됨.)
     (v)echoed데이타는 interleaved 되지않고, 수신순서대로 client로 다시 전달되어야 한다.
-    client로부터 일정시간 echo-back할 데이터가 수신되지않으면, client 연결을 종료한다.(with 관련 리소스해제)
+    (v)client로부터 일정시간 echo-back할 데이터가 수신되지않으면, client 연결을 종료한다.(with 관련 리소스해제)
     (v)signal(SIGINT)를 받으면, 리소스를 모두 해제후 종료한다.
   client
     (v)사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
@@ -57,7 +57,7 @@ TDD cycle
     (v)spec1-3. 서버가 종요뢰는 경우, 서버와 관련된 모든 리소스들을 해제한다.
     (v)spec1-4. 서버는 read한데이터를 그대로 echo-back한다.
     (v)spec1-5. SIGINT를 전달받은 경우, 연결된 리소스를 모두 해제(ex. 통신해제) 후 프로그램을 종료한다
-    spec1-6. client로부터 일정시간 데이터 read가 되지않음녀, 해당 client와의 연결을 종료한다.
+    (v)spec1-6. client로부터 일정시간 데이터 read가 되지않음녀, 해당 client와의 연결을 종료한다.
 
   spec2. client는 사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
     (v)spec2-1. client는 서버로 접속요청이 가능하다.

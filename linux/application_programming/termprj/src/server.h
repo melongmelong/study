@@ -7,6 +7,7 @@
 #include <unistd.h>
 #include <stdio.h>
 #include <signal.h>
+#include <time.h>
 #include <errno.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
@@ -37,6 +38,9 @@ struct context_conn {
 	int sock;
 	struct sockaddr_in sockaddr_in_peer;	
 	int sockaddr_in_peer_len;
+
+	#define TIMEOUT_CONN 3 
+	time_t timestamp;
 };
 
 struct context_server* server_init(char *ip, int port, struct transport *transport);
@@ -48,8 +52,9 @@ int server_get_cnt_conn(struct context_server *context_server);
 int server_write(struct context_server *context_server, struct context_conn *context_conn, char *write_buf, size_t write_buf_len);
 int server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len);
 
-extern int is_server_exit;
+extern int is_server_exit, is_server_alarm;
 void server_init_signal(void);
 void server_deinit_signal(void);
 
+int server_check_conn_timeout(struct context_server *context_server, struct context_conn *context_conn);
 #endif

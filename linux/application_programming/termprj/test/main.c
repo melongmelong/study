@@ -158,6 +158,23 @@ void test_server_exit_on_signal(void)
 	CU_ASSERT(is_server_exit == 1);
 }
 
+void test_server_check_timeout(void)
+{
+	//test for spec1-6
+	struct context_server *context_server = NULL;
+	struct context_conn *context_conn = NULL;
+
+	context_server = server_init("127.0.0.1", 12345, &transport);
+	context_conn = server_accept(context_server);
+
+	CU_ASSERT(server_check_conn_timeout(context_server, context_conn) == 0);
+
+	sleep(5);
+	CU_ASSERT(server_check_conn_timeout(context_server, context_conn) == 1);
+	
+	server_deinit(&context_server);
+}
+
 static int fake_transport_client_sock(int domain, int type, int protocol)
 {
 	// return 0 for meaning success
@@ -341,6 +358,7 @@ int main(int argc, char **argv)
 	CU_add_test(test_suite, "test_server_deinit", test_server_deinit);
 	CU_add_test(test_suite, "test_server_echo", test_server_echo);
 	CU_add_test(test_suite, "test_server_exit_on_signal", test_server_exit_on_signal);
+	CU_add_test(test_suite, "test_server_check_timeout", test_server_check_timeout);
 
 	CU_add_test(test_suite, "test_client_connect_to_server", test_client_connect_to_server);
 	CU_add_test(test_suite, "test_client_close_by_client", test_client_close_by_client);
