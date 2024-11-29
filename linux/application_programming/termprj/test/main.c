@@ -175,6 +175,39 @@ void test_server_check_timeout(void)
 	server_deinit(&context_server);
 }
 
+static char g_server_broadcast_buf[1024] = "";
+static int fake_transport_write_on_broadcast(int sock, char *write_buf, size_t write_buf_len)
+{
+	memcpy(g_server_broadcast_buf, write_buf, write_buf_len);
+
+	// return 0 for meaning success
+	return 0;
+}
+
+void test_server_broadcast_on_signal(void)
+{
+	//test for spec1-7
+	struct context_server *context_server = NULL;
+	struct context_conn *context_conn = NULL;
+
+	transport.write = fake_transport_write_on_broadcast;
+	context_server = server_init("127.0.0.1", 12345, &transport);
+	context_conn = server_accept(context_server);
+
+	server_init_signal();
+	raise(SIGUSR1);
+	server_deinit_signal();
+	CU_ASSERT(is_server_broadcasting == 1);
+
+	if (is_server_broadcasting) {
+		server_broadcast(context_server);
+	}
+	CU_ASSERT(strcmp(g_server_broadcast_buf, DEFAULT_SERVER_BROADCAST_MSG) == 0);
+
+	server_deinit(&context_server);
+	transport.write = fake_transport_write;
+}
+
 static int fake_transport_client_sock(int domain, int type, int protocol)
 {
 	// return 0 for meaning success
@@ -359,6 +392,7 @@ int main(int argc, char **argv)
 	CU_add_test(test_suite, "test_server_echo", test_server_echo);
 	CU_add_test(test_suite, "test_server_exit_on_signal", test_server_exit_on_signal);
 	CU_add_test(test_suite, "test_server_check_timeout", test_server_check_timeout);
+	CU_add_test(test_suite, "test_server_broadcast_on_signal", test_server_broadcast_on_signal);
 
 	CU_add_test(test_suite, "test_client_connect_to_server", test_client_connect_to_server);
 	CU_add_test(test_suite, "test_client_close_by_client", test_client_close_by_client);

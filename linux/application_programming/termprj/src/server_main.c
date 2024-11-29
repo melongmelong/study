@@ -49,6 +49,12 @@ int main(int argc, char **argv)
 			}
 		}
 
+		if (is_server_broadcasting) {
+			is_server_broadcasting = 0;
+			server_broadcast(context_server);
+			printf("send braodcast!\n");
+		}
+
 		if ((ret = server_read(context_server, context_conn, read_data, sizeof(read_data))) <= 0) {
 			if (ret < 0 && errno == EINTR)	continue;
 			else	break;

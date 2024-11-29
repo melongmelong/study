@@ -114,6 +114,16 @@ int server_write(struct context_server *context_server, struct context_conn *con
 	return ret;
 }
 
+void server_broadcast(struct context_server *context_server)
+{
+	int i = 0;
+	char *broadcast_msg = DEFAULT_SERVER_BROADCAST_MSG;
+
+	for (i = 0; i < MAX_CONTEXT_CONN; i++) {
+		server_write(context_server, context_server->context_conn[i], broadcast_msg, strlen(broadcast_msg) + 1);
+	}
+}
+
 int server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len)
 {
 	int ret = 0;
@@ -131,12 +141,17 @@ int server_read(struct context_server *context_server, struct context_conn *cont
 	return ret;
 }
 
-int is_server_exit = 0, is_server_alarm = 0;
+int is_server_exit = 0, is_server_alarm = 0, is_server_broadcasting = 0;
 static struct sigaction oldact;
 
 static void sigint_handler(int signo)
 {
 	is_server_exit = 1;
+}
+
+static void sigusr_handler(int signo)
+{
+	is_server_broadcasting = 1;
 }
 
 static void sigalrm_handler(int signo)
@@ -161,6 +176,11 @@ void server_init_signal(void)
 	act.sa_flags = 0;
 	sigaction(SIGPIPE, &act, NULL);
 
+	act.sa_handler = sigusr_handler;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	sigaction(SIGUSR1, &act, NULL);
+
 	act.sa_handler = sigalrm_handler;
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
@@ -178,6 +198,11 @@ void server_deinit_signal(void)
 	sigemptyset(&act.sa_mask);
 	act.sa_flags = 0;
 	sigaction(SIGPIPE, &act, NULL);
+
+	act.sa_handler = SIG_DFL;
+	sigemptyset(&act.sa_mask);
+	act.sa_flags = 0;
+	sigaction(SIGUSR1, &act, NULL);
 
 	act.sa_handler = SIG_DFL;
 	sigemptyset(&act.sa_mask);

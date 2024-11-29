@@ -1,4 +1,4 @@
-9단계. term project(spec 1-6 ㄱㄱ, signal 처리가 핵심인듯. alarm으로 어떻게든 조져보자... 지금 아무것도 안됨. ㅎ)
+9단계. term project(클라이언트로 broadcasting 기능 ㄱㄱ, *sync문제 및 stream data라 null이 있으면 이후 데이터는 안보여진다. 이거 수정필요)
 
 simple echo server, echo client 스펙
   server
@@ -58,6 +58,7 @@ TDD cycle
     (v)spec1-4. 서버는 read한데이터를 그대로 echo-back한다.
     (v)spec1-5. SIGINT를 전달받은 경우, 연결된 리소스를 모두 해제(ex. 통신해제) 후 프로그램을 종료한다
     (v)spec1-6. client로부터 일정시간 데이터 read가 되지않음녀, 해당 client와의 연결을 종료한다.
+    spec1-7. SIGUSR1을 받으면 연결된 모든 클라이언트로 브로드캐스트 메시지(기본값 : broadcast)를 전송한다.
 
   spec2. client는 사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
     (v)spec2-1. client는 서버로 접속요청이 가능하다.
@@ -66,7 +67,3 @@ TDD cycle
     (v)spec2-4. client는 사용자로부터 입력을 받고, 개행문자가 입력된 경우, server로 전송한다.
     (v)spec2-5. SIGINT를 전달받은 경우, 리소스를 해제(ex. 통신해제) 프로그램을 종료한다.
     (v)spec2-6. client는 파일패스를 입력받고, 해당 파일을 라인단위로 읽어서 server로 보내고 echo-back받는다.
-  
-
-
-

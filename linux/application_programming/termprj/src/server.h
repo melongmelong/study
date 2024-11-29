@@ -39,7 +39,7 @@ struct context_conn {
 	struct sockaddr_in sockaddr_in_peer;	
 	int sockaddr_in_peer_len;
 
-	#define TIMEOUT_CONN 3 
+	#define TIMEOUT_CONN 3
 	time_t timestamp;
 };
 
@@ -51,8 +51,10 @@ int server_get_cnt_conn(struct context_server *context_server);
 
 int server_write(struct context_server *context_server, struct context_conn *context_conn, char *write_buf, size_t write_buf_len);
 int server_read(struct context_server *context_server, struct context_conn *context_conn, char *read_buf, size_t read_buf_len);
+#define DEFAULT_SERVER_BROADCAST_MSG "default broadcast message"
+void server_broadcast(struct context_server *context_server);
 
-extern int is_server_exit, is_server_alarm;
+extern int is_server_exit, is_server_alarm, is_server_broadcasting;
 void server_init_signal(void);
 void server_deinit_signal(void);
 
