@@ -1,10 +1,10 @@
-9단계. term project(클라이언트로 broadcasting 기능 ㄱㄱ, *sync문제 및 stream data라 null이 있으면 이후 데이터는 안보여진다. 이거 수정필요)
+9단계. term project(서버구조 ㄱㄱ)
 
 simple echo server, echo client 스펙
   server
     server는 다중 클라이언트에게 동시 서비스 가능하다.
       *서버구조는 multi-process, multi-thread, multi-plexing(select, poll 둘다) 3가지방법 각각으로 모두 구현한다. 이는 프로그램 파라미터로 선택할 수 있다.
-    signal(SIGUSR)을 받으면 클라이언트로 특정메시지를 broadcast한다.
+    signal(SIGUSR)을 받으면 클라이언트로 특정메시지를 broadcast한다. => 생각좀해봐야할 듯... skip(default msg때문에 에코가 아니게 됨... 이건 별도 채널로 수신하든가 해야할 듯... 데이터게 broadcast 시작-끝이런걸 두고 해당 케이스면 잘 처리하게 하던가...)
        메시지는 configurable하다.(파일에다쓴다.), 설정파일이 없으면 default는 "broadcast" 이다.
       broadcast메시지는 interleaved되선 안된다.(추가시점은 적당한 곳, interleaved만 안되면 됨.)
     (v)echoed데이타는 interleaved 되지않고, 수신순서대로 client로 다시 전달되어야 한다.
@@ -58,7 +58,7 @@ TDD cycle
     (v)spec1-4. 서버는 read한데이터를 그대로 echo-back한다.
     (v)spec1-5. SIGINT를 전달받은 경우, 연결된 리소스를 모두 해제(ex. 통신해제) 후 프로그램을 종료한다
     (v)spec1-6. client로부터 일정시간 데이터 read가 되지않음녀, 해당 client와의 연결을 종료한다.
-    spec1-7. SIGUSR1을 받으면 연결된 모든 클라이언트로 브로드캐스트 메시지(기본값 : broadcast)를 전송한다.
+    spec1-7. SIGUSR1을 받으면 연결된 모든 클라이언트로 브로드캐스트 메시지(기본값 : broadcast)를 전송한다. *skip
 
   spec2. client는 사용자입력 or 파일로부터 데이터를 읽어서 에코서버로 데이타를 전송한다.
     (v)spec2-1. client는 서버로 접속요청이 가능하다.
