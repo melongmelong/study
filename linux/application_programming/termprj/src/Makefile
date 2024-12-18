@@ -25,7 +25,7 @@ clean:
 	rm -rf $(OBJS) $(_OBJS) $(SERVER_TARGET) $(CLIENT_TARGET) $(_SERVER_OBJS) $(_CLIENT_OBJS) $(CURDIR)/../test/Makefile.include
 
 $(SERVER_TARGET): $(OBJS) $(_SERVER_OBJS)
-	gcc -o $@ $(OBJS) $(_SERVER_OBJS)
+	gcc -o $@ $(OBJS) $(_SERVER_OBJS) -lpthread -lc
 
 $(CLIENT_TARGET): $(OBJS) $(_CLIENT_OBJS)
 	gcc -o $@ $(OBJS) $(_CLIENT_OBJS)
