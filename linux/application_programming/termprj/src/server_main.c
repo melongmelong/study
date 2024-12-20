@@ -1,4 +1,7 @@
 #include <pthread.h>
+#include <sys/select.h>
+#include <sys/select.h>
+#include <sys/select.h>
 
 #include "server.h"
 
@@ -79,7 +82,7 @@ static void do_service(struct context_conn *context_conn)
 		}
 	}
 
-	printf("connection closed(pid:%ld)\n", getpid());
+	printf("connection closed(pid:%d)\n", getpid());
 	server_close(context_server, context_conn);
 }
 
@@ -324,8 +327,69 @@ static void thread_main(struct context_server *context_server)
 		pthread_create(&thread_info->tid, NULL, do_service_thread, thread_info);
 		pthread_detach(thread_info->tid);
 	}
+}
 
-	printf("server close(pid:%d)!\n", getpid());
+void multiplex_main(struct context_server *context_server)
+{
+	fd_set readset;
+	int ret = 0, idx = 0, fd = 0;
+	struct context_conn *context_conn = NULL;
+	char read_data[1024] = "";
+
+	server_init_signal();
+
+	while (1) {
+		if (is_server_exit) {
+			printf("sigint recieved!\n");
+			break;
+		}
+
+		if (is_server_alarm) {
+			is_server_alarm = 0;
+
+			for (idx = 0; idx < MAX_CONTEXT_CONN; idx++) {
+				context_conn = context_server->context_conn[idx];
+				if (server_check_conn_timeout(context_server, context_conn)) {
+					printf("client timeout!(sock:%d)\n", context_conn->sock);
+					server_close(context_server, context_conn);
+				}
+			}
+		}
+
+		FD_ZERO(&readset);
+		FD_SET(context_server->sock_listen, &readset);
+		for (idx = 0; idx < MAX_CONTEXT_CONN; idx++) {
+			context_conn = context_server->context_conn[idx];
+			if (context_conn) {
+				FD_SET(context_conn->sock, &readset);
+			}
+		}
+
+		ret = select(1024, &readset, NULL, NULL, NULL);
+		if (ret < 0 && errno == EINTR) {
+			continue;
+		}
+
+		if (FD_ISSET(context_server->sock_listen, &readset)) {
+			context_conn = server_accept(context_server);
+			printf("client acceptd(accepted_sock:%d, cnt_context_conn:%d)!\n", context_conn->sock, context_server->cnt_context_conn);
+		}
+		for (idx = 0; idx < MAX_CONTEXT_CONN; idx++) {
+			context_conn = context_server->context_conn[idx];
+			if (context_conn && FD_ISSET(context_conn->sock, &readset)) {
+				ret = server_read(context_server, context_conn, read_data, sizeof(read_data));
+				if (ret == 0) {
+					printf("conn close!(sock:%d)\n", context_conn->sock);
+					server_close(context_server, context_conn);
+					continue;
+				}
+				printf("read-sock:%d(%s)\n", context_conn->sock, read_data);
+				server_write(context_server, context_conn, read_data, strlen(read_data) + 1);
+			}
+		}
+	}
+
+	server_deinit_signal();
 }
 
 int main(int argc, char **argv)
@@ -363,6 +427,9 @@ int main(int argc, char **argv)
 		break;
 	case 1:
 		thread_main(context_server);
+		break;
+	case 2:
+		multiplex_main(context_server);
 		break;
 	}
 
