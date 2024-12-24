@@ -48,7 +48,11 @@ struct context_conn* server_accept(struct context_server *context_server)
 		return NULL;
 	}
 
-	for (idx = 0; context_server->context_conn[idx]; idx++);
+	for (idx = 0; MAX_CONTEXT_CONN; idx++) {
+		if (context_server->context_conn[idx] == NULL) {
+			break;
+		}
+	}
 	if (idx == MAX_CONTEXT_CONN) {
 		return NULL;
 	}
