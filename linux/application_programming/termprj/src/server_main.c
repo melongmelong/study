@@ -5,9 +5,42 @@
 
 #include "server.h"
 
+static struct process_info {
+	pid_t pid;
+	char valid;
+	struct context_conn *context_conn;
+} g_process_info[MAX_CONTEXT_CONN];
+
+static struct process_info* process_info_find_empty(void)
+{
+	int i = 0;
+
+	for (i = 0; i < MAX_CONTEXT_CONN; i++) {
+		if (g_process_info[i].valid == 0) {
+			return &g_process_info[i];
+		}
+	}
+
+	return NULL;
+}
+
+static struct process_info* process_info_find(pid_t pid)
+{
+	int i = 0;
+
+	for (i = 0; i < MAX_CONTEXT_CONN; i++) {
+		if (g_process_info[i].valid && g_process_info[i].pid == pid) {
+			return &g_process_info[i];
+		}
+	}
+
+	return NULL;
+}
+
 static struct context_conn* do_accept(struct context_server *context_server)
 {
 	struct context_conn *context_conn = NULL;
+	int idx = 0, wait_status = 0, ret = 0;
 
 	if (context_server == NULL) {
 		return NULL;
@@ -22,6 +55,21 @@ static struct context_conn* do_accept(struct context_server *context_server)
 			context_conn = NULL;
 			break;
 		}
+		
+		for (idx = 0; idx < MAX_CONTEXT_CONN; idx++) {
+			if (g_process_info[idx].valid == 0) {
+				continue;
+			}
+			ret = waitpid(g_process_info[idx].pid, &wait_status, WNOHANG);
+			if (ret > 0) {
+				if (WIFEXITED(wait_status)) {
+					printf("child(%d) term\n", ret);
+					server_close(context_server, g_process_info[idx].context_conn);
+					g_process_info[idx].valid = 0;
+				}
+			}
+		}
+
 
 	} while ((int)context_conn == -1 && errno == EINTR);
 
@@ -90,6 +138,7 @@ static void process_main(struct context_server *context_server)
 {
 	pid_t pid; 
 	struct context_conn *context_conn = NULL;
+	struct process_info *process_info = NULL;
 
 	server_init_signal();
 
@@ -99,14 +148,17 @@ static void process_main(struct context_server *context_server)
 			if (is_server_exit) break;
 			else continue;
 		}
-
+	
 		pid = fork();
 		if (pid == 0) {
 			do_service(context_conn);
 			break;
 		}
 		else {
-			server_close(context_server, context_conn);
+			process_info = process_info_find_empty();
+			process_info->valid = 1;
+			process_info->pid = pid;
+			process_info->context_conn = context_conn;
 		}
 	}
 
