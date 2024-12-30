@@ -1,4 +1,4 @@
-9단계. term project(마무리작업 ㄱㄱ...(좀더테스트하면서 리팩토링/버그수정 and 10단계 정리 ㄱㄱ))
+9단계. 완료
 
 simple echo server, echo client 스펙
   server
@@ -67,3 +67,9 @@ TDD cycle
     (v)spec2-4. client는 사용자로부터 입력을 받고, 개행문자가 입력된 경우, server로 전송한다.
     (v)spec2-5. SIGINT를 전달받은 경우, 리소스를 해제(ex. 통신해제) 프로그램을 종료한다.
     (v)spec2-6. client는 파일패스를 입력받고, 해당 파일을 라인단위로 읽어서 server로 보내고 echo-back받는다.
+
+코멘트
+  daemonizing, 코드리팩토링등이 더 필요하긴 함.
+  그리고 blocking I/O 기반으로 진행하려다보니 흐름이 왔다갔다 해야해서(=시그널을통해 blocked call을 interrupted해서 다음 흐름을 진행) 구조가 깔끔하지 않음.(blokcing i/o with 1thread 모델로 쓰면서 더 좋은 방법이 있을까? 모르겠음)
+  linux 관련 공부했던 모든것들을 녹여내지 못한 아쉬움이 있다. + broadcasting msg도 진짜 안될까?라는 아쉬움도 있음.
+  아직 한참은... 부족해보인다...;
