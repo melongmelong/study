@@ -1,0 +1,283 @@
+next : 완료
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel build
+
+학습이유
+  kernel학습에 앞서, kernel image build에 대해 익숙해진다.(마스터하면 좋겠지만)
+
+학습목표
+  별부담없이 kernel build할 수 있어야 한다.
+  단, Makefile분석을 하자는 건 아님.
+    
+학습자료
+  이것저것 많다.!
+
+학습계획
+  milestone1. kernel 빌드 학습.
+  
+================================================================
+7단계 *목표 : vanila kernel build방법확인 및 빌드수행/적용. 
+vanila kernel : 5.15.175 사용(ubuntu kernel version과 크게차이나지않도록...)
+*kernel.org에서 downlaod. git clone할랬더니 너무 오래걸려서 포기.
+
+prerequisites.
+  $(top)/Documentation/process/changes.rst 참조!
+  실제 실습시는 아래 3개 패키지를 추가 설치함
+  sudo apt install libssl-dev
+  sudo apt install binutils-dev 
+  sudo apt install libelf-dev
+
+kernel build 방법
+  1. kernel config 수행
+    make defconfig 
+    주요 option : O=/path/to/build_output *아래 '2. kernel build 수행' 참조.
+    주요 output
+      $(top)/.config : kernel config파일
+    참고
+      oldconfig, menuconfig, config 등등 다양한 target이있음.($(top)/Documentation/admin-guide/README.rst 'Configuring the kernel' 참조.)  
+
+  2. kernel build 수행
+    make -j 3 (=make all -j 3)
+     주요 option
+       O=/path/to/build_output : 해당 경로로 빌드output(.config포함)을 출력한다. *해당 경로를 사용하는 모든 make명령어마다 필요함(make defconfig~make distclean까지!)
+     주요 output
+      bzImage : 압축된 커널 이미지
+       커널모듈
+     참고
+      kernel img와 module 둘 다 빌드함. 따로하고 싶으면 적절한 target명시(make help 참조)
+  
+  3. kernel install(적용)
+    3-1. kernel image install
+      make INSTALL_PATH=/path/to/kernelimage install => 커널이미지설치
+      *실제적용할려면 INSTALL_PATH 옵션 빼면 됨
+       주요 output
+        config : kernel config파일
+        System.map : System.map파일
+        bzImage : kernel img
+      *참고. kernel module install시, installkernel 이라는 program(이미 설치되어있음)가 실행됨(initrd만들어주고, bootloader설정해주는 등등을 수행함)
+
+    3-2. kernel module install
+      make INSTALL_MOD_PATH=/path/to/kernelmodules modules_install => 커널모듈설치
+      *실제적용할려면 INSTALL_MOD_PATH 옵션 빼면 됨
+       주요 output 
+        kernel module
+
+     더 많은 옵션은(ex, MODLIB, INSTALL_HDR_PATH) $(top)/Documentation/kbuild/makefiles.rst, $(top)/Documentation/kbuild/kbuild.rst 참고(INSTALL_PATH, INSTALL_MOD_PATH)
+
+  $(top)/Documentation/admin-guide/README.rst 참조
+  *특히 'Build directory for the kernel section', 'Compiling the kernel' 섹션
+
+8단계 *목표 : 7단계 부족했던 내용 확인. build/적용 익숙하도록 여러번 반복수행. + linux distribution(ex ubuntu, centos) build방법들도 한번확인(vanila랑은 약간 다른 듯함.)
+  linux distribution(ex. ubuntu)와의 빌드/적용 차이점은?
+    ubuntu 커널코드다운 / 커널빌드방법은 https://wiki.ubuntu.com/Kernel/BuildYourOwnKernel 참조.
+      *참고. $(ubuntu_top)/debian/rules : ubuntu커널 빌드를 위한 Makefile임.
+      *참고. fakeroot : root 권한을 가진것처럼 command를 실행하도록 해주는 tool.
+                         우분투에서는, user가 우분투 패키지를 root권한변경없이 생성하게 해주기 위해서 해당 tool을 사용한다고 함.
+    결론
+      커널빌드~적용 차이는 없다. ubuntu kernel이라도 vanila와 동일한 순서로 빌드가능하다.(make defconfig ~ make ~ make install)
+     but, ubuntu 자체적으로 빌드하는 rule(debian/rules)을(ex. .deb파일이 생성해준다.) 제공해준다.(정확한 차이는 추후 확인... vanila하는 것과 설정이나 이런것들이 차이있지 않을까 싶음. 어쨋든 가장 근본은 동일하다 아래 디버그로그 참조.)
+       fakeroot $(ubuntu_top)/debian/rules binary-generic시 디버그로그 일부
+         ...
+         cat /home/knw/Desktop/ubuntu_kernel/focal/debian.master/config/config.common.ubuntu /home/knw/Desktop/ubuntu_kernel/focal/debian.master/config/amd64/config.common.amd64 /home/knw/Desktop/ubuntu_kernel/focal/debian.master/config/amd64/config.flavour.generic > /home/knw/Desktop/ubuntu_kernel/focal/debian/build/build-generic/.config => 커널config파일(ubuntu kernel config)을 kernel build output dir에 생성
+         ...
+         make ARCH=x86 CROSS_COMPILE= KERNELVERSION=5.4.0-200-generic CONFIG_DEBUG_SECTION_MISMATCH=y KBUILD_BUILD_VERSION="220" LOCALVERSION= localver-extra= CFLAGS_MODULE="-DPKG_ABI=200" O=/home/knw/Desktop/ubuntu_kernel/focal/debian/build/build-generic -j3 bzImage modules => 'O' option을 주고 kernel build수행(target : bzImage, modules)
+    
+  make install, make modules_install 수동으로 하는 방법?(initramfs 생성까지!)
+    make install 수동으로 하는 방법
+      vanila kernel의 make install시 실행되는 script에서
+      system.map, kernel img copy뿐 아니라, update-grub(grub에 kernel img menu등록), update-initramfs(해당 커널을 위한 initramfs생성) 가 실행됨! */etc/kernel/postinst.d/*, $(top)/arch/x86/Makefile, $(top)/arch/x86/boot/install.sh 참고.
+
+       결론. *기존에 알고있던 것과 동일하다.
+         커널이미지를 bootloader가 찾을 수 있는 공간에 위치시키고,
+         해당 커널이미지가 사용할 initramfs를 생성/적절한 공간에 위치시키고, *optional(대부분 필요함)
+        bootloader(grub) 적절히 설정. *optional(대부분 필요함)
+         이후 해당 커널로 부팅.(부트로더를 설정하든 부트로더를 interactive 하게 하든... 다양하게...)
+        *system.map파일도 디버깅등을 위해서 가지고 있을 필요가 있다.
+
+    make modules_install 수동으로 하는 방법
+       결론
+         커널모듈(.ko파일)빌드하고, modules.*파일생성 후,(depmod에 의해 생성된 modules.*파일과 커널/커널모듈빌드시 생성된 modules.*파일들...)
+         커널모듈과 modules.*파일들을 적절한 모듈인스톨경로(ex. /lib/modules/[kernelversion]/)에 설치.
+         로 보여진다.(아래 참고 로그들 참고)
+         정확한 내용은 추후(device driver / module 할때) 진행하는 것이 좋겠다.
+        *modules.*파일은 주로 modprobe에 의해서 사용되는 듯.
+       참고. make O=/home/knw/Desktop/linux_output INSTALL_MODE_PATH=/home/knw/Desktop/linux_module modules_isntall 으로 설치시 생성되는 파일들. *'kernel' directory하위에 .ko(커널모듈)파일들 존재함.
+knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/linux_module/lib/modules/5.15.175$ pwd => 설치된 경로
+/home/knw/Desktop/linux_module/lib/modules/5.15.175
+knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/linux_module/lib/modules/5.15.175$ ls -l => modules_install로 생성된 파일들.
+total 188
+lrwxrwxrwx 1 root root    30  1월  9 19:24 build -> /home/knw/Desktop/linux_output
+drwxr-xr-x 5 root root  4096  1월  9 19:24 kernel
+-rw-r--r-- 1 root root   862  1월  9 19:24 modules.alias
+-rw-r--r-- 1 root root  1528  1월  9 19:24 modules.alias.bin
+-rw-r--r-- 1 root root 10219  1월  9 19:24 modules.builtin
+-rw-r--r-- 1 root root 25410  1월  9 19:24 modules.builtin.alias.bin
+-rw-r--r-- 1 root root 13493  1월  9 19:24 modules.builtin.bin
+-rw-r--r-- 1 root root 97172  1월  9 19:24 modules.builtin.modinfo
+-rw-r--r-- 1 root root   340  1월  9 19:24 modules.dep
+-rw-r--r-- 1 root root   975  1월  9 19:24 modules.dep.bin
+-rw-r--r-- 1 root root     0  1월  9 19:24 modules.devname
+-rw-r--r-- 1 root root   331  1월  9 19:24 modules.order
+-rw-r--r-- 1 root root    89  1월  9 19:24 modules.softdep
+-rw-r--r-- 1 root root    49  1월  9 19:24 modules.symbols
+-rw-r--r-- 1 root root    12  1월  9 19:24 modules.symbols.bin
+lrwxrwxrwx 1 root root    32  1월  9 19:24 source -> /home/knw/Desktop/linux-5.15.175      
+       참고. make modules_install시, 수행하는 command log. modules.*파일들은(일부는 커널/커널모듈 빌드 시 생성되어 make rule에 의해 카피됨) depmod에 의해 생성되는 파일로 보여짐. *man depmod 참조
+make -C /home/knw/Desktop/linux_output -f /home/knw/Desktop/linux-5.15.175/Makefile modules_install
+make[1]: Entering directory '/home/knw/Desktop/linux_output'
+test -e include/generated/autoconf.h -a -e include/config/auto.conf || (		\
+echo >&2;							\
+echo >&2 "  ERROR: Kernel configuration is invalid.";		\
+echo >&2 "         include/generated/autoconf.h or include/config/auto.conf are missing.";\
+echo >&2 "         Run 'make oldconfig && make prepare' on kernel src to fix it.";	\
+echo >&2 ;							\
+/bin/false)
+make -f /home/knw/Desktop/linux-5.15.175/scripts/Makefile.modinst
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/drivers/thermal/intel/; cp drivers/thermal/intel/x86_pkg_temp_thermal.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/drivers/thermal/intel/x86_pkg_temp_thermal.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/fs/efivarfs/; cp fs/efivarfs/efivarfs.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/fs/efivarfs/efivarfs.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/ipv4/netfilter/; cp net/ipv4/netfilter/iptable_nat.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/ipv4/netfilter/iptable_nat.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/; cp net/netfilter/nf_log_syslog.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/nf_log_syslog.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/; cp net/netfilter/xt_LOG.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/xt_LOG.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/; cp net/netfilter/xt_MASQUERADE.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/xt_MASQUERADE.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/; cp net/netfilter/xt_addrtype.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/xt_addrtype.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/; cp net/netfilter/xt_mark.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/xt_mark.ko
+  :
+  :
+  mkdir -p /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/; cp net/netfilter/xt_nat.ko /home/knw/Desktop/linux_module2/lib/modules/5.15.175/kernel/net/netfilter/xt_nat.ko
+  :
+  :
+  sh /home/knw/Desktop/linux-5.15.175/scripts/depmod.sh depmod 5.15.175 => 대다수의 modules.*파일들이 해당 script(결국 depmod program실행)에 의해 생성되는 것으로 추측.
+
+9단계 *목표 : option다양하게 주면서 빌드하여 커널동작 비교(ex. 특정 커널 피쳐 on/off하여빌드 후, sysfs등으로 확인)
+  realtek 8139cp driver yes / no에 따른 차이 비교
+    8139cp driver yes인 경우
+      knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/linux-5.15.175$ cat /sys/class/net/
+      enp0s3/ lo/     sit0/
+
+      knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/linux-5.15.175$ ip link
+      1: lo: <LOOPBACK,UP,LOWER_UP> mtu 65536 qdisc noqueue state UNKNOWN mode DEFAULT group default qlen 1000
+          link/loopback 00:00:00:00:00:00 brd 00:00:00:00:00:00
+      2: enp0s3: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc pfifo_fast state UP mode DEFAULT group default qlen 1000
+          link/ether 52:54:00:2a:e0:5d brd ff:ff:ff:ff:ff:ff
+      3: sit0@NONE: <NOARP> mtu 1480 qdisc noop state DOWN mode DEFAULT group default qlen 1000
+          link/sit 0.0.0.0 brd 0.0.0.0
+
+    8139cp driver no인 경우
+      위 출력에서 enp0s3 출력되지않음(=미인식됨)
+
+  printk 적절한 곳에 찍어서 빌드해서 dmesg에 찍히는 지 확인해보기
+    $(top)/init/main.c start_kernel()에 printk(KERN_ERR~~~) 코드 삽입후 dmesg결과.
+    knw@knw-Standard-PC-i440FX-PIIX-1996:~$ dmesg|grep knwtest
+    [    0.044168] knwtest, start kernel!
+    [    0.165544] knwtest, do basic setup!
+    [    0.381003] knwtest, start init!
+    [    0.381005] knwtest, is this excuted???
+
+  이상한코드 집어넣어서 빌드해서 고장내보기
+    $(top)/init/main.c start_kernel() 마지막즈음에 while(1); 추가.
+     당연하게도 부팅이 안된다...!
+    
+10단계 *목표 : 정리 
+  알게된 것
+    kernel build방법에 대해 알 수 있었음.
+      일부 빌드 script(make, shellscript)도 확인해서 내부적으로 어떤일이 일어나는 지도 대-강은 알게됨.
+
+    build된 kernel 적용방법에 대해 알 수 있었음.
+      이와 관련 실제 kernel config수정 및 커널코드도 일부 수정하여 적용 후 결과확인도 하였음.
+
+  코멘트
+    기본적인 커널build/적용 방법을 확인하였음.
+    더 자세한 내용들은 실제 커널관련분석을 진행하면서 알아나가자.
+
+====================예전에 봤던 내용 공부할 때 참고.==========================
+kernel makefile analysis memo
+
+./Makefile : top-level makefile. vmlinux, modules 생성 및 bzImage 생성.
+  vmlinux-deps : architecture에 대한 vmlinux.lds와 %-y 각 디렉토리의 built-in.a, lib.a 파일리스트를 의미함. 즉, 아래 make variable 값으로 구성.
+    KBUILD_LDS
+    KBUILD_VMLINUX_OBJS
+    KBUILD_VMLINUX_LIBS
+  vmlinux-dirs : %-y, %-m 리스트에서 '/' 를 제거. ex. kernel/ -> kernel
+  build-dirs : vmlinux-dirs와 동일
+  %-y | %-m(ex. head-y, init-y, core-y, core-m ...) : make variable임. build할 디렉토리를 의미.
+  decend : build-dirs의 각 디렉토리의 subdir들에대한 make처리함. 즉, 빌드 수행.
+  prepare : 실제 빌드 전에 해야 할 작업들
+
+./arch/[arch]/Makefile : bzImage를 생성하기 위한 Makefile. bzImage생성 rule이 존재
+  bzImage: bzImage target. arch/x86/boot(x86기준) 으로 scripts/Makefile.build 실행. target은 $(boot)/bzImage
+  boot = arch/x86/boot (x86기준)
+
+./arch/[arch]/boot/Makefile : bzImage를 생성하기 위한 Makefile. bzImage생성 rule존재/ ./arch/[arch]/Makefile으로부터 call됨.
+  $(obj)/bzImage : $(obj)/setup.bin, $(obj)/vmlinux.bin, $(obj)/tools/build 가 prerequisite $(obj)/tools/build 를 실행하여 bzImage를 생성.
+  $(obj)/setup.bin : $(obj)/setup.elf가 prerequisite. objcopy를 수행하여 setup.bin 생성.
+  $(obj)/setup.elf : $(src)/setup.ld $(SETUP_OBJS)를 링크하여 setup.elf생성
+  setup.ld : 링크스크립트
+  SETUP_OBJS : setup-y에 설정된 값
+  setup-y : 빌드할 오브젝트 파일들
+  $(obj)/vmlinux.bin : (obj)/compressed/vmlinux 가 prerequisite. objcopy로 vmlinux.bin생성.
+  $(obj)/compressed/vmlinux : ./scripts/Makefile.build를 $(obj)/compressed로 호출. target은 $@
+
+./arch/[arch]/boot/compressed/Makefile : piggy.o등을 생성해서 링크하여 압축된 이미지를 생성.
+  $(obj)/vmlinux : vmlinux를 생성. top makefile로부터 생성된 vmlinux에 대한 처리가 수행됨. vmlinux-objs-y가 prerequisite. vmlibux-objs-y의 .o파일로부터 readelf를 통해 relocation관련 정보를 check함. 이후 링크를 수행하여 vmlinux생성함.
+  vmlinux-objs-y : 링크스크립트, 각종 object파일들에 대한 리스트, piggy.o도 포함되어있음.
+  $(obj)/piggy.S : piggy.o를 빌드하기 위한 target. $(obj)/vmlinux.bin.$(suffix-y)와 $(obj)/mkpiggy가 prerequisite. mkpiggy로 vmlinux.bin.$(suffix-y)로부터 piggy.S를 생성
+  $(obj)/mkpiggy : piggy.S를 생성하는 tool
+  $(obj)/vmlinux.bin.$(suffix-y) : vmlinux를 objcopy한 후, vmlinux.bin.$(suffix-y)로 압축하는 target
+
+./scripts/Kbuild.include : kernel build를 위한 공통기능들 정의.
+
+./scripts/Makefile.build : subdir build를 수행. 실제 빌드가 수행 되며 subdir로 decend도 진행 됨. 상위 Makefile의 rule에서 make -f $(build)=[path] [target] 형태로 call.
+  __build: target을 생성. builtin-target, lib-target, extra-y를 빌드. 모듈인 경우 모듈관련 파일들도 빌드진행(추후확인). 추가로 subdir-ym, always에 설정된 파일들도 빌드진행.
+  builtin-target : real-obj-y에 대한 archive인 built-in.a를 생성.
+  real-obj-y : Makefile.build의 obj에 주어진 디렉토리에 존재하는 Makefile, kbuild로부터 설정된 obj-y의 값과 lib-ksys.o를 포함.
+  lib-target : lib-y에 대한 archive인 lib.a를 생성.
+  lib-y : Makefile.build의 obj에 주어진 디렉토리에 존재하는 Makefile, kbuild로부터 설정된 lib-y의 값.
+  extra-y : Makefile.build의 obj에 주어진 디렉토리에 존재하는 Makefile, kbuild로부터 설정된 extra-y의 값.
+  subdir-ym : __subdir-y, __subdir-m에 의해 생성되는 subdir-y, subdir-m 값 리스트. rule target으로도 동작하며, Makefile.build 를 실행. 즉 subdir make를 수행.
+  __subdir-y : obj-y에서 경로를('/') 포함하는 값.
+  __subdir-m : obj-m에서 경로를('/') 포함하는 값.
+  
+./scripts/Makefile.lib : 빌드를 위한 make variable 등 공통 기능들을 정의.
+
+파일설명(path relative to kernel src tree) x86기준.
+vmlinux : 아키텍처 독립적인 코드들로 구성된 kernel img.
+arch/x86/boot/bzImage : 최종 kernel img. setup.bin, vmlinux.bin으로부터 $(obj)/tools/build tool을 이용하여 생성.
+arch/x86/boot/setup.bin : arch/x86/boot/setup.elf 파일에서 objcopy한 파일.
+arch/x86/boot/setup.elf : arch/x86/boot 하위 파일들을 setup.ld로 링크한 파일.
+arch/x86/boot/vmlinux.bin : arch/x86/boot/compressed/vmlinux 파일에서 objcopy한 파일.
+arch/x86/boot/compressed/vmlinux : arch/x86/boot/compressed 하위 파일들과 piggy.o를 링크한 파일
+arch/x86/boot/compressed/piggy.o : piggy.S파일을 컴파일하여 생성한 파일
+arch/x86/boot/compressed/piggy.S : vmlinux.bin.$(suffix-y)*압축파일로부터 mkpiggy tool을 사용하여 생성한 파일
+arch/x86/boot/compressed/vmlinux.bin.$(suffix-y) : arch/x86/boot/compressed/vmlinux.bin 파일을 suffix-y값에 맞게 압축한 파일
+arch/x86/boot/compressed/vmlinux.bin : vmlinux(top-level dir) 를 objcopy하여 생성한 파일
+
+make관련 memo
+gnu make doc 참조.
+make는 expansion이 2 step으로 이루어짐. immediate, deffered. gnu make doc 3.6절 참조 => immediate는 파싱될 때, deffered는 사용될 때 expansion일어난다고 보면 될 듯.
+
+make rule recipe에서 @: => ':'  는 shell에서 no-op을 의미. 즉. shell에서 : 실행하라는 의미. @는 command를 echo하지 말라는 의미.
+
+pattern match(ex. %.o : %.c) 10.5.4 how patterns Match 참조. 동일 pattern target이 여러개일 경우 처리에 대해서 설명되어있음. ex. %.o : %.c rule과 %.o : %.s rule이 존재할 경우에 대한 처리 등.
+
+이 외, multiple target, multiple rule, empty recipe/target, PHONY target(FORCE), variable, function, directive(conditional, include), automatic variable 정도는 알아두면 좋을 듯.
