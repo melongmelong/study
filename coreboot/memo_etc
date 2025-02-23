@@ -1,0 +1,35 @@
+x86 arch bios level(=low-level) test를 위한 이미지 생성 및 디버깅 방법 (지난번에 했던 term prj도 참조하면 됨)
+목적 : x86 arch arch 환경/기능에 대한 테스트가 필요한데 마땅한 테스트베드가 없어서, 테스트베드를 구성한다.
+
+command
+  gcc -nostartfiles -nodefaultlibs -nostdlib -no-pie -o test test.S -T test.ld //build binary without no standard libraries and no pic and no _start...
+
+  objcopy -O binary test test.img //retrieve memory img only
+
+  //create bios img for using in qemu
+  //maybe, qemu can execute 256kb bios img only, and maybe, 
+  //and, (also maybe) last 16bytes in bios img is instruction for intel x86 reset vector(0xffffff0)
+  //so, we create it very dummy... :)
+  truncate -s 262128 bios.img //create dummy img in size 256k - 16bytes.
+  cat test.img 1>>./bios.img  //instruction for reset.
+  truncate -s 262144 bios.img //fill in remaning holes.
+
+  qemu-system-x86_64 -bios bios.img -monitor stdio //do qemu with debugging monitor
+
+-test.S sample
+.code16
+hlt
+
+-test.ld sample
+SECTIONS {
+        reset_start = 0xFFFFFFF0;
+        reset_end = 0xFFFFFFFF; 
+
+        . = reset_start;
+        .text : { 
+                *(.text);
+        }
+        /DISCARD/ : { 
+                *(*);
+        }
+}

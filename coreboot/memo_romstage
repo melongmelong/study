@@ -1,0 +1,515 @@
+next : 완료
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - romstage 빌드과정 / 주요 흐름코드 파악
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+  이번에는 coreboot최초 stage에 대한 빌드과정과 주요흐름파악
+
+학습목표
+  romstage 빌드과정 이해
+  romstage 주요동작 이해
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+
+학습계획
+  milestone1. romstage의 빌드과정과 주요동작 이해.
+  
+=======================
+milestone1. romstage의 빌드과정과 주요동작 이해.
+
+7단계(대충 사용 수준까지) - romstage 빌드과정및 주요동작에 대한 큰 흐름 이해
+코드분석은 coreboot 24.05 version기준!
+=====================1. romstage 빌드과정==============================
+빌드과정 core로직은 bootblock분석내용과 동일. 여기서는 romstage관련된 부분만 확인함.
+전체개요  *bootblock과 큰 흐름은 동일
+  toolchain세팅(by toolchain.mk)
+  (romstage-y, romstage-src, romstage-obj, romstage-*-opts, romstage-*-deps 변수세팅)
+  romstage 바이너리 생성 절차. (make variable prebuilt-file 에 의해서 생성된다. *$(top)/Makefile.mk line 954-)
+    romstage-objs -> romstage.debug -> romstage.elf
+    링크시 사용되는 linker script는 다음과 같음.($(top)/Makefile.mk line 257-264 참조)
+      $(top)/build/romstage/arch/x86/memlayout.ld
+      $(top)/build/romstage/lib/program.ld
+      $(top)/build/romstage/arch/x86/memlayout.ld 빌드룰.
+10597 build/romstage/arch/x86/memlayout.ld: src/arch/x86/memlayout.ld build/config.h build/fmap_config.h src/arch/x86/memlayout.ld src/include/kconfig.h build/config.h src/include/rules.h src/commonlib/bsd/include/commonlib/bsd/co      mpiler.h build/config.h src/include/memlayout.h src/arch/x86/include/arch/memlayout.h 3rdparty/vboot/firmware/include/vb2_constants.h 3rdparty/vboot/firmware/include/../2lib/include/2constants.h build/fmap_config.h src/arch/x86/include/arch/header.ld
+10598 #  Implicit rule search has not been done.
+10599 #  Last modified 2025-01-11 17:51:58.963730369
+10600 #  File has not been updated.
+10601 #  recipe to execute (from 'Makefile', line 418):
+10602         @printf "    CP         $(subst $(obj)/,,$(@))\n"
+10603         /home/knw/Desktop/Study/coreboot/coreboot/src/coreboot/util/crossgcc/xgcc/bin/i386-elf-gcc -MMD -Isrc -Isrc/include -Isrc/commonlib/include -Isrc/commonlib/bsd/include -Ibuild -I3rdparty/vboot/firmware/include -include src/include/kconfig.h -include src/include/rules.h -include src/commonlib/bsd/include/commonlib/bsd/compiler.h -I3rdparty -D__BUILD_DIR__=\"build\" -D__COREBOOT__ -Isrc/arch/x86/include -D__ARCH_x86_32__ -D__ROMSTAGE__ -E -P -x assembler-with-cpp -undef -I. -include build/config.h -MT $@ -o $@ $<
+  이후, coreboot.pre make 타겟 생성시, prebuild-files($(top)/Makefile.mk line 1006-)에 의해서 romstage가 추가됨.
+
+$(top)/Makefile.mk
+line 410-444
+  line 411
+    cbfs-files special-class에 추가
+
+  line 412-443
+    cbfs-files-handler
+      cbfs-files-y 각 항목에 대해 sanity check 수행 후, cbfs-files변수에 정보를 추가한다.        
+      *includemakefiles에의해호출됨.
+        cbfs-files-y 변수에 추가된 각 항목에 대해 cbfs-files-handler를 호출한다. 
+        cbfs-files-y로 grep하면 추가되는 항목들 확인 가능하다.
+
+    line435-442
+      cbfs-files 변수에 추가(make printall로 했을때 나오는 제일 아래 정보, ex. ./build/cbfs/fallback/romstage.elf|fallback/romstage|stage|none||64|-S*".car.data,.data"*--xip. 문자열의미는 Makefile.mk line 873-889참조)
+        grep -r romstage-align 처럼 makefile search하면 각 항목별 변수값을 알 수 있음.
+       
+         이후, 아래값들은 모두 빈값으로 초기화해버림
+        $(2)-name:=
+        $(2)-type:=
+        $(2)-compression:=
+        $(2)-position:=
+        $(2)-required:=
+        $(2)-options:=
+        $(2)-align:=
+
+line 853-860
+  romstage빌드
+  romstage.debug -> romstage.elf
+  *romstage.bin은 없음(bootblock과는 차이가 나는 부분임~)
+
+line 891-900
+  extract_nth
+  input(=cbfs-files 변수의 각 항목)으로부터 N번째 필드의 값을 추출함.
+
+line 902-908
+  regions-for-file 변수 세팅
+  fmap region정보를 세팅함. 현재빌드환경에서는 COREBOOT으로 세팅됨.
+
+line 914-935
+  cbfs-add-cmd-for-region
+  cbfstool을 사용하여 coreboot.pre에 인자로 넘어온 cbfs file을 추가한다.
+
+line 941-950
+  cbfs-add-cmd
+  coreboot.pre에 cbfs파일을 추가한다.(by cbfs-add-cmd-for-region)
+  필요한 경우(CONFIG_UPDATE_IMAGE == y) 해당 영역을 coreboot.pre에서 삭제한다.(line 948)
+
+line 954
+  prebuilt-files 변수 세팅
+  cbfs-files 변수 각 항목에 대해서 파일경로를 추출하여 세팅한다.
+
+line 956-960
+  all-regions 변수 세팅
+  cbfs-files변수에 정의된 항목에 대해 FMAP region순으로 정렬하였다고 볼 수 있음.(= fmap region의 목록)
+  but, 현재빌드환경에서는 COREBOOT 하나만 있다.
+
+line 962-968
+  all-files-in-region
+  cbfs-files변수 항목 중, 인자로 넘어온 region에 포함되는 항목들만 나열한다.
+
+line 970-976
+  update-file-for-region
+  인자로 넘어온 cbfs-file변수값에 대하여, 속성(ex. position, alignment)을 업데이트한다.(=업데이트된 문자열로 expansion한다.)
+
+line 978-988
+  placed-files-in-region
+  region에 속해힜는 모든 cbfs-file 변수 항목에 대해서(by all-files-in-region)
+   특정 속성값 업데이트(update-file-for-region) 하여 해당 값들로 나열한다.
+
+line 990-1003
+  cbfs-files 변수 항목을 특정기준으로 sorting하여 나열한다.
+
+line 1006-1010
+  prebuild-files
+  CBFS file들을(ex. romstage.elf) coreboot.pre파일에 add 한다.(cbfstool 사용!)
+  line 1006
+    추가할 region들을 조회한다.(by all-regions)
+  line 1008
+    각 region별로 추가될 cbfs file 리스트를 조회한다.(by sort-files, placed-files-in-region)
+  line 1009
+    각 cbfs file을 coreboot.pre에 추가한다.(by cbfs-add-cmd)
+
+line 1270-1312
+  cbfs-files-handler(Makefile.mk line 412-443)에서 사용할 romstage의 속성값(ex. romstage-type, romstage-compression)을 세팅
+
+$(top)/src/arch/x86/Makefile.mk
+158-197
+  romstage 빌드관련 변수/룰 세팅.
+  line 189-193
+    romstage.debug 빌드rule 생성.(by early_x86_stage) 
+
+참고
+  'grep -r romstage-' : romstage에 포함되는(romstage-y make variable)에 추가되는 소스 확인가능(실제로 포함되는건 processor와 config에 따라 다름.)
+
+=====================2. romstage 로직================================
+전체개요
+  bootblock에 의해서 실행됨.(run_romstage() function)
+  최초 entry는 romstage.elf의 _start symbol($(top)/src/arch/x86/assembly_entry.S)
+  실행환경들(gdt, stack, MTRR(qemu에서는 nop), cbmem(coreboot memory))을 초기세팅 하고,
+  postcar stage를 load/run한다.
+
+$(top)/src/arch/x86/assembly_entry.S
+line 22-78
+  _start
+    실행환경(gdt, esp, .bss section, .data section) 을 초기세팅함.
+    이후 car_stage_entry 를 호출.
+    line 27-31
+      gdt를 초기화(call gdt_init)
+    line 34
+      esp초기화
+    line 36-53
+      .bss section clear 및 .data section초기화
+    line 74
+      call car_stage_entry
+
+$(top)/src/arch/x86/romstage.c 
+line 8-16
+  car_stage_entry
+    timestamp찍고 console초기화(by console_init) 후 romstage_main 을 호출
+    line 10
+      timestamp 추가
+    line 13
+      console초기화(memo_bootblock console_init 참조)
+    line 15
+      call romstage_main 
+
+$(top)/src/cpu/intel/car/romstage.c
+line 18-70
+  romstage_main
+    stack영역 / cbmem영역 초기세팅 후 poscar stage를 수행한다.
+    line-28-39
+      stack영역 초기세팅을 수행한다.
+      stack은 cache-as-ram영역을 사용한다.($(top)/build/romstage/arch/x86/car.ld에 명시되어있음)
+    line 58-63
+      stack영역 check수행
+    line 56
+      cbmem영역(COREBOOT MEMORY)초기화(by mainboard_romstage_entry)
+    line 68
+      run postcar stage(by prepare_and_run_postcar)
+
+$(top)/src/arch/x86/postcar_loader.c
+line 24-40
+  postcar_frame_init
+    struct postcar_frame 구조체를 초기화함.(특히 MTRR정보를 담을 메모리 영역을 할당함)
+    line 30-34
+      postcar_frame에 사용할 memory영역 확보(by cbmem_add)
+    line 36-37
+      struct postcar_frame->mtrr 변수초기화.
+
+line 55-62
+  postcar_frame_common_mtrrs
+    struct postcar_frame의 mtrr필드에 값들을 세팅.
+     즉 사용할 cache영역의 캐싱타입을 세팅함.
+    *variable-range mtrr 개요
+      base : base address + cache type
+      mask : size
+
+line 68-82
+  prepare_and_run_postcar
+     특정 영역에 대해 MTRR 세팅을 수행 후, postcar stage를 수행한다.
+    line 72-77
+       특정 영역에 대해 MTRR 초기세팅을 수행한다.
+      *MTRR, Memory Type Range Register. intel x86에서 제공해줌(MSR을 통해서)
+      *fill_postcar_frame은 nop임(QEMU환경에서는 MTRR은 무의미함)
+       *근데 qemu환경에서는 특별히 사용은 안 함.
+    line 79
+      postcar stage 수행(by run_postcar_phase())
+    line 81
+      예외처리로직수행(by die)
+
+line 95-114
+  load_postcar_cbfs
+    postcar stage를 load(by rmodule_stage_load)
+    *finalize_load, stage_cache_add는 현재 config에서는 nop. skip
+
+line 158-187
+  run_postcar_phase
+    postcar를 load하고 실행한다.
+    line 175
+      fallback/postcar load(by laod_postcar_cbfs)
+      *line 165-174는 config안되있으므로 실행안됨.
+    line 178-186
+      timestamp정보찍고(timestamp_add_now, console_time_report)
+      postcar 실행(prog_set_arg, prog_run)
+      *postcar_flush_cache는 아무것도안함(config안되어있어서 실행할 게 없다.)
+
+$(top)/src/include/cpu/x86/mtrr.h
+line 105-108
+  get_var_mtrr_count
+    IA32_MTRRCAP MSR으로부터 VCNT값을 return한다.
+    *Intel64 and IA-32 Architectures Software Developer's Manual, Volume3 11.11.1 참조
+
+$(top)/src/lib/imd_cbmem.c
+line 18-31
+  cbmem_top()
+    cbmem영역의 top address를 return한다.
+    line 20-26
+      chipset정보로부터 cbmem의 top address를 가져온다.(by cbmem_top_chipset)
+      *qemu환경에서는 QEMU firmware config interface를 사용하여 해당 정보를 얻어온다.
+    line 30
+      dead_code 임을 명시(정의부분 주석참고, 간단하게말하면, 해당 영역은 실행되선 안되므로 컴파일타임에 잡겠다(컴파일에러출력하겠다))  
+    
+line 45-48
+  cbmem_initialize_empty()
+    cbmem영역을 생성 / 초기화 수행
+    call cbmem_initialize_empty_id_size()
+
+line 50-59
+  cbmem_top_init_once()
+    memory check를 수행한다.(quick_ram_check_or_die())
+
+line 61-85
+  cbmem_initialize_empty_id_size()
+    cbmem영역을 생성 / 초기화 수행.
+    line 65
+      cbmem memory영역 check를 수행한다.
+    line 67 - 75
+      imd handle을 초기화하고(by imd_handle_init)
+       2개의 IMD영역을 생성한다.(by imd_create_tiered_empty)
+    line 77-79
+      cbmem영역을 생성한다.(by cbmem_add)
+      *cbmem_initialize()로 진입된 경우, 실행안함.
+    line 81-82
+      cbmem 초기화 hook func을 실행한다.(by cbmem_run_init_hooks)
+    line 84
+       초기화플래그세팅~
+ 
+line 124-132
+  cbmem_recovery()
+    cbmem영역 생성/초기화 수행
+    call cbmem_initialize_empty()
+
+line 143-153
+  cbmem_add()
+    imd_entry 영역을 추가(이미존재하면 해당 영역을 사용)하고(by imd_entry_find_or_add)
+    imd_entry memory영역을 리턴한다.(by imd_entry_at)
+    
+$(top)/src/lib/cbmem_common.c
+line 6-20
+  cbmem_run_init_hooks()
+    cbmem초기화 hook function들을 call한다.
+    *romstage의 경우, $(top)/build/romstage/lib/program.ld에 _cbmem_init_hooks, _ecbmem_init_hooks, _cbmem_init_hooks_size가 정의되어있음.
+    *hook 정의 매크로는 src/include/cbmem.h의 CBMEM_INIT_HOOK 포함하는 매크로들 참조 
+
+$(top)/src/lib/ramtest.c
+line 176-207
+  quick_ram_check_or_die()
+    RAM체크를 수행. 
+     방식은 매우 단순함(특정영역에 값 쓰고 다시 읽어서 같은지를 비교. 이걸 몇번정도만 함.)
+     실패하면 die.
+     참고. 단순히쓰는거긴한데, sfence(by phys_memory_barrier())), movnti(by write_phys()) 명령어등을 통하여 메모리접근 명령어 오더링, 캐싱미사용을 고려하여 코드가 구현되어 있음.
+
+$(top)/src/mainboard/emulation/qemu-i440fx/memmap.c
+line 44-60
+  cbmem_top_chipset()
+    QEMU firmware config interface를 통해 cbmem영역의 top address를 return한다.
+
+$(top)src/mainboard/emulation/qemu-i440fx/fw_cfg.c
+*QEMU firmware config interface 관련 코드가 존재하는 소스파일임!
+*코드를 봤을때... 큰 흐름은 다음과 같음
+*fw_cfg_present()로 인터페이스 존재 및 version정보를 세팅
+*fw_cfg_select()를 통해 정보를 읽을 인터페이스ID를 선택하고, fw_cfg_read()로 정보를 읽음(fw_cfg_get()가 두작업 모두 수행)
+*QEMU firmware config interface의 detail은 따로 확인 필요함. 이번엔 skip.
+
+line 25-43
+  fw_cfg_present()
+    QEMU firmware config interface의 존재여부 및 version정보를 리턴함.
+
+line 67-86
+  fw_cfg_find_file()
+    인자로 넘어온 특정 firmware config file(아마 인터페이스...)을 찾음.
+
+line 95-104
+  QEMU firmware interface중 e820 interface를 찾아서 초기세팅함.(해당 인터페이스를 사용하겠다를 명시함.)
+
+line 118-132
+  fw_cfg_tolud()
+    QEMU firmware e820 interface를 통해
+    메모리 정보를 조회하여) tolud(Top of Low Usable DRAM)를 찾아서 return한다.
+    => 4GB하위 메모리 영역 중, 가장 마지막(=큰) address를 return한다.
+
+$(top)src/lib/imd.c
+*In-Memory Directory(imd) 관련 코드.
+*struct imd : imd handle. struct imdr lg는 large imd영역, struct imdr sm은 small imd영역을 의미.
+*struct imdr : imd_root에 대한 메타데이터. 
+               limit : imd_root영역의 limit address(upper), 
+               r     : struct imd_root구조체로의 offset.(limt필드 기준)
+*In-Memory Directory 메모리구조는 imdr_create_empty함수 분석내용 참조!
+*struct imd_entry : struct imd_root 구조체가 array로 표기되며, entry index는 오름차순으로, entry가 사용하는 실메모리영역은 내림차순(start_offset이 내림차순으로됨)으로 등록.
+  start_offset : imd_entry memory영역의 시작주소(struct imd_root 기준.). start_offset의 아래로 자란다!
+  size : imd_entry memory영역의 size
+  id : imd_entry memory영역의 ID
+
+line 35-42
+  imdr_get_root_pointer
+    struct imd_root_pointer를 return
+    struct imd_root_pointer는 struct imdr->limit이 나타내는 address 에 상대적(바로 인접하게)이게 붙어있음.
+
+line 55-64
+  root_num_entries
+    root_size - (struct imd_root_pointer + struct imd_root)사이즈에 포함할 수 있는 struct imd_entry갯수를 return한다.
+
+line 66-76
+  imd_root_data_left
+    IMD영역(struct imd_root말고, struct imd_entry가 사용할 실메모리영역)의 남아있는 사이즈를 return.
+
+line 83-90
+  imd_entry_assign
+    imd_entry값을 세팅한다. 
+
+line 100-155
+  imdr_create_empty()
+    아래 프래임을 가진 IMD메모리영역을 세팅하고(src/include/imd.h 최상단 주석도 참조) *구조체 내 필드순서는 다를 수 있음.!
+                               => memory address
+      ------------------------------------------------------------------------------- lower address
+      regions for struct imd_entry
+      ------------------------------------------------------------------------------- 
+      struct imd_root          => struct imdr->limit - root_size
+        struct imd_entry
+        struct imd_entry
+        ...(variable list of struct imd_entry)
+      --------------------------------------------------------------------------------
+      struct imd_root_pointer  => struct imdr->limit - sizeof(struct imd_root_pointer)
+      --------------------------------------------------------------------------------
+                               => struct imdr->limit
+      -------------------------------------------------------------------------------- upper address
+    구조체의 값을 다음과 같이 세팅한다.
+      struct imdr->r = struct imd_root로의 offset(struct imdr->limit - root_size)
+      struct imd_root_pointer->root_offset = struct imd_root로의 offset(by imd_link_root, 자신의 address 기준)
+      struct imd_root->max_entries = 할당영역(root_size)에서 가능한 struct imd_entry의 갯수
+    마지막으로, 1개의 새로운 struct imd_entry를 초기할당한다.
+      
+    line 108-131
+      sanity check
+    line 133
+      struct imd_root_pointer 메모리영역을 획득
+    line 135-141
+      struct imd_root 메모리영역을 획득 및 struct imd_root_pointer->root_offset을 세팅
+    line 141-145
+      struct imd_entry 갯수를 세팅
+    line 147-150
+      1개의 struct imd_entry를 assign(by imd_entry_assign())
+
+line 212-234
+  imdr_entry_find
+    IMD영역에서 특정 id를 가진 imd_entry를 찾는다.
+    line 219
+      imd_root를 가져옴(by imdr_root)
+    line 224-233
+      imd_entry를 찾음
+
+line 270-304
+  imd_entry_add_to_root()
+    struct imd_entry를(메모리영역도 함께) 추가한다
+    line 278-296
+      struct imd_entry갯수 및 가용 사이즈를 체크
+    line 298-301
+      new struct imd_entry를 추가!
+
+line 306-320
+  imdr_entry_add()
+    struct imd_entry를 추가한다.(by imd_entry_add_to_root)
+
+line 353-356
+  imd_handle_init
+    struct imd를 초기화함.
+
+line 391-426
+  imd_create_tiered_empty
+    IMD영역을 2개(large, small) 생성한다(by imdr_create_empty())
+      large는 limit이 cbmem_top()
+      small은 limit이 large IMD영역 내부에 존재.
+
+line 509-534
+  imd_entry_add
+    imd_entry를 추가한다. *메모리영역도같이 by imdr_entry_add
+
+line 536-548
+  imd_entry_find
+    IMD영역에서 특정 id를 가지는 imd_entry를 찾는다.(by imdr_entry_find)
+
+line 550-561
+  imd_entry_find_or_add
+    imd_entry영역이 존재하면 entry를 return(by imd_entry_find) 없다면 새로 추가(by imd_entry_add)
+
+line 568-578
+  imd_entry_at
+    imd_entry 메모리영역의 시작 주소를 return
+
+8단계(이것저것해보기) - 7단계 주요흐름에서 잘 이해안가던 내용들 파악(w/코드수정하면서 디버깅)
+  CBFS내 fallback/romstage loadaddr, entryoffset어떻게 정해지는 지 확인 필요($(top)/src/lib/cbfs.c 분석내용 추가확인 목적임.)
+    CBFS tool에 의해서 세팅되는 것으로 보여짐.(여기서 아마 ELF파싱해서 잘 하는 듯)
+    $(top)/commonlib/bsd/include/commonlib/bsd/cbfs_serialized.h cbfs_file_attr_stageheader 구조체 주석 참조.
+    $(top)/util/cbfs/cbfs-mkstage.c parse_elf_to_stage()의 line 237 참조(or parse_elf_to_xip_stage() 도 참조)
+    *정확한건 아닌데, 거의 맞아보임.
+
+  CBFS내 fallback/rosmtage에 정확하게 어떤데이터 추가되는 지 확인 필요(디버그로그추가해서 romstage.start ~ romstage.start+0x31까지 데이터 확인 시, romstage.elf의 .text section부터로 확인되었는데, 이게 왜 이런지? 확인필요함.)
+    program segment정보만 rom이미지에 추가되는 것 같음.(하긴 elf header등 정보는 롬이미지에 있을 필요는 없으니...)
+    이 역시 CBFS tool이 이렇게 처리하나 봄.($(top)/util/cbfs/cbfs-mkstage.c parse_elf_to_stage() 참조하면 될 듯.)
+    *정확한건 아닌데, 거의 맞아보임.
+    
+    hexdump -C coreboot.rom 에서...
+    00000280  4c 41 52 43 48 49 56 45  00 00 42 80 00 00 00 11  |LARCHIVE..B.....|
+    00000290  00 00 00 68 00 00 00 80  66 61 6c 6c 62 61 63 6b  |...h....fallback|
+    000002a0  2f 72 6f 6d 73 74 61 67  65 00 00 00 00 00 00 00  |/romstage.......|
+    000002b0  00 00 00 00 00 00 00 00  00 00 00 00 00 00 00 00  |................|
+    *
+    000002e0  00 00 00 00 00 00 00 00  53 74 67 48 00 00 00 18  |........StgH....|
+    000002f0  00 00 00 00 ff c0 03 00  00 00 00 31 00 00 42 80  |...........1..B.| => 여기까지는 CBFS header(로 보여짐.)
+    00000300  1f 00 08 03 c0 ff 90 90  00 00 00 00 00 00 00 00  |................| => romstage.elf의 program segment 시작임.
+
+  $(top)/src/arch/x86/assembly_entry.S line 36-53에서, .data section초기화영역 개념확인필요
+    _data_load address => CAR(_data~_edata)영역으로 copy
+    목적 : 
+      실제 symbol value(=address)는 VMA기준이므로, 정상동작을 위해서는 VMA(_data~_edata)에 데이타들이 위치해야함. 
+      근데 coreboot.rom의 경우 최초 data section은 VMA가 아닌 LMA(_data_load)에 존재하므로,(예시로... H/W적으로 rom이미지가 LMA에 위치한다라는 개념으로 보면 될 것 같다. *물론 최초 reset 영역은 VMA == LMA겠지만!)
+      정상동작을 위해서는 LMA데이터를 VMA로 카피해주어야 함!(물론! 해당 데이터영역을 사용하기 전 단계에서 카피해주면 됨! 미사용하는 단계에서는 굳이 안해도 된다.!)
+    coreboot.rom내 romstage 이미지와 romstage.elf의 이미지의 symbol value가 다름. cbfstool에 의해 relocation이 일어나는 듯.($(top)/util/cbfs/cbfs-mkstage.c parse_elf_to_xip_stage() 도 참조 *정확한건 아닌데, cbfstool(또는 롬이미지생성)에 의해서가 아니면 발생할 수가 없음...)
+      ex. assembly_entry.S _start symbol의 mov _data_symbol, %esi 코드의 경우... 다르다.
+      romstage.elf 이미지(be 90 42 00 02)
+      00000050                                             be 90  |.........)......|
+      00000060  42 00 02 f3 a5 83 e4 f0  e8 a3 06 00 00 eb fe 90  |B...............|
+
+      coreboot.rom의 romstage이미지(be 90 45 c0 ff)
+      00000350                                             be 90  |.........)......|
+      00000360  45 c0 ff f3 a5 83 e4 f0  e8 a3 06 00 00 eb fe 90  |E...............|
+
+    *https://sourceware.org/binutils/docs/ld/Output-Section-LMA.html 참조
+
+  mainboard_romstage_entry(cbmem영역코드)
+    cbmem(CBMEM) : CoreBoot MEMory를 의미($(top)/Documentation/acronyms.md 참조)
+    imd(in-memory directory) : cbmem관련 코드임...
+     7단계 imd.c, imd_cbmem.c 분석내용 참조
+     => 간단하게, memory영역을 관리(생성/삭제 등)하는 로직들로 보면 됨.
+
+  prepare_and_run_postcar에서 MTRR(memory type range register) 관련 코드.
+    MTRR : Memory Type Range Register
+      memory type과 physical-address range를 연관짓는 메카니즘을 제공함.
+       => 쉽게말해, 해당 메모리영역(physical-address range)이 어떻게 캐싱(memory type, ex 캐싱X... etc)될것이냐를 나타냄
+    
+    *Intel64 and IA-32 Architecture Software Developer's Manual, Vol3. 11.11 참조
+    *https://en.wikipedia.org/wiki/Memory_type_range_register 참조    
+    
+9단계(유용한 것을 할수있는 수준까지 파기) - romstage관련 이슈1개처리.
+  romstage_main의 stack_guard 로직 리팩토링 해보자!(함수로?)
+    status : in review
+    gerrit : https://review.coreboot.org/c/coreboot/+/86562 code review올림.
+    local branch : feature/romstage_stack_guard
+
+10단계(가르치기) - 내용정리
+  알게된것
+    romstage 빌드과정
+    romstage x86-32 with qemu환경의 주요로직
+    cbmem(coreboot영역)
+     이 외 intel cpu관련(mtrr)내용개요
+  코멘트
+     다른 코드들도 확인하고 영역을 좀 더 넓혀야겠다...
+    low level(x86, asm)지식은 중요하다. 좀 더 정진하자.(따로 시간내서 본다기보단 코드보면서 습득하고 실제 테스트해보고, 즉 실습 이 필요하다.)
