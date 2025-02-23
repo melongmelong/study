@@ -1,3 +1,248 @@
+next : 7단계 ㄱㄱ(entry_SYSCALL_64 분석 ㄱㄱ, do_syscall_64 이후로직분석 ㄱㄱ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel systemcall 호출흐름
+
+학습이유
+  linux app programming에서 자주 접하는 kernel systemcall의 호출흐름을 파악한다.
+  +자주 사용하던 인터페이스이므로, 커널 분석의 start point로 적합하지 않을까 싶음.!!
+
+학습목표
+  kernel systemcall(x86-64)의 호출흐름(큰 흐름)을 파악한다.
+  kernel systemcall을 하나 만들어본다.(dummy형태로 괜찮음)
+    
+학습자료
+  이것저것 많다.!
+
+학습계획
+  milestone1. kernel systemcall 학습.
+  
+================================================================
+7단계 *목표 : 아래 참고내용 참조하여 systemcall 소스코드 분석(특정 시스템콜이 어떻게 호출되냐 콜트레이스가 그려지면 좋을 듯 하다.)
+             일단 막 보면서 알게된 것들 메모하고 구조화 후, 할 것들해서 마무리하는 게 좋을 듯.
+  systemcall 동작 개요 *x86_64환경.(x86_32는 다름)
+    systemcall호출
+      syscall x86-64 instruction(in userspace ex. libc)
+      -> entry_SYSCALL_64 *systemcall entry point.(syscall_init 참조)
+      -> do_syscall_64
+      -> do_syscall_x64
+      -> x64_sys_call
+      -> systemcall handler(ex. __x64_sys_open -> __se_sys_open -> __do_sys_open) *SYSCALL_DEFINE* 매크로에 의해 정의됨($(top)/include/linux/syscalls.h, $(top)/arch/x86/include/asm/syscall_wrapper.h 참조)
+
+    systemcall리턴
+
+    참고
+      grep SYSCALL_DEFINE1 처럼 코드 써치하면 시스템콜 정의/구현 로직을 확인할 수 있음.!
+  
+  $(top)/arch/x86/entry/entry_64.S    
+    line 87-212
+      entry_SYSCALL_64
+        line 90-94
+          stack영역을 세팅(by stack pointer(%rsp)를 세팅)
+           *참고. swapgs(maybe, PER_CPU_VAR 매크로 사용을 위함일 듯 합니다.(PER_CPU_VAR에서 gs segment사용함))
+        line 98-107
+          stack에 register를 push  => do_syscall_64에서 사용할 struct pt_regs 영역을 생성!
+        line 109-119
+          argument를 세팅하고(rdi : arg0(=>struct pt_regs), rsi : arg1(=>systemcall number)))
+          do_syscall_64를 호출함.
+
+       참고
+        SYM_CODE_START(label) => label을 global로 선언 후 align하고 label위치를 정의함.(by SYM_ENTRY()) 대충 아래와 같은 코드를 생성
+                                 global label; 
+                                 align;
+                                 lable:
+        SYM_INNER_LABEL => SYM_CODE_START와 약간 비슷(label을 global로 선언하고 label위치를 정의 by SYM_ENTRY())
+        UNWIND_HINT_ENTRY => debugging info를 생성하기 위한 매크로(인듯)
+                             $(top)arch/x86/include/asm/unwind_hints.h에 정의되어있고, 
+                                 본체인 UNWIND_HINT는 tools/include/linux/objtool.h 에 주석과함께 정의되어있다.
+        SWITCH_TO_KERNEL_CR3 => page table isolation(for 보안적인 목적, userspace,kernelspace page table을 독립적으로 사용한다는 개념인 듯. 그리고 cr3는 페이지테이블 위치를 가리키는 레지스터임!)기능을 위한. 로직으로 보임. 일단 skip.($(top)/Documentation/x86/pti.rst 참고)
+        IBRS_ENTER, UNTRAIN_RET, CLEAR_BRANCH_HISTORY도 일단 skip(다 커널 취약점 ex. spectre_v2, RETBleed 극복을 위한 코드들 인 것 같음, arch/x86/include/asm/nospec-branch.h, arch/x86/entry/calling.h macro정의 코드주석참조)
+        PUSH_AND_CLEAR_REGS : register 일부를 push하고 clear(ex. xor %ecx, %ecx)함. $(top)/arch/x86/entry/calling.h 참조
+        PER_CPU mechanism을 사용하는 이유는 systemcall을 여러 cpu가 수행할 수 있으니까로 보면 될 듯(일단은) 
+               
+  $(top)/arch/x86/kernel/cpu/common.c
+    line 1962-1996
+      syscall_init()
+        syscall instruction(userspace에서 system call호출을 위해 사용하는 asm instruction) 실행 시,
+        system call handler를(ex. entry_SYSCALL_64) 호출하도록 MSR을 setting한다.
+         요점은, syscall instruction시, syscall handler를 entry_SYSCALL_64가 실행되도록 세팅한다.
+        *IA32 emulation(=IA32 compatibility mode, line 1967-1984)는 분석 skip함.
+         관련 주요 MSR
+          IA32_STAR : syscall instruction handler가 사용할 세그먼트(cs, ss) 를 지정.
+          IA32_LSTAR MSR : syscall instruction handler의 rip(=system call handler)
+          IA32_FMASK MSR : syscall instruction handler수행 시의 eflags register값.
+
+      참고
+       wrmsr/wrmsrl() : 결국엔 native_write_msr() -> __wrmsr()를 호출한다.
+                        msr(ecx로 copy)레지스터에 low(eax로 copy), high(edx로 copy)값을 세팅함.
+                           아래는 __wrmsr이 컴파일된 코드 예시.
+    1100:       b9 81 00 00 c0          mov    $0xc0000081,%ecx => MSR
+    1105:       31 c0                   xor    %eax,%eax        => LOW
+    1107:       ba 10 00 23 00          mov    $0x230010,%edx   => HIGH
+    110c:       0f 30                   wrmsr
+
+       syscall, sysenter instruction동작은 Intel64 and IA-32 Architectures Software Developer's Manual, Volume3, 5.8.7, 5.8.8 참조!
+       MSR overview는 Intel64 and IA-32 Architectures Software Developer's Manual, Volume3, 9.4 참조!
+
+                     
+  $(top)/arch/x86/include/asm/irq_vectors.h
+    idt vector assignment가 정의되어있음.
+
+  $(top)/arch/x86/entry/common.c
+    line 40-54
+      do_syscall_x64()
+      system call을 수행한다.(by x64_sys_call)
+       참고
+        array_index_nospec() : array range bound 체크를 수행(특정 범위(인자로 넘어온)를 절대 넘어가지 않도록 한다.)
+        BUILD_BUG_ON() : compile time condition check를 위한 macro
+                             내부적으로 gcc error attribute를사용함.(어떤 함수가 error attribute로 선언되어있는 경우, 해당 함수호출하는 코드(아마도 실행이 되는?)가 있다면 컴파일타임 에러(with error attribute에 인자로 넘긴 메시지)를 발생한다.)
+
+    line 56-71
+      do_syscall_x32()
+      system call을 수행한다.(by x32_sys_call)
+      CONFIG_X86_X32_ABI가 on되어야만 수행됨.(*현재 config로는 off이다.)
+                               
+    line 73-87
+      do_syscall_64()
+       systemcall을 수행한다. *systemcall에 대한 최초 entry point.
+       line 80-83
+         systemcall을 수행한다.(by do_syscall_x64, do_syscall_x32)
+         systemcall number 대응하는 handler가 없으면 __x64_sys_ni_syscall()을 수행한다.
+        참고
+         add_random_kstack_offset() : 보안을 위한 로직(kernel stack random하게하여 kernel stack attack을 어렵게 하기 위함)
+                                      $(top)/Documentation/admin-guide/kernel-parameter.txt 
+                                             의randomize_kstack_offset 참조, https://lwn.net/Articles/785484/도 참조
+         syscall_enter_from_user_mode/syscall_exit_to_user_mode()
+           systemcall 호출 전/후 작업을 수행. 이 과정에서 systemcall number가 변경될 수도 있다(return값으로)
+         instrumentation_begin/end()
+           stack validation관련 로직으로 보여짐. $(top)/tools/objtool 과 연관있어보임. $(top)/tools/objtool/Documentation도 참조
+
+  system call calltrace in kernel(ftrace 로 추출)
+    cat-5104    [001] .....   302.677782: do_sys_open <-do_syscall_64
+    cat-5104    [001] .....   302.677791: <stack trace>
+    => 0xffffffffc0055083
+    => do_sys_open
+    => do_syscall_64
+    => entry_SYSCALL_64_after_hwframe
+
+  $(top)/arch/x86/entry/syscall_64.c
+    system call entry정의 및 실제 system call entry를 호출수행한다.
+    $(outtop)/arch/x86/include/generated/asm/syscalls_64.h 에 system call entry들이 정의되어 있음.(빌드 시 생성되는 것으로 보임.)
+     해당 헤더를 사용하여, 함수선언, sys_call_table세팅, x64_sys_call function 로직생성 을 수행한다.!
+    line 10-12
+      system call function들을 declare함.
+
+    line 19-23
+      system call entry를 나열한 sys_call_table을 정의함.(syscall trace를 위함임. 로직에는 쓰이지 않음)
+
+    line 27-33
+      x64_sys_call()
+      system call을 수행한다.(실제핸들러를 수행한다.)
+      __x64_*(ex. __x64_sys_open) 과 같은 형태가 젤 처음 entry임. 이후 sys_open -> do_sys_open순으로 호출
+        상세한 것은 $(top)/arch/x86/include/asm/syscall_wrapper.h 참조
+
+  $(top)/arch/x86/include/asm/syscall_wrapper.h
+     시스템콜 정의를 위한 매크로들을 정의함. $(top)/include/linux/syscalls.h에 의해 사용되는 래핑되는 매크로들로 볼 수 있음.
+    line 91-97
+      __SYS_STUBx
+        __##abi##_##name 함수를 정의(ex. __x64_sys_open(struct pt_regs *regs))
+         정의된 symbol은 __se_##name을 호출(ex. __se_sys_open)함.
+        *ALLOW_ERROR_INJECTION매크로는 현재 config에서는 empty.(skip)
+
+    line 113-115
+      __X64_SYS_STUBx
+        __##abi##_##name 함수를 정의(ex. __x64_sys_open(struct pt_regs *regs)) by __SYS_STUBx()
+
+    line 245-257
+      __SYSCALL_DEFINEx
+        system call handler stub들을 정의. 정의되는 주요 symbol들은 다음과 같다.
+          __se_sys##name (ex. __se_sys_open) //do_sys##name을 호출하는 함수
+          __do_sys##name (ex. __do_sys_open) //실제 시스템콜 로직을 수행하는 함수.
+          __x64_* by __X64_SYS_STUBx (ex. __x64_sys_open) //x64_sys_call에 의해 호출되는 함수. 위 __se*, __do*함수의 entry
+              호출순서 : __x64_sys_open -> __se_sys_open -> __do_sys_open(실제시스템콜핸들러) *해당 소스파일 최상단 주석도 참조.
+          *__IA32_SYS_STUBx 는 무의미함!
+         해당 매크로의 __do_sys##name symbol에 대한 함수로직을 정의하게된다
+        ex. nice() system call 구현.
+          SYSCALL_DEFINE1(nice, int, increment) //__SYSCALL_DEFINEx로 expansion됨!
+          {
+            ...
+          }
+
+  $(top)/include/linux/syscalls.h
+     시스템콜 정의를 위한 매크로들을 정의함.(최상위 매크로임)
+    line 209-222
+      SYSCALL_DEFINE* 매크로를 정의
+      SYSCALL_DEFINEx 매크로로 expansion됨 *syscall handler이름에 '_'를 추가해서 expansion함!
+       아래 처럼 시스템콜을 정의/구현하기 위해 사용된다.(grep SYSCALL_DEFINE1 처럼하면 찾을 수 있음)
+        ex. nice() system call 정의/구현.
+          SYSCALL_DEFINE1(nice, int, increment) //__SYSCALL_DEFINEx로 expansion됨!
+          {
+            ...
+          }
+
+    line 226-228
+      SYSCALL_DEFINEx 매크로를 정의
+      __SYSCALL_DEFINEx로 expansion됨 ($(top)/arch/x86/include/asm/syscall_wrapper.h 참조)
+      *SYSCALL_METADATA는 syscall tracing(kernel debug)관련 매크로임 skip.
+
+  참고
+    $(top)/Documentation/x86/entry_64.rst 참조
+      아래 3개 소스파일이 나열되어있으므로, 해당 3개 코드에서 system call관련되어 보이는 코드를 분석시작한다.
+       $(top)/arch/x86/kernel/traps.c
+       $(top)/arch/x86/entry/entry_64.S
+       $(top)/arch/x86/include/asm/irq_vectors.h
+    glibc에서 시스템콜 호출하는 asm => %eax에 syscall number세팅 후, syscall instruction 수행.
+      socket() function .o file objdump 일부
+       0:	b8 29 00 00 00       	mov    $0x29,%eax  => 0x29(=41=socket())
+       5:	0f 05                	syscall            => syscall instruction 확인가능.
+      getpid() function .o file objdump 일부
+       0:	b8 27 00 00 00       	mov    $0x27,%eax => 0x27(=39=getpid())
+       5:	0f 05                	syscall 
+      shmat() function .o file objdump 일부
+       0:	b8 1e 00 00 00       	mov    $0x1e,%eax
+       5:	0f 05                	syscall 
+      read() function .o file objdump 일부
+       9:	31 c0                	xor    %eax,%eax
+       b:	0f 05                	syscall
+   kernel code 참고내용
+     gcc defined(x) macro : preprocessor macro임. 'x'가 정의된 macro이면 return 1 아니면 0
+     likely, unlikely : 핵심은 __builtin_expect로 구현됨. 
+       __builtin_expect(exp, c) : gcc builtin function.
+                                  function의 값자체는 exp임.
+                                       의미는 exp의 값이 c일 확률이 90% 정도이다는 의미.(=branch prediction.) => 이걸 이용해서 branch optiomization이 수행된다.(원리는 잘...) *default 90%이며 변경가능
+     inline asm : https://gcc.gnu.org/onlinedocs/gcc/Extended-Asm.html, https://wiki.kldp.org/wiki.php/DocbookSgml/GCC_Inline_Assembly-KLDP 참조
+     tracepoint_enabled()로 감싸진 코드는 커널 tracing을 위한 mechanism임. 자세한 구현은 skip하였음.($(top)/Documentation/trace/tracepoints.rst 참조)
+     어셈블리 매크로는 https://sourceware.org/binutils/docs/as.html#Macro를 참조
+       macro 아규먼트는 macname argname1 argname2 (또는 argname1, argname2)로 선언 (argname=1 처럼 default값 세팅가능)
+       macro내에서 아규먼트 참조는 \argname1, \argname2로 가능. *\@은 그냥 특정 integer로 치환되는 듯...
+       argname뒤에 ':'은 argument속성으로 대충 보면 될듯.
+       macro에 파라미터전달은 macname argname1=1 형태로 전달가능.
+    ALTERNATIVE 매크로 : cpu instruction을 old instruction -> new instruction으로 바꿔줌... 정확한 사유와(cpu model에 더 적합한 명령어를 사용하기 위함인 듯...) mechanism등은 skip...(잘모르겠음) 
+       
+                     
+8단계 *목표 : 7단계 부족했던 부분 추가 학습 + 이것저것해보기
+  libc systemcall 코드 어떻게 빌드되는 지? 확인(systemcall 코드들이 어떻게 생성되는 지 위주로)
+  libc systemcall 코드 어떻게 수행되는 지? 확인(plt개념...) *optional(static libc를 링크하면 plt없이 바로 call 함)
+  $(top)/arch/x86/include/asm/syscall_wrapper.h 코드 분석 필요함.
+  syscall_init()에서 사용하는 wrmsr코드를 좀 더 공부하는 것도 좋긴할 듯 *optional(inline asm을 제대로 이해못함 뭘하는진 대충은 알고.)
+  linux segmentation, paging도 내용을 알아야할 듯...(이건 이번에 할 건 아닌 듯)
+  kernel alternatives도 재밌는 주제일 것 같음...이것도 systemcall과는 별도로...
+  PER_CPU_VAR* facility도 재밌는 주제일 것 같음... 이것도 systemcall과는 별도로...
+
+9단계 *목표 : systemcall 직접 추가 실습.
+  참고
+    $(top)/Documentation/process/adding-syscalls.rst 참조
+
+10단계 *목표 : 정리 
+  알게된 것
+  코멘트
+==========참고====================================================================================
 next : issuing a system call via systenter/Exiting from the system call 내용확인.(understanding the linux kernel, chapter 10 System Calls, The sysexit instruction)
          chapter4장이랑 같이 확인해서 정리필요.
        system call entry 코드(entry_SYSCALL_64) 분석(176 line부터.).
