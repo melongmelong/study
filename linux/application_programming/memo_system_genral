@@ -241,7 +241,7 @@ owner변경은 다음을 만족해야 가능
 
   systemcall interrupt
     systemcall 수행 중(=정확히는 systemcall block되어있을 때), signal발생(caught) 시, 아래 2가지 실행옵션이 있음
-    1. systemcall failed. 
+    1. systemcall failed.
       systemcall은 error return and errno setting(to EINTR)됨.
 
     2. automatic restart
@@ -400,12 +400,20 @@ signal handler는 kernel mode -> user mode로 mode변환될때마다 pending sig
   *sigreturn() : 1.에서 저장한 context정보를 restore. 즉, user mode로 돌아가서, signal handler에 의해 중단된 시점부터 다시 실행을 하게 됨.
 
 9단계 *목표 : very simple term prj
-상세 내용은 termprj directory 참조.
+  상세 내용은 termprj directory 참조.
 
 10단계 *목표 : 정리
 결과
+  linux system programming 에서 대충 넘어갔던 혹은 자주쓰나 잘 모르는 개념/시스템콜/표준라이브러리 사용법을 익힘
 
 알게된 것
+  ownership/permission
+  process
+  thread
+  signal
     
 코멘트
+  새롭게 알게되었다기보다는, 차근차근 보면서 직접 실행해보면서 겪었던 것들이 더 와닿았다.(물론 전부 다 한건 아니지만)
+  앞으로는 APUE or manual 이론적으로는 보다는 직접 실행 or 관련 termprj 해보는것이 좋을 것 같다.
+  직접 사용해보는 과정이 필요한 것 같다...(특히 termprj같은거에 녹아들면 더더욱 좋음)
   

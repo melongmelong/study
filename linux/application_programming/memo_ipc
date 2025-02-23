@@ -148,8 +148,18 @@ XSI IPC는 test프로그램 한번씩 돌려보기.(특히 permission 동작도 
 
 10단계 *목표 : 정리
 결과
+  linux IPC개념과 시스템콜/표준라이브러리함수를 익힘
 
 알게된 것
+  pipe, popen/pclose
+  FIFO
+  XSI IPC
+    msg queue
+    semaphore
+    shared memory
     
 코멘트
-  
+  새롭게 알게되었다기보다는, 차근차근 보면서 직접 실행해보면서 겪었던 것들이 더 와닿았다.(물론 전부 다 한건 아니지만)
+  앞으로는 APUE or manual 이론적으로는 보다는 직접 실행해보는것이 좋을 것 같다.
+  역시 직접사용해보는 과정이 필요하다...
+  IPC관련해서는 term prj에 못녹여낸것은 아쉽다.

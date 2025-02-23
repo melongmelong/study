@@ -395,12 +395,21 @@ close()/shutdown()
                          TCP의 경우 optional feature임.
 
 9단계 *목표 : very simple term prj
-상세 내용은 termprj directory 참조.
+  상세 내용은 termprj directory 참조.
 
 10단계 *목표 : 정리
 결과
+  linux network programming 에서 자주는 쓰지만 잘 몰랐던 주요시스템콜/표준라이브러리함수의 detail 익힘.
+  network stack(=정확하게는 socket layer function내부를)까지 알아야 완벽히 알 수 있어보임.(ex. socket() 파라미터의 정확한 의미라거나...)
 
 알게된 것
-    
+    multiplexing(select, poll) 개념부터 실습까지
+    rawsocket 개념부터 실습까지
+    packet socket 개념부터 실습까지
+    socket() parameter 정확한 의미 확인
+    listen, bind, connect, close/shutdown 정확한 의미 확인
+
 코멘트
-  
+  새롭게 알게되었다기보다는, 차근차근 보면서 직접 실행해보면서 겪었던 것들이 더 와닿았다.(물론 전부 다 한건 아니지만)
+  But, network쪽이라 그런지 완전 detail은 network stack을(=커널) 알아야 할 것 같다. 이 부분은 좀 더 정진해보면 좋을 것 같다.
+  +앞으로는 UNP(Unix Network Programming) or manual  이론적으로는 보다는 직접 실행해보는것이 좋을 것 같다.
