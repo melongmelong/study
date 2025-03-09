@@ -62,7 +62,7 @@ line 410-444
 
   line 412-443
     cbfs-files-handler
-      cbfs-files-y 각 항목에 대해 sanity check 수행 후, cbfs-files변수에 정보를 추가한다.        
+      cbfs-files-y 각 항목에 대해 sanity check 수행 후, cbfs-files변수에 정보를 추가한다.
       *includemakefiles에의해호출됨.
         cbfs-files-y 변수에 추가된 각 항목에 대해 cbfs-files-handler를 호출한다. 
         cbfs-files-y로 grep하면 추가되는 항목들 확인 가능하다.

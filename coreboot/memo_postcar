@@ -1,0 +1,147 @@
+next : 8단계 ㄱㄱ
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - postcar 빌드과정 / 주요 흐름코드 파악
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+  이번에는 coreboot최초 stage에 대한 빌드과정과 주요흐름파악
+
+학습목표
+  postcar 빌드과정 이해
+  postcar 주요동작 이해
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+
+학습계획
+  milestone1. postcar의 빌드과정과 주요동작 이해.
+  
+=======================
+milestone1. postcar의 빌드과정과 주요동작 이해.
+
+7단계(대충 사용 수준까지) - romstage 빌드과정및 주요동작에 대한 큰 흐름 이해
+코드분석은 coreboot 24.05 version기준!
+=====================1. postcar 빌드과정==============================
+빌드과정 core로직은 bootblock분석내용과 동일. 여기서는 postcar관련된 부분만 확인함.
+전체개요 *bootblock, romstage 와 거의 비슷. 참조 ㄱㄱ
+  toolchain세팅($(top)/src/arch/x86/Makefile.mk line 204-208 참조)
+  postcar-y, postcar-src, postcar-obj, postcar-*-opts, postcar-*-deps 등 변수 세팅
+  postcar 바이너리 생성 절차(make variable prebuilt-file 에 의해서 생성된다. *$(top)/Makefile.mk line 954-)
+    postcar-objs -> postcar.debug -> postcar.debug.rmod -> postcar.elf
+    링크시 사용되는 linker script는 다음과 같음
+      $(top)/build/postcar/arch/x86/memlayout.ld
+      $(top)/build/postcar/lib/program.ld
+      $(top)/build/postcar/arch/x86/memlayout.ld 빌드룰은 $(top)/Makefile.mk line 257-264 참조.
+  이후, coreboot.pre make 타겟 생성시, prebuild-files($(top)/Makefile.mk line 1006-)에 의해서 postcar가 추가됨.
+
+$(top)/src/arch/x86/Makefile.mk
+line 3-5
+  toolchain 변수 초기화(by init_standard_toolchain_postcar)
+
+line 204-208
+  postcar stgae compiler관련 변수세팅(by create_class_compiler)
+
+line 231-233
+  postcar.debug 생성 rule
+
+line 235
+  postcar.elf 생성 rule
+
+line 238-242
+  postcar stage를 cbfs에 추가(cbfs-files-y 변수에 postcar를 추가)
+
+$(top)/src/lib/Makefile.mk
+line 324-325
+  %.debug.rmod 생성 rule
+  rmodtool로 생성함(input은 .debug (ELF포맷))
+
+=====================2. postcar 로직================================
+전체개요
+$(top)/src/arch/x86/exit_car.S
+  line 7-18
+    postcar에서 사용할 stack영역세팅. bss영역에 위치시킴.
+  line 19-87
+    _start
+    postcar start point임.
+    gdt, stack, memory cache, MTRR환경을 셋팅 하고,
+    postcar main function을 호출한다.
+    line 25-30
+      gdt를 초기화. *romstage영역은 더이상 유효하지 않으므로, postcar가 로드된 영역에서 다시한번 load하는 개념으로 보여짐.
+    line 32-50
+      line 36-38
+        _cbmem_top_ptr 변수에 값을 세팅함.
+        값은, romstage에서 postcar실행할때(by prog_run()), argument(by cbmem_top())로 넘어온다!(run_postcar_phase참조)
+      line 40-50
+        _cbmem_top_ptr 영역을 포함하고있는 cache line을 invalidate한다.(by clflush instruction)
+         단 cpu가 해당 feature를 지원하는 경우에만 수행함, 미지원한다면 clflush는 수행하징낳고 skip_clflush로 jmp한다.
+      line 54
+        qemu환경에서는 no-op.(cache-as-ram영역 disable / clear...)
+      line 62-67
+        caching을 enable함.(CR0 register의 CD, NW 비트를 clear하면 caching enable됨!)
+         이후 cache를 flush(by invd instruction)
+      line 69-76
+        %esp를 setup(위에서 셋업한 _estack 으로~)
+      line 81
+        MTRR영역 세팅!
+      line 84
+        call postcar main function 
+      line 86-87
+         예외로직.(should never be reached)
+
+$(top)/src/arch/x86/postcar.c
+  line 17-39
+    main()
+    postcar main function
+    필요한 초기세팅(console_init, cbmem초기화) 후
+    ramstage를 load/run한다.
+    line 19
+      late_car_teardown() 호출(qemu환경에서는 no-op)
+    line 21
+      console_init() 수행
+    line 30-31
+      cbmem영역 초기화수행(by cbmem_initialize)
+    line 33
+      timestamp 추가(by timestamp_add_now)
+    line 35
+      MTRR정보 출력(by display_mtrrs)
+    line 38
+      ramstage load/run (by run_ramstage)
+
+$(top)/src/lib/prog_loaders.c
+  line 92-135
+    run_ramstage()
+    ramstage를 load/run한다.
+    line 94-95
+      struct prog를 ramstage 값으로 초기세팅
+    line 98-101
+      postcar end timestamp추가
+    line 109-110
+      no-op. skip *STAGE_CACHE미사용 환경이므로 아무것도 수행하지 않음
+    line 112-131
+      ramstage load(by load_relocatable_ramstage) 후 run(by prog_run)
+       이 과정에서 timestamp정보 추가 및 console에 출력함.
+      *stage_cache_add는 no-op. skip *STAGE_CACHE미사용 환경이므로 아무것도 수행하지 않음
+
+8단계 - 7단계 부족분 보충
+  clflush가 정확하게 뭘 하는 것이고, 왜 필요한 건 지 확인($(top)/src/arch/x86/exit_car.S clflush참조)
+    Intel 64 and IA-32 Architectures Software Developer's Manual, Volume 3 Chapter 11. 참조해야할듯...
+  MTRR 기능 사용하는 거 맞는 지 확인 필요.(romstage분석시 의미없음으로 분석했는데, 확인필요함, $(top)/src/arch/x86/exit_car.S line 81참조)
+    
+9단계(유용한 것을 할수있는 수준까지 파기) - postcar관련 이슈1개처리.
+
+10단계(가르치기) - 내용정리
+

@@ -254,7 +254,7 @@ $(top)/toolchain.mk
     CC_x86_32 := /home/knw/Desktop/Study/coreboot/coreboot/src/coreboot/payloads/coreinfo/../../util/crossgcc/xgcc/bin/i386-elf-gcc
     LD_x86_32 := /home/knw/Desktop/Study/coreboot/coreboot/src/coreboot/payloads/coreinfo/../../util/crossgcc/xgcc/bin/i386-elf-ld.bfd
     ...
-  세팅된 toolchain 정보들은 각 stage별 compiler정보(ex. CC_bootblock, LD_bootblock, ...) 에 세팅되어 사용됨.(init_stages, create_class_cimpiler함수 참조)
+  세팅된 toolchain 정보들은 각 stage별 compiler정보(ex. CC_bootblock, LD_bootblock, ...) 에 세팅되어 사용됨.(init_stages, create_class_compiler함수 참조)
 
 line 171
   init_stages 함수 호출.(default toolchain정보를 세팅함.)

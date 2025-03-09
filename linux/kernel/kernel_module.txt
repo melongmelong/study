@@ -1,0 +1,107 @@
+next : 7-1-2 ㄱㄱ (line 1827-1828 MODORDER prerequisites 분석 ㄱㄱ)
+        9단계전까지는 테스트머신내, /home/knw/Desktop/my_module 을 실습에 사용한다.(내용은 현단계에서 안중요함)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel module build / load 동작 확인
+
+학습이유
+  그나마 자주 마주하는 lowlevel영역인 kernel module의 기본적인 흐름(빌드방법,빌드로직 / load방법,load로직)을 확인한다.
+  *단 디바이스드라이버나 기존 나와있는 kernel module을 분석하겠다는 아니다.!
+
+학습목표
+  out of tree(=external) kernel module build 방법흐름(그대로 따라했을 때 빌드되야함)과 이에 대한 빌드 로직 분석
+  out of tree kernel module load load방법흐름(그대로 따라했을 때 load되어야함)과 이에 대한 로직(큰 흐름 ex. 함수호출흐름) 분석
+  hello.ko 빌드하여 load를 한다.
+    
+학습자료
+  $(top)/Documentation/kbuild/modules.rst
+  이것저것 많다.
+
+학습계획
+  milestone1. out of tree kerneml module build / load 동작분석
+  
+================================================================
+7단계 *목표 : out of tree kernel module build / load 동작분석
+7-1. out of tree kernel build
+7-1-1. build방법 
+  make -C [path/to/kernel/src] M=[path/to/module/src] *module build, 'modules' target 명시해도 동일함.
+  make -C [path/to/kernel/src] M=[path/to/module/src] modules_install *module install
+    기본적으로 external module은 /lib/modules/$(KERNELRELEASE)/extra 하위에 설치된다.
+    INSTALL_MOD_PATH 변수사용해서 위치 변경가능
+      ex) make -C [path/to/kernel/src] M=[path/to/module/src] INSTALL_MOD_PATH=/knwtest modules_install
+        => /knwtest/lib/modules/$(KERNELRELEASE)/kernel에 설치됨.
+    INSTALL_MOD_DIR 변수사용하면 extra대신 다른 경로에 설치된다.
+      ex) make -C [path/to/kernel/src] M=[path/to/module/src] INSTALL_MOD_DIR=knwtest modules_install
+        => /lib/modules/$(KERNELRELEASE)/knwtest에 설치됨.
+  *커널빌드 시, 'O=' option으로 kernel output위치 변경했으면, 'O=' option필수!
+
+  *$(top)/Documentation/kbuild/modules.rst 참조
+
+7-1-2. build로직 흐름 분석
+전체흐름
+
+$(top)/Makefile
+  line 130-144
+    KBUILD_MOD var 세팅
+    make 'M=' 변수값으로 세팅된다!
+  line 167-169
+    KBUILD_OUTPUT variable 세팅
+     즉, 커널빌드 시 'O=' 옵션값을 해당 variable에 세팅한다.
+  line 171-176
+    abs_objtree variable 세팅
+     즉, kernel object output의 절대경로를 세팅한다.
+    KBUILT_OUTPUT 값이 not null(= 'O='옵션이 세팅O)
+      abs_objtree = 'O=' 인자로 넘어온 경로로 세팅(절대경로)
+    null이라면('O=' 옵션이 세팅X)
+      abs_objtree = make실행한 경로로 세팅(=결국엔 커널소스 최상위 경로일듯, 절대경로)
+  line 192
+    abs_srctree var 세팅
+    kernel src 가 존재하는 디렉토리의 절대경로를 세팅한다.
+  line 239-255
+    srctree var 세팅
+     kernel src 가 존재하는 디렉토리의 경로를 세팅한다.(경우에따라 relative, absolute인듯.)
+    abs_srctree == abs_objtree면, 현재경로(.)으로 세팅
+    abs_srctree가 abs_objtree보다 한단계 상위면, 상위(..)으로 세팅
+     그외는 abs_srctree로 세팅
+    *abs_srctree(line 192참조), abs_objtree(line 171-176참조)
+  line 1160-1768
+    external module 빌드시에는 신경안써도됨
+    KBUILD_EXTMOD 변수(line 130-144참조)세팅되어있으면 이 라인은 통째로 날라감
+     *다른 line들도있는데 한눈에 파악가능함. 해당 영역은 너무 long line이라 따로 명시해둠!
+  line 1824
+    modules target rule 정의(with recipe)
+    prerequisites : modules_check modules_prepare
+    recipe : $(srctree)/scripts/Makefile.modpost 을 현재경로(=make modules를 실행한 경로)에서 수행한다.
+    *srctree (line 239-255 참조)
+  line 1827-1828
+    module_check target rule 정의
+    $(srctree)/scripts/modules-check.sh 스크립트를 실행한다.
+
+7-2. out of tree kernel load
+7-2-1. load방법
+  1) insmod / rmmod
+  2) modprobe *for remove using 'modprobe -r'
+  3) lsmod / modinfo
+
+7-2-2. load로직 흐름 분석
+  
+
+8단계 *목표 : 7단계 부족부분 확인
+  7-1-1.
+    kernel src tree가 정말 모두 필요한가?(헤더만 있으면 안되는가?) *$(top)/Documentation/kbuild/modules.rst 참조
+    module versioning이란? *$(top)/Documentation/kbuild/modules.rst 참조
+    module symbol이란? *$(top)/Documentation/kbuild/modules.rst 참조
+  7-2-1.
+    mod*(modprobe, modinfo)과 *mod(ex. insmod, rmmod, lsmod) 차이
+
+9단계 *목표 : hello.ko kernel module 구현하여 load(load하면 helloword띄우고, unload하면 byeword띄우고...하는 수준)
+Makefile생성은 $(top)/Documentation/kbuild/modules.rst 참조필요할듯.(section 3.)
+
+10단계 *목표 : 정리
+

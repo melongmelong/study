@@ -1,0 +1,172 @@
+목표 : /proc/diskstats의 io(ms)수치는 뭘 의미하는가요?  => 모든 r/w요청에 대해 커널이 블록레이어에 요청을해서 ~ 블록레이어가 completion을 인식한 시간 의 합이다.
+     *io(ms)이 길면 hdd 장애로 의심해도 될까? 를 알고싶음. => 애매하다.(중간path에서 느린지 안느린지 파악이안되면 확신은 어려워보이지만, 평시대비(or대체장비대비) 특별히 차이나는 게 없으나, 오래걸린다면 의심해도 되지않을까 싶다.)
+
+좀더 정확히 알려면...
+  커널 disk layer 처리 흐름.
+  인터럽트 처리 흐름.
+  device driver 처리 흐름.
+  
+/proc/diskstats의 경우, [kernel_src]/Documentation/admin-guide/iostats.rst 파일 참조
+
+cat /proc/diskstats kernel call trace
+             cat-3983    [001] .....   799.724059: diskstats_show <-seq_read_iter
+             cat-3983    [001] .....   799.724062: <stack trace>
+ => diskstats_show
+ => seq_read_iter
+ => proc_reg_read_iter
+ => new_sync_read
+ => vfs_read
+ => ksys_read
+ => __x64_sys_read
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+iowait수치 카운팅(blk_account_io_done) kernel call trace (다른형태도 있지만 ctags가 i/o를 실제로 하고있으므로...)
+           ctags-4316    [002] ..s..  1749.342108: blk_account_io_done <-__blk_mq_end_request
+           ctags-4316    [002] ..s..  1749.342117: <stack trace>
+ => blk_account_io_done
+ => __blk_mq_end_request
+ => scsi_end_request
+ => scsi_io_completion
+ => scsi_finish_command
+ => scsi_complete
+ => blk_complete_reqs
+ => blk_done_softirq
+ => __do_softirq
+ => irq_exit_rcu
+ => sysvec_call_function_single
+ => asm_sysvec_call_function_single  
+
+start_time_ns 세팅함수 call trace
+     jbd2/sda5-8-202     [000] d.... 18053.604084: blk_rq_init <-blk_flush_complete_seq
+     jbd2/sda5-8-202     [000] d.... 18053.604098: <stack trace>
+ => blk_rq_init
+ => blk_flush_complete_seq
+ => blk_insert_flush
+ => blk_mq_submit_bio
+ => __submit_bio
+ => submit_bio_noacct
+ => submit_bio
+ => submit_bh_wbc
+ => submit_bh
+ => journal_submit_commit_record.part.0
+ => jbd2_journal_commit_transaction
+ => kjournald2
+ => kthread
+ => ret_from_fork
+
+정리
+  OS 디스크 처리 개요
+   요청흐름은 다음과 같음.
+    user-app -> system call layer -> VFS layer -> block layer -> i/o schued -> device driver -> disk(h/w)
+
+   응답흐름은 다음과 같음
+    disk(h/w) ->(int!) interrupt layer(softirq) -> ??? -> user-app
+
+  diskstats의 io(ms) : 모든 disk요청에 대한 '요청-block layer ~~ 응답-interrupt layer 시간'의 합으로 볼 수 있다.
+
+  어카운팅함수
+    *_start(io요청시점에 어카운팅), *_end/done(io요청 처리완료 시점 어카운팅) 세트로 구성되어있음
+    *_start는 주로 io갯수, 요청sector수, inflight(늘림)를 업데이트
+    *_end는 io_tick, io시간(nsecs), inflight(줄임)를 업데이트
+
+    bio_start_io_acct
+    bio_end_io_acct_remapped
+
+    disk_start_io_acct
+    disk_end_io_acct
+
+    blk_account_io_start
+    blk_account_io_done
+
+
+  iostats에서
+    tps : 초당 성공r/w ops갯수(이전스냅샷 대비)보면 됨
+===================================================================================================
+목표 : %iowait의 의미는 무엇일까요?  => 걍 진짜 참고용 정보이다... 
+     *iowait 비율이 높으면, 시스템이 느려지는 게 맞을까요?가 궁금 => 그렇지 않을 수도 있다...(근데 일반적으론 느려질 듯)
+
+/proc/stat 출력함수
+[kernel_src]/fs/proc/stat.c show_stat 참고
+kernel내부 통계시에는 ns(nano second)단위이지만, /proc/stat에 쓸때는 단위를 변환함!
+
+IOWAIT,IDLE accounting함수
+[kernel_src]/kernel/sched/cputime.c account_idle_time
+
+system time accounting calltrace(account_idle_time은 안찍혀서 포기)
+             cat-5574    [000] d.h.. 21385.524249: account_system_time <-account_process_tick
+    kworker/u6:0-5544    [001] d.h.. 21385.524250: account_system_time <-account_process_tick
+             cat-5574    [000] d.h.. 21385.524251: <stack trace>
+ => account_system_time
+ => account_process_tick
+ => update_process_times
+ => tick_sched_handle.isra.0
+ => tick_sched_timer
+ => __hrtimer_run_queues
+ => hrtimer_interrupt
+ => __sysvec_apic_timer_interrupt
+ => sysvec_apic_timer_interrupt
+ => asm_sysvec_apic_timer_interrupt
+ => _raw_spin_unlock_irqrestore
+ => tty_insert_flip_string_and_push_buffer
+ => pty_write
+ => do_output_char
+ => n_tty_write
+ => file_tty_write.isra.0
+ => tty_write
+ => new_sync_write
+ => vfs_write
+ => ksys_write
+ => __x64_sys_write
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+account_idle_tick call trace
+          <idle>-0       [000] dN... 16603.551666: account_idle_ticks <-tick_nohz_idle_exit
+          <idle>-0       [000] dN... 16603.551667: <stack trace>
+ => account_idle_ticks
+ => tick_nohz_idle_exit
+ => do_idle
+ => cpu_startup_entry
+ => rest_init
+ => arch_call_rest_init
+ => start_kernel
+ => x86_64_start_reservations
+ => x86_64_start_kernel
+ => secondary_startup_64_no_verify
+
+정리
+  타이머 인터럽트와 같은 이벤트 발생마다 cpu 통계를 업데이트함.
+  각 cpu마다 실행중인 task(0번 task(do_idle()수행하는...))와 runqueue 정보를 사용하여 적절한 cpu통계치를 업데이트한다.
+    ex. cpu가 실행중이었던 task가 user mode였냐(user수치업데이트) system모드였냐(system수치업데이트)
+    ex. 해당 cpu의 런큐에 io대기 태스크가 있냐업냐(있으면 iowait수치업데이트 없으면 idle수치업데이트) 
+  일반적으로 타이머 인터럽트 마다 업데이트되면 1-tick을 업데이트하나, 아닌경우(ex. idle) n개의 tick이 한번에 업데이트됨 *tick은 ns로 변환해서 사용함.!
+  kernel내부 통계시에는 ns(nano second)단위이지만,/proc/stat에 쓸때는 단위를 변환한다.
+  iowait의 경우, 
+    runqueue에 iowait인 태스크가 1개라도 있으면(=현재 실행중인 task가 iowait을 위해 다른 task를 스케줄링시도한다.(io_schedule(), __schedule()참조)), idle대신 iowait으로 accounting됨.
+    cpu에는 io를 wait한다는 개념은 없으므로(task가 wait를 한다는 개념), 이런 제약사항으로 구현이 되었음.
+    그러므로 misleading해선 안되고, 알아서 적당히 참고하는 것이 필요함........
+
+===============================================================
+참고용 자료
+TICK_NSEC : 1tick당 걸리는 시간(나노세컨드) *보정이 살짝 된 듯(이유는 정확히 모르겠음)
+gcc attribute
+  __attribute__ ((...)) 형태
+  각 attribute 이름은 '__'이 있을수도있고 없을수도 있음(macro정의같은것들과의 중복을 피하기 위함~) ex. noretrun, __noretrun__ 
+gcc typeof
+  expression의 type을 추출하는 넘
+  쓰는법은 sizeof와 비슷함.
+  __typeof__로도 쓸 수 있다.
+percpu 변수(ex. DECLARE_PERCPU*, DEFINE_PERCPU*, this_cpu*)
+  cpu별 변수를 할당하는 유틸
+  컴파일타임 선언의 경우, .data..percpu section에 ???한 정보가 할당되고 이후 해당 정보 기반으로 먼가를 하는 듯.
+  this_cpu* 매크로 등으로, 현재 cpu의 percpu variable을 접근할 수 있다.
+runqueue
+  얘도 percpu variable이다!
+  struct rq->curr : 현재 실행중인 task를 의미한다.
+do_idle
+  idle loop.
+  각 cpu가 스케줄링 할 task가 없으면 실행되는 function.
+  스케줄링 할 task가있을때까지 idle loop(뭐하는진 정확히모름ㅎ)를 돌다가, 필요시 다른 task로 스케줄링.
+  idle이 종료될 때, cpu idle time accounting(by tick_nohz_idle_exit())이 수행됨.
+
