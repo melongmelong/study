@@ -153,7 +153,7 @@ $(top)/src/arch/x86/Makefile.mk
 전체개요
   bootblock에 의해서 실행됨.(run_romstage() function)
   최초 entry는 romstage.elf의 _start symbol($(top)/src/arch/x86/assembly_entry.S)
-  실행환경들(gdt, stack, MTRR(qemu에서는 nop), cbmem(coreboot memory))을 초기세팅 하고,
+  실행환경들(gdt, stack, MTRR, cbmem(coreboot memory))을 초기세팅 하고,
   postcar stage를 load/run한다.
 
 $(top)/src/arch/x86/assembly_entry.S
@@ -218,7 +218,7 @@ line 68-82
     line 72-77
        특정 영역에 대해 MTRR 초기세팅을 수행한다.
       *MTRR, Memory Type Range Register. intel x86에서 제공해줌(MSR을 통해서)
-      *fill_postcar_frame은 nop임(QEMU환경에서는 MTRR은 무의미함)
+      *fill_postcar_frame은 nop임(QEMU환경에서는 MTRR은 무의미하다고 되어있음)
        *근데 qemu환경에서는 특별히 사용은 안 함.
     line 79
       postcar stage 수행(by run_postcar_phase())
@@ -228,7 +228,11 @@ line 68-82
 line 95-114
   load_postcar_cbfs
     postcar stage를 load(by rmodule_stage_load)
-    *finalize_load, stage_cache_add는 현재 config에서는 nop. skip
+    rmodule parameter로 mtrr을 세팅한다.(by finalize_load) 
+      *Documentation/rmodules.md module_parameters 참조
+        rmodule(ex. postcar)의 modules_parameters section에 변수를 정의하면,
+        rmodule loader(ex. romstage)에서 해당 section에 정의된 변수로 파라미터를 전달 *src/lib/rmodule.c rmodule_parameters keyword참조
+    *finalize_load, stage_cache_add는 현재 config에서는(rmodule parameter전달제외) nop. skip...
 
 line 158-187
   run_postcar_phase

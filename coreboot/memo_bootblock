@@ -804,7 +804,7 @@ $(top)/src/lib/bootblock.c
 
   수정내역
   수정1. Makefile에 'ctags' 타겟 추가
-    status : in review
+    status : merged!
     gerrit : https://review.coreboot.org/c/coreboot/+/85936
     local branch : feature/Makefile    
 

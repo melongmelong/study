@@ -1,4 +1,4 @@
-next : 8단계 ㄱㄱ
+next : 완료
        *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
        *make -p 도 분석에 도움됨!
        *x86 asm syntax는 gnu as document 참조!
@@ -71,6 +71,10 @@ line 324-325
 
 =====================2. postcar 로직================================
 전체개요
+  _start가 최초 entry  *$(top)/src/arch/x86/exit_car.S line 19참조
+  postcar 실행환경 세팅(gdt, stack, memory cache, MTRR, console, cbmem 등) 후,
+  ramstage를 실행한다.
+
 $(top)/src/arch/x86/exit_car.S
   line 7-18
     postcar에서 사용할 stack영역세팅. bss영역에 위치시킴.
@@ -96,7 +100,8 @@ $(top)/src/arch/x86/exit_car.S
       line 69-76
         %esp를 setup(위에서 셋업한 _estack 으로~)
       line 81
-        MTRR영역 세팅!
+        MTRR영역 세팅! (by postcar_mtrr_setup())
+        postcar_mtrr_setup() : romstage에서 세팅된 var_mtrr_context 값기반으로 MTRR을 세팅한다(MSR을 건드림.)
       line 84
         call postcar main function 
       line 86-87
@@ -138,10 +143,28 @@ $(top)/src/lib/prog_loaders.c
 
 8단계 - 7단계 부족분 보충
   clflush가 정확하게 뭘 하는 것이고, 왜 필요한 건 지 확인($(top)/src/arch/x86/exit_car.S clflush참조)
-    Intel 64 and IA-32 Architectures Software Developer's Manual, Volume 3 Chapter 11. 참조해야할듯...
+    clflush : operand로 주어진 memory의(linear address space) cache line(말그대로 메모리캐시)을 invalidate(=free space를 만들어줌)하는 x86 instruction.
+                만약 데이터가 modified되어있다면, flush전 write를 수행한다.
+              ex. 해당 캐시영역이 더이상 사용안해도되면 지워서 free space를 만들어주기 위한 목적.
+    *Intel 64 and IA-32 Architectures Software Developer's Manual, Volume 3 Chapter 11. 참조
   MTRR 기능 사용하는 거 맞는 지 확인 필요.(romstage분석시 의미없음으로 분석했는데, 확인필요함, $(top)/src/arch/x86/exit_car.S line 81참조)
+    결론은...뭔가 애매하다.(romstage에서 세팅한 값으로 postcar에서 MSR에 반영하더라.)
+    romstage의 fill_postcar_frame 주석에서는 nop임.
+    But romstage의 postcar_frame_add_mtrr의해 세팅된 MTRR정보를, postcar의 postcar_mtrr_setup에서 MSR에 세팅하기는 함...
     
 9단계(유용한 것을 할수있는 수준까지 파기) - postcar관련 이슈1개처리.
+  finalize_load() 에서 postcar에 rmodule parameter 세팅하는거 주석달기.(첨에 못알아봐서... 딴거는 할만한 마땅한 게 없음.)
+    status : in review
+    gerrit : https://review.coreboot.org/c/coreboot/+/86866
+    local branch : feature/postcar
 
 10단계(가르치기) - 내용정리
-
+  알게된것
+    postcar 빌드과정
+    postcar x86-32 with qemu환경의 주요로직
+    x86 architecture cache line control 기본 개요
+  코멘트
+    cr0 세팅($(top)/src/arch/x86/exit_car.S line 62-67) 리팩토링을 하고싶었는데, x86-64환경 테스트가 안되고 잘몰르기도해서, romstage->postcar 파라미터넘기는 코드라인 주석정도만 다는 선에서 끝나서 아쉽다.
+    늘 달았던 코멘트들이지만...
+    다른 코드들도 확인하고 영역을 좀 더 넓혀야겠다.
+    low level(x86, asm)지식은 중요하다. 좀 더 정진하자.(따로 시간내서 본다기보단 코드보면서 습득하고 실제 테스트해보고, 즉 실습 이 필요하다.)

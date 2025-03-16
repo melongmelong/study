@@ -1,4 +1,5 @@
-next : 7-1-2 ㄱㄱ (line 1827-1828 MODORDER prerequisites 분석 ㄱㄱ)
+next : 7-1-2 ㄱㄱ ($(top)/scripts/Makefile.modfinal 분석 ㄱㄱ $(top)/scripts/Makefile.modpost line139참조!)
+        *일단 1depth(지금 오브젝트 파일 하나있고, Makefile하나있는 수준으로 빌드어떻게 하는지 분석 ㄱㄱㄱㄱ)
         9단계전까지는 테스트머신내, /home/knw/Desktop/my_module 을 실습에 사용한다.(내용은 현단계에서 안중요함)
 *1-10단계학습법 적용
 *참고.
@@ -40,15 +41,29 @@ next : 7-1-2 ㄱㄱ (line 1827-1828 MODORDER prerequisites 분석 ㄱㄱ)
       ex) make -C [path/to/kernel/src] M=[path/to/module/src] INSTALL_MOD_DIR=knwtest modules_install
         => /lib/modules/$(KERNELRELEASE)/knwtest에 설치됨.
   *커널빌드 시, 'O=' option으로 kernel output위치 변경했으면, 'O=' option필수!
-
   *$(top)/Documentation/kbuild/modules.rst 참조
 
 7-1-2. build로직 흐름 분석
-전체흐름
+전체흐름 
+  make M=[path/to/module/src] modules시의 흐름 *간단하게 보여지기 위해 target: prerequisites만 기술함
+    prepare: *line 1794-1795
+    $(build-dirs): prepare *line 1905
+      build-dirs는 external module이 존재하는 위치임(대강 make M= 값이라고 보면 됨. line 1781참조)
+    descend: $(build-dirs) *line 1904
+    $(MODORDER): descend *line 1782
+      MODORDER변수값은 line 1156-1157 참조
+    modules_check: $(MODORDER) *line 1828
+    modules: modules_check *line 1824
+    *$(top)/scripts/Makefile.modpost 첫라인 주석도 참조!
 
+  make M=[path/to/module/src] modules_install시의 흐름
+    modules_install: *line 1835참조. 
+    별다른 흐름은 없고 이 rule만 실행한다!
+  
 $(top)/Makefile
+  make modules,modules_install target rule과 그에대한 관련변수, prerequisites들이 기술되어있음.
   line 130-144
-    KBUILD_MOD var 세팅
+    KBUILD_EXTMOD var 세팅
     make 'M=' 변수값으로 세팅된다!
   line 167-169
     KBUILD_OUTPUT variable 세팅
@@ -70,18 +85,147 @@ $(top)/Makefile
     abs_srctree가 abs_objtree보다 한단계 상위면, 상위(..)으로 세팅
      그외는 abs_srctree로 세팅
     *abs_srctree(line 192참조), abs_objtree(line 171-176참조)
-  line 1160-1768
+  line 666
+    KBUILD_MODULES, KBUILD_BUILTIN 변수 export.
+    $(top)/scripts/Makefile.build에서사용됨.
+    external module빌드시에는 KBUILD_BUILTIN은 empty, KBUILD_MODULES는 1임(line 1777-1779참조)
+    KBUILD_MODULES : module빌드시 1(ex. make modules 또는 kernel자체 빌드(make) 또는 external module 빌드(make M=) 즉, 커널모듈 빌드해야하면 1 안하면 empty.(모듈만하든 커널전체를하든 어쨋든 모듈은 빌드함))
+    KBUILD_BUILTIN : module을 빌드하면 empty(ex. make modules시 모듈만 빌드하겠다는 의미)
+  line 1156-1157
+    extmod_prefix와 MODORDER변수 세팅
+    extmod_prefix : $(KBUILD_EXTMOD)/ 로 세팅됨 *line 130-144참조
+    MODORDER : $(extmod_prefix)/modues.order로 세팅됨.
+  //line 1160-1768
     external module 빌드시에는 신경안써도됨
     KBUILD_EXTMOD 변수(line 130-144참조)세팅되어있으면 이 라인은 통째로 날라감
      *다른 line들도있는데 한눈에 파악가능함. 해당 영역은 너무 long line이라 따로 명시해둠!
+  line 1781
+    build-dirs 세팅
+    KBUILD_EXTMOD 변수로 세팅함(line 130-144참조)
+  line 1782-1783
+    $(MODORDER) target rule 정의
+    prerequisites : descend
+  line 1794-1795
+    prepare target rule
+    외부모듈시에는 특별한 역할은 없음(어보임)
+    *목적은 실제 descending하면서 make실행 전 실행되어야 할 target rule을 정의가 목적. line 1248의 주석참조. 
   line 1824
     modules target rule 정의(with recipe)
     prerequisites : modules_check modules_prepare
     recipe : $(srctree)/scripts/Makefile.modpost 을 현재경로(=make modules를 실행한 경로)에서 수행한다.
-    *srctree (line 239-255 참조)
+       하는일은 $(top)/scripts/Makefile.modpost 참조(아래분석내용)
+       + 간접적으로 실제 ko파일을 생성한다.!($(top)/scripts/Makefile.modpost에 의해 $(top)/scripts/Makefile.modfinal가 수행됨)
+      *srctree변수 (line 239-255 참조)
   line 1827-1828
     module_check target rule 정의
-    $(srctree)/scripts/modules-check.sh 스크립트를 실행한다.
+    prerequisites : $(MODORDER) *line 1156-1157참조
+    recipe : $(srctree)/scripts/modules-check.sh 스크립트를 실행한다.
+      modules.order파일에 중복된 모듈(.ko)가 존재하는 지 확인함. 존재하면 에러 리턴.
+  line 1835
+    modules_install target rule정의
+    prerequisites는 없음
+    recipe만 있음
+      $(top)/scripts/Makefile.modinst 을 실행
+      *signing필요하면 depmod.sh도 실행. 일단 skip
+  //line 1858-1896
+    단일 파일 빌드(ex. make foo/bar/baz.c)시의 룰. 일단 skip
+  line 1904
+    descend target 룰
+    prerequisites : $(build-dirs) *line 1781참조
+  line 1905
+    $(build-dirs) target 룰 *line 1781참조
+    prerequisites : prepare  *line 1794-1795참조
+    recipe
+      실제로 external module을 빌드함!
+      *recipe에서 single-build 변수는 지금은 skip 0으로보면 됨. *line 1858-1895참조!
+  참고
+    make $(build)= ~~에서, build 변수는 scripts/Kbuild.include에 정의되어있음 *$(top)/Makefile에서 include함.
+      'build := -f $(srctree)/scripts/Makefile.build obj'
+
+$(top)/scripts/Makefile.build
+  external module의 소스파일을 컴파일함. 링크는 안함. 즉 .ko는 안만들어짐.
+  만들어지는 파일은 다음과 같음(더있지만 일단 분석했던 것들만)
+    *.o : 컴파일된 오브젝트파일.  *line 286-290 참조
+    *.mod : 컴파일된 오브젝트 파일 목록. *line 313-320 참조
+    modules.order : .ko 파일 목록. *line 446-459참조
+  line 6
+    src 세팅 수행
+    인자로넘어몬 obj로 세팅
+    obj는 make M= 으로 넘어온 값으로 보면 된다!
+  line 41-44
+    external module directory에 존재하는 Kbuild 또는 Makefile을 include 함.
+  line 89-97
+    targets-for-modules 값 세팅
+    obj-m변수에 .o확장자를 .mod로변환한한 값이 세팅됨.*obj-m변수는 external module directory에서 세팅된다. line 41-44참조
+      ex. obj-m:=my_module.o이면, my_modules.mo 가 세팅
+    $(obj)/modules.order도 추가.
+  line 269-277
+    rule_cc_o_c macro
+    .c -> .o 빌드할때 사용될 recipe. (line 286-290참조)
+    .c -> .o빌드뿐아니라 src check, dependency관련 작업 등등을 수행(이것들도 일단 skip)
+  line 286-290
+    .c -> .o build rule
+    prerequisites : .c $(recordmcount_source) $(objtool_dep)
+      recordmcount_source : ftrace안쓰면(CONFIG_FTRACE_MCOUNT_USE_RECORDMCOUNT) empty 쓸때만 세팅됨. 일단 skip()
+      objtool_dep : stack validation(CONFIG_STACK_VALIDATION) 관련. 미사용하면 empty. 일단 skip
+    recipe : rule_cc_o_c 매크로를 실행한다! 즉, .c -> .o로 빌드한다. (line 269-277 참조)
+  line 313-320
+    %.mod target rule
+    prerequisites : %$(mod-prelink-ext).o
+      mod-prelink-ext는 empty이므로, 결국 %.o 가 된다!
+      *mod-prelink-ext는 LTO를 사용(LLVM관련일듯)할때만 세팅됨으로 확인 $(top)/scripts/Makefile.lib 변수/관련주석참조. 일단 skip.
+    recipe : cmd_mod 수행
+      .mod파일(단순하게 빌드된 파일 목록으로 보면 될 듯) 생성
+  line 446-459
+    modules.order target rule
+    prerequisites : $(obj-m) *line 41-44참조
+    recipe : cmd_modules_order 수행. line 454-456참조
+      modules.order 생성하는 cmd임.
+      obj-m변수값 각각에 대해, modules.order을 제외하고 .o -> .ko로 치환하여 파일에 기록한다고 보면되겠다.
+  line 510-545    
+    //line 510-537은 skip(single-build(ex. make foo/bar/zar.c)일때만 사용되므로)
+    line 540-543
+      __build target rule
+      prerequisites : $(targets-for-modules) $(subdir-ym) $(always-y)
+        *KBUILD_BUILTIN(empty로세팅), KBUILD_MODULES(1로세팅)는 $(top)/Makefile에 의해 export됨($(top)/Makefile line 666 참조)
+        targets-for-modules *line 89-97참조
+        subdir-ym, always-y : skip. 파일 하나로 되어있는 빌드시에는 사용안하는 듯. 추후 확인...
+          *Documentation/kbuild/makefiles.rst보는것도 도움될듯(subdir-y, always-y)
+        
+$(top)/scripts/Makefile.modpost
+  modpost를 실행하여 $(KBUILD_EXTMOD)/Module.symvers 생성한다.
+  *.mod.c도 생성하는 듯.(by modpost command에의해 *$(top)/scripts/mod/modpost.c line 2549-2550참조)
+  line 47-51
+    MODPOST정의
+    $(top)/scripts/mod/modpost tool을 실행하는 것이 주요 골자임.
+    이후 line들에서도 옵션에 따라 다양한 MODPOST option들을 추가한다.
+  //line 53-81은 skip
+    external module빌드시에는 상관없음.
+  line 85-87
+    obj, src변수세팅
+    KBUILD_EXTMOD(make M= 값)값으로 세팅($(top)/Makefile로부터(line 130-144참조) export됨!)
+  line 89-90
+    external module directory(=KBUILD_EXTMOD)로부터 Kbuild or Makefile include
+  line 95-96
+    input-symdump, output-symdump 변수 정의
+    input-symdump : MODPOST input이 될 파일(Module.symvers) *kernel symbol들이라고 보면 될 듯
+    output-symdump : MODPOST output이 될 파일($(KBUILD_EXTMOD)/Module.symvers) *external module symbol들이라고 보면 될 듯
+  line 120
+    modules변수세팅
+    cat modules.order 출력으로 세팅함
+    *MODORDER는 $(top)/Makefile로부터 export 됨
+  line 127-133
+    $(output-symdump) target rule 
+    prerequisites : $(MODORDER) $(input-symdump) *mod-prelink-ext는 skip(LLVM관련해서일 듯해서 스킵~) 
+    recipe : modpost를 수행한다.(MODPOST변수참조)
+      *modpost : external module로부터 symbol정보를 추출하는 kernel제공 tool임.($(top)/Documentation/kbuild/modules.rst 6.2참조)
+      *line 47-51참조(MODPOST변수정의)
+  line 137-140
+    __modpost target rule(recipe가 기술된 target rule!, 다른line에는 prerequisites만 기술되어있다.)
+    prerequisites : 
+    recipe : $(MAKE) -f $(srctree)/scripts/Makefile.modfinal 를 수행
+      ko파일을 빌드한다.!
+      *KBUILD_MODPOST_NOFINAL은 신경안써도 됨(필요할때 수동으로 1로세팅해서 사용, 일반적으로 빌드할때는 사용하지않음. empty값)
 
 7-2. out of tree kernel load
 7-2-1. load방법
@@ -95,8 +239,12 @@ $(top)/Makefile
 8단계 *목표 : 7단계 부족부분 확인
   7-1-1.
     kernel src tree가 정말 모두 필요한가?(헤더만 있으면 안되는가?) *$(top)/Documentation/kbuild/modules.rst 참조
+    module signing이란?(modules_install target rule 참조)
     module versioning이란? *$(top)/Documentation/kbuild/modules.rst 참조
     module symbol이란? *$(top)/Documentation/kbuild/modules.rst 참조
+    modpost란 정확히 뭔가? *$(top)/scripts/Makefile.modpost 참조
+    rule_cc_o_c 정확히 하는 역할? *$(top)/scripts/Makefile.build 참조
+
   7-2-1.
     mod*(modprobe, modinfo)과 *mod(ex. insmod, rmmod, lsmod) 차이
 
