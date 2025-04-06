@@ -439,7 +439,7 @@ line 43-55
 line 107-114
   초기 idt, gdt를 세팅함.
   idt의 경우, 방어코드느낌 으로 보여지긴함.(nullidt를 load함으로써, unexpected한 비정상동작을 막기 위함인듯... 주석도 참고)
-  gdt는 $(top)/src/arch/x86/gdt_init.S에 정의되어있음.
+  gdt는 $(top)/src/arch/x86/gdt_init.S에 정의되어있음. (0-4GB의 code, data flat segment 를 정의한다.)
   *참고. Intel 64 and IA-32 Architectures Software Developer's Manual, Volume 3, 9.10참조
 
 line 128-132

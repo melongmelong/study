@@ -39,7 +39,7 @@ milestone1. romstage의 빌드과정과 주요동작 이해.
 빌드과정 core로직은 bootblock분석내용과 동일. 여기서는 romstage관련된 부분만 확인함.
 전체개요  *bootblock과 큰 흐름은 동일
   toolchain세팅(by toolchain.mk)
-  (romstage-y, romstage-src, romstage-obj, romstage-*-opts, romstage-*-deps 변수세팅)
+  romstage-y, romstage-src, romstage-obj, romstage-*-opts, romstage-*-deps 변수세팅
   romstage 바이너리 생성 절차. (make variable prebuilt-file 에 의해서 생성된다. *$(top)/Makefile.mk line 954-)
     romstage-objs -> romstage.debug -> romstage.elf
     링크시 사용되는 linker script는 다음과 같음.($(top)/Makefile.mk line 257-264 참조)

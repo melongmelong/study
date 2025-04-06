@@ -1,0 +1,220 @@
+next : 완료
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - ramstage 빌드과정 / 주요 흐름코드 파악
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+  이번에는 coreboot최초 stage에 대한 빌드과정과 주요흐름파악
+
+학습목표
+  ramstage 빌드과정 이해
+  ramstage 주요동작 이해
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+
+학습계획
+  milestone1. ramstage의 빌드과정과 주요동작 이해.
+  
+=======================
+milestone1. ramstage의 빌드과정과 주요동작 이해.
+
+7단계(대충 사용 수준까지) - ramstage 빌드과정및 주요동작에 대한 큰 흐름 이해
+코드분석은 coreboot 24.05 version기준!
+=====================1. ramstage 빌드과정==============================
+빌드과정 core로직은 bootblock분석내용과 동일. 여기서는 ramstage관련 부분만 확인함.
+전체개요 *bootblock, romstage, postcar 와 거의 비슷. 참조 ㄱㄱ
+  toolchain 세팅(by $(top)/toolchain.mk)
+  ramstage-y, ramstage-src, ramstage-obj, ramstage-*-opts, ramstage-*-deps 변수세팅
+  ramstage 바이너리 생성 절차(make variable prebuilt-file 에 의해서 생성된다. *$(top)/Makefile.mk line 954-)
+    ramstage-objs -> ramstage.o(중간산출물, build dir엔 없다) -> ramstage.debug -> ramstage.debug.rmod -> ramstage.elf
+  이후, coreboot.pre make 타겟 생성시, prebuild-files($(top)/Makefile.mk line 1006-)에 의해서 ramstage가 추가됨.
+
+$(top)/src/arch/x86/Makefile.mk
+line 315-316
+  ramstage.elf 빌드 rule
+  ramstage.debug.rmod -> ramstage.elf 빌드 수행
+  *별건없고 ramstage.debug.rmod를 그냥 ramstage.elf로 cp를 수행(이름만 바꾼다.)
+
+line 318-320
+  ramstage.debug 빌드 rule
+  ramstage.o, ramstage.ld -> ramstage.debug생성
+  input object들을 링커를 통해서 링크함
+
+line 322-324
+  ramstage.o 빌드 rule
+  ramstage-objs, ramstage-libs -> ramstage.o를 생성한다.
+  input object들을 링커를 통해서 링크함
+
+$(top)/src/lib/Makefile.mk
+line 324-325
+  ramstage.debug.rmod 빌드 rule  
+  ramstage.debug -> ramsgae.debug.rmod를 생성
+  RMODTOOL로 생성함
+  
+=====================2. ramstage 로직================================
+전체개요
+  _start 에서 시작. 실행환경(segment, stack, etc)을 초기화한다. *$(top)/src/arch/x86/c_start.S line 19-125 참조
+  coreboot ramstage main() 실행 *$(top)/src/lib/hardwaremain.c 424-468
+  boot state machine 을 실행 *$(top)/src/lib/hardwaremain.c line 317-373
+  이후 때가되면, payload를 load하게 됨.(by ps_payload_boot)
+
+$(top)/src/arch/x86/c_start.S
+line 8-17
+  .bss section에 stack영역을 세팅함.(_stack, _estack symbol)
+line 19-125
+  _start symbol
+    ramstage 시작코드.
+    interrupt off
+    segment setting
+    stack(esp) setting
+    call main()
+    *instruction이 모두 relocation되어, objdump 매칭으로는 확인이 어려워, c_start.S시작부분에 특정 signatrue넣고(mov $0x12345678, %eax), ramstage 로 jump하는 코드에 메모리값 디버그로그 찍어서 확인했음.!
+    line 27-49
+      interrupt disable(line 27)
+      segment 세팅(line 28-41)
+      postcode출력(line 47)
+      DF flag clear(line 49)
+    line 51-109
+      line 51-60
+         스택(esp)를 세팅.(line 8-17에서 확보한 영역을 사용함.(_estack symbol))
+        postcar영역에서 넘어온 cbmem영역도 _cbmem_top_ptr 영역에 write한다.
+      line 62-109
+        stack영역에 dummy값을 write하고(line 80-90)
+        esp를 align한다.(line 94)
+        postcode출력(line 102)
+    line 119
+      call main() *$(top)/src/lib/hardwaremain.c line 424-
+
+line 152-240
+  ramstage에서 사용할 gdt를 정의함.
+  이전단계들에서 쓰던 gdt와는 다름!
+
+$(top)/src/lib/hardwaremain.c
+line 72-85
+  struct boot_staet boot_states 정의
+  state들(struct boot_state)을 정의한다.
+    state id와, state callback, state post code를 정의한다.
+
+line 210-246
+  bs_sample_time()
+    하나의 state의 각 수행시간(entry, run, exit)을 console에 출력.
+    *time 관련 detail은 skip...
+
+line 308-315
+  strcut state_tracker current_phase 정의
+  쉽게말해, 현재 state(ex. BS_PRE_DEVICE) / phase(ex. BS_ON_ENTRY / BS_ON_EXIT)를 정의
+  최초 상태는 BS_PRE_DEVICE / BS_ON_ENTRY
+
+line 317-373
+  bs_walk_state_machine()
+    boot state 에 대한 state machine을 수행한다.
+     큰 시퀀스는...
+      현재 boot state에 대한 BS_ON_ENTRY phase의 callback
+      현재 boot state의 state callback
+      현재 boot state에 대한 BS_ON_EXIT phase의 callback
+    line 320-323
+       현재 boot state(struct boot_state) 세팅
+    line 335-339
+      현재 boot state에 대한 BS_ON_ENTRY phase의 callback을 수행
+     timestamp도 같이 처리
+    line 340-349
+      현재 boot state의 state callback을 수행
+    line 355-359
+      현재 boot state에 대한 BS_ON_EXIT phase의 callback을 수행
+    line 365-371
+      next boot state를 세팅(line 365-367)
+       현재 boot state는 완료표기(line 371)
+    
+    *bs_run_timers는 현재 config off이므로 skip.(대충은... timer callback 실행하는 구조로 확인됨)
+line 375-391
+  boot_state_sched_callback()
+    boot state(struct boot_state) phase(BS_ON_ENTRY, BS_ON_EXIT) callback을 등록한다.
+    참고. struct boot_state에는 linked list형태로 callback들이 여러개 등록됨.
+        state진입전(BS_ON_ENTRY), state완료후(BS_ON_EXIT) 각각 callback list를 가지고있다.(struct boot_state->phase[])
+      
+line 393-401
+  boot_state_sched_on_entry/boot_state_sched_on_exit()
+    boot state(struct boot_state)에 phase(BS_ON_ENTRY, BS_ON_EXIT) callback을 등록한다.(by boot_state_sched_callback)
+    boot_state_sched_on_entry : state 진입 전 callback등록
+    boot_state_sched_on_exit : state 완료 후 callback등록
+
+line 409-422
+  boot_state_schedule_static_entries()
+    _bs_init_begin에 정의된 struct boot_state_init_entry에 대해*$(top)/src/include/bootstate.h BOOT_STATE_INIT_ENTRY참조
+    boot state별 phase(BS_ON_ENTRY, BS_ON_EXIT) callback function을 등록한다.
+
+line 424-468
+  main()
+    line 438-441
+      timer를 초기화.(by init_timer 먼지는 정확하게 모르겟슴, timer h/w 컨트롤 코드가 많아서 skip)
+    line 445-446
+      console초기화(by console_init)
+    line 448
+      exception초기화(by exception_init)
+    line 450-454
+      cbmem초기화(by cbmem_initialize)
+    line 456
+      timestamp찍음
+    line 457
+      post_code출력
+    line 459-460
+      저전력상태->resume 되는 중인지를 확인. *정확한건 skip...
+    line 463-465
+      boot state별 callback을 등록(by boot_state_schedule_static_entries)
+      boot state machine 수행(by bs_walk_state_machine)
+      
+$(top)/src/include/bootstate.h
+line 182-195
+  BOOT_STATE_INIT_ENTRY macro
+  struct boot_state_init_entry 를 정의한다.
+  정의된 struct boot_state_init_entry의 주소를 .bs_init section에도 정의한다. *ramstage인 경우만.
+    ramstage인 경우linker script에의해 .bs_init section이 output에 포함되며, _bs_init_begin을 통해 접근가능하다.
+    $(top)/build/ramstage/lib/program.ld line 54-59참조
+
+8단계 - 7단계 부족분 보충
+  (v)gdt왜 다시 세팅해야하는 지?
+    src/arch/x86/c_start.S, gdt정의부분에 comment로 설명되어있음.(좀 더 복잡한 stuff들 처리를 위함인데 정확하게는 잘 모르겠다.)
+  (v)gdt 세그먼트별 의미(주소영역 / 권한 등)
+    0~4GB를 접근하는 flag segment들을 만듬.
+    여러개 만드는데 젤 중요한건 Type등 일부 flag들만 다르다고 보면된다.
+    dummy descriptor의 역할은 잘 모르겠다. skip...
+  (v)cbmem parameter(_cbmem_top_ptr)의 역할?
+    coreboot memory address를 전달함.
+     최초 romstage에서 address를 가져오고(by cbmem_top), 
+     이후단계들에서는 stage argument로 계속 전달되어진다.(cascaded)
+  (v)cbmem왜 다시 세팅해야하는 지?
+    cbmem영역자체는 romstage에서 최초로 만들어지지만,
+    이미지자체가 달라 정보를 다시 세팅해줘야 한다... 말고는 현재 특별한 이유는 모르겠음.
+    더 상세한 내용은 잘 모르겠다... 이건 추후에 ㄱㄱ..
+    
+9단계(유용한 것을 할수있는 수준까지 파기) - ramstage 이슈1개처리.
+  $(top)/src/arch/x86/c_start.S line 104-109 duplicated 코드인 것 같은데, 제거해보기 ㄱㄱ
+    status : in review
+    gerrit : https://review.coreboot.org/c/coreboot/+/87181
+    local branch : feature/ramstage
+
+10단계(가르치기) - 내용정리
+  알게된것
+    ramstage 빌드과정
+    ramstage x86-32 with qemu환경의 주요로직. 특히 state machine 의 구현 in C를 볼 수 있었다. 알고있으면 도움 될 듯.
+  코멘트
+    늘 달았던 코멘트들이지만...
+    다른 코드들도 확인하고 영역을 좀 더 넓혀야겠다.
+    low level(x86, asm)지식은 중요하다. 좀 더 정진하자.(따로 시간내서 본다기보단 코드보면서 습득하고 실제 테스트해보고, 즉 실습 이 필요하다.)
+    + 큰 흐름로직은 다 봤으니, 다음 목표를 잘 정해서 계속해서 공부해나가자.
+      ex. cbfs, rmodule, cbmem, ramstage 각 state별 로직(ex. hw인식 등)
