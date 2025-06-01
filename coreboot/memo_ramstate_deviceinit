@@ -1,0 +1,798 @@
+next : 완료
+       *debuglog 보는게 좀 더 직관적이긴 함...
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - ramstage의 device init 로직 주요흐름 파악(bs_dev* function) 
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+
+학습목표
+  coreboot ramstage의 device init 로직 큰 흐름과 주요 dats structures 파악
+  hw 초기화 개요(ex. I/O port에 write한다, PCI매핑을 한다 수준?) 파악
+  초기화되는 hw들 대상확인
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+
+학습계획
+  milestone1. 
+  
+=======================
+milestone1. 
+
+7단계(대충 사용 수준까지) - ramstage device init(bs_dev* 함수) 주요로직 파악 
+코드분석은 coreboot 24.05 version기준!
+$(top)/Makefile.mk
+line 36
+  MAINBOARDDIR 변수 정의
+  qemu테스트환경에서는 CONFIG_MAINBOARD_DIR=emulation/qemu-i440fx로 세팅됨.
+
+line 681-698
+  DEVICETREE 관련변수 및 SCONIFG_OPTIONS 변수를 정의
+  주요변수
+    DEVICETREE_FILE
+     qemu환경에서는 'src/mainboard/emulation/qemu-i440fx/devicetree.cb'로 세팅됨
+    OVERRIDE_DEVICETREE_FILE *현재 conf에서는 빈값
+    CHIPSET_DEVICETREE_FILE *현재 conf에서는 빈값
+    DEVICETREE_STATIC_C
+      환경에따른 적절한 static.c로 세팅.(ex. $(top)/build/mainboard/emulation/qemu-i440fx/static.c)
+    SCONFIG_OPTIONS
+      sconfig실행시 사용할 옵션세팅.
+    
+line 710-713
+  DEVICETREE_STATIC_C buile rule.
+  prerequisites
+    $(DEVICETREE_FILE) *$(top)/Makefile.mk line 681-698참조
+    $(objutil)/sconfig/sconfig : static.c파일을 생성하는 coreboot utility.
+    *현재config에서 나머지는 기능 off이므로 해당없음.
+  target
+    $(top)/build/mainboard/emulation/qemu-i440fx/static.c *현재 config 기준
+  recipe
+    sconfig util(coreboot)을 실행. in/output은 다음과같다.
+    devicetree.cb -> (sconfig) -> static.c, static.h 등... devicetree파싱해서 소스코드들을 생성한다.
+
+$(top)/src/lib/hardwaremain.c
+line 89-92
+  bs_pre_device()
+  nop
+
+line 94-102
+  bs_dev_init_chips()
+  device를 초기화한다.(by dev_initialize_chips)
+  현재 qemu config기준으로는 chip_ops->init == NULL이므로, 특별히 실행되는 건 없다.(postcode세팅이랑 initialized 세팅정도만 함)
+  *$(top)/build/mainboard/emulation/qemu-i440fx/static.c 분석내용 참조
+
+line 104-110
+  bs_dev_enumerate()
+  device enable및 bus scan을 한다.
+  bus scan시 새로운 struct device가 있으면 devicetree에 추가된다.
+  *주석참조.
+  line 451-453
+    device정보를 출력
+  line 455-456
+    device를 enable함(struct device->chip_ops->enable_dev)
+  line 458-462
+    device를 scan함(by scan_bus)
+
+line 112-120
+  bs_dev_resources()
+  device의 리소스를 할당한다.(by dev_configure)
+
+line 122-130
+  bs_dev_enable()
+  device의 리소스를 enable한다.(by dev_enable)
+
+line 132-140
+  bs_dev_init()
+  device를 초기화한다.(by dev_initialize)
+
+line 142-148
+  bs_post_device()
+  device에 대해 finalize작업을 수행한다.(by dev_finalize)
+  
+$(top)/src/device/device.c
+line 29-49
+  dev_initialize_chips()
+  등록되어있는 모든 struct device에(by all_devices) 대해서 초기화작업을 수행.
+  line 39-47
+    등록되어있는 모든 struct device에 대해서 초기화한다.(struct device->init()을 수행)
+
+line 85-117
+  __alloc_dev
+  struct device를 allocation한다.
+  struct device의 아래 필드를 세팅한다.
+    path = 인자로넘어온값
+    enabled = 1,
+    upstream : parent
+    sibling : 만약, parent의 child가 없다면 parent->children에 세팅됨.
+   시스템 전체 device 리스트에도 등록한다.(by last_dev)
+
+line 119-126
+  struct device를 allocation한다. (by __alloc_dev)
+
+line 181-214
+  read_resources()
+  BUS(struct bus)를 DFS로 traversal하면서 리소스정보를 read한다.(struct device->ops->read_resources)
+
+line 217-283
+  set_vga_bridge_bits()
+    VGA device를 찾아서 초기 세팅(struct device->command를 세팅 및 해당 VGA상위 bus의 struct bus->bridge_ctrl을 세팅)을 수행한다.
+    *실제로 PCI config resiter에 값을 write하진 않음. 위 구조체 변수에 값 세팅만수행함.
+    onboard VGA보다 plugin VGA를 우선순위로 가진다.(CONFIG_ONBOARD_VGA_IS_PRIMARY off인경우. on이면 onboard vga가 우선임)
+    우선순위가 제일 높은 vga는 vga_pri global변수에 세팅된다.
+    참고. PCI class는 PCI spec에 정의되어있음. 구글링하면 어떻게 나오긴 함. (공식적으로는 돈주고 찾아봐야함 ㅋ)
+      base class(16bits) / sub-class(16bits) 구성임
+      ex) 0x0300 => 0x03(base class : VGA class를 의미), 0x00(sub class : VGA controller를 의미)
+
+line 285-320
+  assign_resources()
+  device의 리소스를 assign한다.(by struct device->ops->set_resources)
+
+line 322-350
+  enable_resources()
+  DFS로 device를 순회하면서 리소스를 enable한다(by struct device->ops->enable_resources)
+
+line 368-408
+  scan_bus()
+  시스템에 존재하는 device를 scan한다.
+  line 388
+    post code 출력(by post_log_path)
+  line 390
+    stopwatch 초기화(by stopwatch_init)
+    scan에 걸린시간 측정을 위함
+  line 392-403
+    device scan을 수행한다.(by struct device->ops->scan_bus)
+  line 405
+     걸린시간 측정을 위해 stopwatct의 duration을 return(by stopwatch_duration_msec)
+
+line 410-419
+  scan_bridges()
+  children device에 대해 scan_bus()를 호출한다. 즉, bus하위에 붙어있는 children들에 대해 scan수행한다.
+
+line 467-511
+  dev_configure()
+  디바이스에 대한 리소스를 계산(by read/allocate_resources)하고 assign한다.(by assign_resources)
+  VGA device정보도 세팅한다.(by set_vga_bridge_bits)
+
+line 513-528
+  dev_enable()
+  디바이스에 대한 리소스를 enable(by enable_resources)
+
+line 539-562
+  init_dev()
+  struct devie를 init함.(by struct device->ops->init)
+
+line 564-577
+  init_link()
+  DFS로 순회하면서 struct device를 init함(by init_dev)
+
+line 579-599
+  dev_initialize()
+  struct device를 초기화한다.(by init_dev, init_link)
+
+line 601-619
+  final_dev()
+  struct device의 finalize를 수행한다(struct device->ops->final)
+
+line 621-631
+  final_link()
+  DFS로 순회하면서 struct device를 finalize함(by final_dev, final_link)
+
+line 632-649
+  dev_finalize()
+  struct device의 finalize를 수행한다.
+
+$(top)/src/include/post.h
+line 15-19
+  post_log_path()
+  현재 CONFIG에서는 nop.
+  device path 값을 CMOS에 write(by cmos_post_extra)
+
+line 21-25
+  post_log_clear()
+  현재 CONFIG에서는 nop.
+  대충은... CMOS에 write.(by cmos_post_extra. x86 i/o port address instrction(in/out)으로 write한다.)
+  
+$(top)/src/device/device_const.c
+line 11-12
+  strcut device all_devices 정의
+  dev_root 변수로 세팅된다.
+    QEMU환경에서는 $(top)/build/mainboard/emulation/qemu-i440fx/static.c 에 정의되어있다.
+    static.c는 빌드시 생성한다.($(top)/Makefile.mk line 710-713 참조)
+
+$(top)/src/device/device_util.c
+line 363-385
+  allocate_more_resources()
+  새로운 64개의 struct resource 리스트를 alloc한다.
+  할당된 리스스트는 free_resources 변수에 세팅된다.
+
+line 287-305
+  free_resource()
+  struct device->resource_list에서 하나의 struct resource를 remove한다.
+  제거된 struct resource는 시스템 free resource list(free_resources로 참조됨)에 추가된다.
+
+line 307-326
+  compact_resources()
+  struct device->resource_list에서 사용되어지지않는 struct resource들을 remove한다.(by revmoe_resource)
+
+line 328-346
+  probe_resource()
+  index에 해당하는 struct resource가 struct device->resource_list에 존재하는 지 체크한다.
+  있으면 해당 struct resource를 return.
+
+line 348-397
+  new_resource()
+  line 362-363
+    struct deivce->resource_list를 정리한다.(by compact_resources)
+  line 365-383
+    주어진 index의 struct resource 이미 존재하는지 체크한다.
+    없으면, 새로운 struct resource를 할당(free_resources로부터)받고,
+    struct device->resource_list에 add한다.
+  line 385-394
+    struct resource 초기값을 세팅한다.
+
+line 541-569
+  search_bus_resources()
+  bus에 붙어있는 모든 device의 리소스들에대해, 인자로 넘어온 search function을 수행한다.
+  search function이 pick_largest_resource라면, 
+    bus에 붙어있는 모든 device의 리소스들 중, 가장 큰(말그대로 size가 가장크다라고 보면 되겠음) 리소스를 가지는 device를 찾는다.
+
+line 648-678
+  resource_tree()
+  struct device를 DFS 순회하면서, 각 device의 resource정보(struct resource)를 출력한다.
+
+line 680-694
+  시스템의 모든 디바이스에 대한 resource정보를 출력한다.(by resource_tree)
+
+line 697-715
+  show_devs_tree()
+  모든 device(struct device)의 정보를 출력한다.
+  device tree를 DFS로 traversal하면서 출력함.
+
+line 735-746
+  show_all_devs()
+  모든 device(struct device)의 정보를 출력한다.
+
+$(top)/src/include/device/device.h
+struct device, struct bus모두 로지컬한 개념으로 보면 됨!. 즉 struct device간의 로지컬한 관계(ex. 해당 device하위에있냐)를 나타낸다.
+즉, devicetree의 'chip'정의는 신경안쓰고 'device'만 신경쓴다! *8단계 devicetree.cb 확인내용 참조
+
+line 78-90
+  struct bus
+  bus를의미
+  bus는 bus에붙어있는 device, 즉 children을 관리한다.
+  bus도 하나의 device로 간주함.
+   주요필드
+    struct device *dev : 해당 bus device를 의미
+    struct device *children : 해당 bus에 붙어있는 device들을 의미. (리스트형태이며, struct device->sibling 으로 관리 됨.)
+
+line 92-153
+  struct device
+  하나의 device를 의미(bus도 하나의 device로 본다!)
+  주요필드
+    struct bus *upstream : 해당 device가 붙어있는 상위bus를 나타내는 포인터. 상위 bus device를 의미함
+    struct bus *downstream : bus device인 경우, bus관리(ex. 하위 device들 접근)를 위한 포인터. bus 하위 device들을 관리하는 목적임.
+      *strct device_path->type == DEVICE_PATH_ROOT라면, upstream, downstream 같은값임.
+    struct device *sibling : 동일 bus상(=upstream필드가 동일하다)에 존재하는 device linked_list에 대한 포인터.
+    struct device *next : 시스템내의 모든 device의 linked-list에(all_devices) 대한 포인터
+    struct device_path path : device의 타입과 식별자. ex. PCI device라면, .type=DEVICE_PATH_PCI, .pci=PCI address(slot/function)를 나타냄.
+    struct resource resource_list : 해당 device의 resource들의 리스트(ex. PCI BAR)
+
+참고
+  child device
+    bus에 붙어있는 device를 의미.
+    struct bus->children(이것도 역시 struct device)으로 관리함.
+    
+  sibling device
+    동일 bus를 공유하는 device를 의미
+    struct device->sibling으로 관리함.(linked list로 연결)
+
+  bus device라면, struct device에 대응하는 struct bus가 존재하고, 같은 뉘앙스로 보면 되겠다.
+    코드레벨로는 struct device와 struct device->downstream이 개념적으로는 같은 장치이다...는 뉘앙스
+
+$(top)/build/mainboard/emulation/qemu-i440fx/static.c
+qemu-i440fx 시스템의 device tree를 정의
+device tree구성
+  dev_root *bus device임, upstream : dev_root_bus, downstream : dev_root_bus
+    ㄴ_dev_0 *upstream : dev_root_bus
+    ㄴ_dev_1 *bus device임, downstream : _dev_1_bus, upstream : dev_root_bus
+      ㄴ_dev_2 *upstream : _dev_1_bus
+      ㄴ_dev_3 *upstream : _dev_1_bus
+      ㄴ_dev_4 *upstream : _dev_1_bus
+      ㄴ_dev_5 *upstream : _dev_1_bus
+
+device callback
+  dev_root
+    chip_ops : mainboard_ops
+    ops : default_dev_ops_root
+  _dev_0
+    chip_ops : mainboard_emulation_qemu_i440fx_ops
+    ops : cpu_bus_ops (set by chip_ops->enable_dev)
+  _dev_1
+    chip_ops : mainboard_emulation_qemu_i440fx_ops
+    ops : pci_domain_ops (set by chip_ops->enable_dev)
+  _dev_2
+    chip_ops : mainboard_emulation_qemu_i440fx_ops
+    ops : nb_operations
+  _dev_3
+    chip_ops : southbridge_intel_i82371eb_ops
+    ops : NULL
+  _dev_4
+    chip_ops : southbridge_intel_i82371eb_ops
+    ops : NULL
+  _dev_5
+    chip_ops : southbridge_intel_i82371eb_ops
+    ops : NULL
+
+$(top)/src/device/root_device.c
+line 8-18
+  enable_static_device()
+  device를 enable한다. by struct device->chip_ops->enable_dev(), struct device->ops->enable()
+
+line 38-47
+  enable_static_devices()
+  children device를 enable한다. by enable_static_device
+
+line 73-93
+  scan_static_bus()
+  bus device의 child device를 enable(by enable_static_devices)
+  이후, bus device의 child device에 대해 scan을 수행(by scan_bridges, 결국 scan_bus가 호출됨.)
+
+$(top)/src/device/pci_device.c
+참고. PCI BAR 관련 로직은 https://wiki.osdev.org/PCI#Base_Address_Registers 보면 조금 도움될 듯함.
+참고. pci_moving_config*() 는, PCI BAR probing(ex. 얼만큼의 address space가 할돵되어야 하느냐)관련 된 것일 듯... 정확한건 다음에...
+
+line 542-546
+  pci_dev_read_resources()
+  PCI device의 BAR(Base Address Register) resource를 할당한다.
+  얘도 결국 타고들어가면 new_resource에 의해서 할당.
+
+line 555-584
+  pci_domain_read_resources()
+  struct device에 3개의 리소스를 할당한다.(by new_resource)
+
+line 591-609
+  pci_stroe_resource()
+  PCI configuration space에 resource정보를 write한다.
+
+line 611-651
+  pci_store_brdge_resource
+  PCI configuration space에 resource정보를 write한다.
+
+line 653-711
+  pci_set_resource()
+  PCI device에 리소스를 실제로 할당한다.(PCI configuration space에 값을 write함)
+  line 655-683
+    PCI device에 리소스할당작업이 필요한지 체크를 수행한다.(ex. MEM resource냐아니냐... 리소스 타입이 맞냐... 리소스 이미 세팅했냐... 등)
+  line 685-694
+    struct device->command 값을 각 리소스타입에 맞게 세팅한다.
+  line 696-697
+    struct reosurce->flags |= IORESOURCE_STORED(리소스를 PCI device에 할당했음 으로 표기한다.)
+  line 699-710
+    pci configuration spacee에 실제 리소스정보를 write한다.(by pci_store_resource / pci_store_bridge_resource)
+
+line 713-738
+  pci_dev_set_resources()
+  PCI device에 리소스를 할당한다.
+  line 718-719
+    PCI device에 리소스들을 할당한다.(by pci_set_resource)
+  line 721-722
+    children이있다면, children에도 동일하게 리소스할당을 수행한다.(by assign_resources)
+  line 724-737
+    PCI device의 timer, IQR, cache관련 설정을 수행한다.(by pci configuration space에 직접 설정을 write함)
+
+line 740-775
+  pci_dev_enable_resources()
+  PCI device의 feature 를 enable한다.(by PCI configuration space의 Command필드에 값을 write함.)
+  line 745-765
+    subsystem정보를 세팅. 자세한건 skip(PCI subsystem세팅이 필요한 특정케이스인 듯함, 예시로는 pci_dev_set_subsystem 참조. PCI configuration space의 SUBSYSTEM관련 필드에 값을 세팅함)
+  line 766-774
+    PCI configuration space의 command필드에 command정보를 write한다.
+    *PCI configuration space의 Command 필드 : PCI device의 feature에 대해 en/disable하는 필드임.
+
+line 1085-1145
+  set_pci_ops()
+  PCI device의 struct device->ops를 세팅한다.
+  driver가 있다면, 해당 driver의 ops를 사용하고, driver가 없다면 default ops를 사용한다.
+  line 1101-1117
+    pci_driver로부터 PCI device의 struct device->ops를 찾는다.
+    *_pci_drivers, _epci_drivers는 링커스크립트에 정의되어있음. $(top)/build/ramstage/lib/program.ld
+     __pci_driver 매크로를($(top)/src/include/device/pci.h 참조) 통해서 pci_driver를 정의할 수 있다.
+  line 1119-1144
+    default struct device->ops를 세팅한다.
+
+line 1147-1195
+  pci_scan_get_dev()
+  주어진 PCI버스와 주어진 devfn에 대해 이미 struct device가 존재하는 지 체크.
+  만약 존재한다면 struct device를 sibling list의 가장 마지막으로 위치를 이동한다.
+  line 1163-1172
+    pic devfn이 같은 struct device를 찾고,   
+    sibling list에서 해당 struct device를 제거함.
+  line 1174-1192
+    sibling list의 가장마지막위치로 위에서 제거된 struct device의 위치를 이동.
+  line 1194
+     해당 struct device를 return    
+
+line 1197-1309
+  pci_probe_dev()
+  PCI device를 probe한다.
+  해당하는 struct device를 할당/세팅(ex. struct device 일부필드들을 세팅)하고, 
+  enable(by struct device->ops->enable)한다.
+  line 1214-1236
+    struct device가 NULL(=시스템에 정보가 없었다(eg. devicetree등에없었음) + bus scan으로 새로 발견하였다.)인 경우,
+    struct deivce를 alloc한다.(by alloc_dev)
+  line 1237-1273
+    struct device가 있다.(=scan한 device가 시스템에 이미 정보가 있다.(eg. devicetree등에 이미 있었다.))
+    device를 enable한다. (by struct device->chip_ops->enable_dev)
+  line 1275-1301
+    PCI device정보를 읽어와서.(by pci_read*) struct device적절한 필드에 세팅한다.
+    struct device->ops를 세팅한다.(by set_pci_ops)
+    device를 enable한다.(by struct device->ops->enable)
+  참고.
+    PCI configuration space를 접근(ex. pci_read_config*)은 intel플랫폼에서는 아래 i/o port address를 사용한다.
+    0xcf8, 0xcfc
+    https://en.wikipedia.org/wiki/PCI_configuration_space 참조.
+
+line 1348-1386
+  pci_scan_hidden_device()
+  hidden device에 대해 enable(by, struct device->chip_ops->enable_dev, struct device->ops->enable) 수행.
+  hidden device존재이유는 해당 함수 주석 참조
+
+line 1418-1537
+  pci_scan_bus()
+  PCI bus를 scan한다.
+  line 1451-1485
+    해당 bus에 연결되어있는 모든 PCI device를 probe한다. (by pci_probe_dev)
+  line 1487-1522
+    잘못세팅된 PCI device가 존재하는지 체크한다.
+  line 1529
+    하위 PCI를 scan한다.(by scan_bridges)
+
+line 1663-1674
+  pci_host_bridge_scan_bus()
+  pci bus를 scan한다.(by pci_scan_bus)
+
+$(top)/src/mainboard/emulation/qemu-i440fx/northbridge.c
+line 45-162
+  cpu_pci_domain_read_resources
+  디바이스에 아래 리소스들을 할당한다. 리소스 할당은 결국엔 new_resource 함수를 호출하게된다.
+    시스템와이드한 i/o port resource, memory resource(by pci_domain_read_resources)
+    e820(존재한다면) ram, reserved resource
+    cmos(필요하다면) memory 정보
+    QEMU의 reserved i/o port resource
+    IOAPIC resource
+    LAPIC resource
+    etc...
+  *상세분석은 skip 근데 왜 해당 구성으로 address 할당하는지는 궁금하네요;;;
+  참고.
+    기본적으로 아래 function들은 결국엔 리소스할당하는 함수들임(by new_resource), 큰 차이는 각 리소스의 base,size,flags.
+      ram_from_to
+      ram_range
+      upper_ram_end
+      qemu_reserve_ports
+      mmio_from_to
+      reserved_ram_from_to
+
+line 256-259
+  cpu_bus_init()
+    cpu bus관련 초기화를 수행한다. 상세한건 skip
+
+$(top)/src/mainboard/emulation/qemu-i440fx/mainboard.c
+line 15-32
+  qemu_nb_init()
+    D0F0(intel host bridge device)관련 세팅
+    keyboard초기화(PS/2 인터페이스 키보드를 초기화함, 0x60,0x64 I/O port address(=i8042 controller)를 접근하여 세팅을 수행한다.)
+    PCI device의 interrupt line을 세팅한다. PCI device에도 write를 하고, interrupt trigerring 형태도 세팅한다(by ELCR1/2 I/O port address를 통해)
+    *상세한건 너무 h/w dedicated하므로 skip...
+
+line 34-42
+  qemu_nb_read_resources
+  PCI device의 resource(BAR)을 할당한다.(by pci_dev_read_resources)  
+
+$(top)src/device/resource_allocator_common.c
+line 13-42
+  pick_largest_resource()
+  현재까지 찾은 가장 큰 리소스(struct pick_largest_state)와 인자로넘어온 리소스(struct device, struct resource)를 비교하여,
+  인자로넘어온 리소스가 크다면, 해당 값으로 struct pock_largest_state->result_dev, result필드를 세팅한다.
+
+line 44-61
+  largest_resource
+  bus에 붙어있는 모든 디바이스의 리소스들중, 가장큰 리소스를 가지는 디바이스(struct device *)를 리턴한다.
+
+$(top)src/device/resource_allocator_v4.c
+line 99-198
+  update_bridge_resource()
+  하위 device들의 가장 큰 리소스 정보를 찾아서, 부모 resource(bridge_res변수) 에 세팅한다.
+
+line 205-236
+  compute_bridge_resources()
+  bridge device의 각 리소스에 대해서, 하위 device들의 리소스들중 가장 큰 리소스 정보로 세팅한다.(by update_bridge_resource)
+  리소스 type별(ex. IO / MEM)로 수행한다.
+  하위 device들은 DFS fashion으로 탐색한다.
+
+line 238-271
+  compute_domain_resources()
+  각 리소스타입(IO/MEM/PREFETCH_EME)별로 가장 큰 리소스 정보를 계산한다.(by compute_bridge_resources)
+  *qemu 환경에서는 특별한 건 없는듯.(디버그로그에 찍히는 거 없다.)
+  참고. 러프한 전체 동작 개요.(maybe...)
+    bridge device한정으로 DFS fashion으로 recursion수행한다고 보면될 듯하다.(아니면 로직 이해가 불가해보임... update_bridge_resource에서 child device가 무조건 존재해야함.)
+    구성이 아래와 같다면, 최하위 bridge부터 하위 디바이스 중(하위 bridge도 포함) 가장 큰 리소스를 부모 브릿지로 업데이트를 수행하여 최상위까지 올라간다.
+    수행하면서 각 child의 struct resource->base offset도 재조정한다.(bridge 하위에서의 적절한 offset으로...)
+                 br(domain device)
+                /      |       \ 
+               br     dev       br
+              / \               / \
+             br dev           dev dev
+             /
+            dev
+
+line 273-306
+  avoid_fixed_resources()
+  resource type이 fixed인 경우, memranges를 비워둔다.
+  child device가있다면 child에 대해서도 수행한다.
+  line 291-298
+    resource type이 fixed인 경우, memranges를 비워둔다.
+  line 300-305
+    child device에 대해서도 avoid_fixed_resources를 수행한다.(DFS fashion)
+
+line 308-352
+  setup_resource_ranges()
+  한 device의 resource에 대해 memranges를 세팅한다.
+  line 328-333
+    각 struct resource를 memragne에(struct memranges) 추가한다.
+  line 335-347
+    resource가 IO type인 경우, 0x3b0 ~ 0x3df까지의 memranges는 비워둔다.
+  line 349
+    reousrce가 fixed type인 경우, memragnes를 비워둔다.(by avoid_fixed_resources)
+
+line 354-365
+  cleanup_domain_resource_ranges()
+  struct memranges를 clear하고, 할당된 resource정보를 출력한다.
+
+line 367-376
+  assign_resource()
+  struct resource에 값을 세팅한다.
+  IORESOURCE_ASSIGNED플래그 세팅 / IORESOURCE_STORED플래스 clear를 한다.
+
+line 378-415
+  allocate_toplevel_resources()
+  device의 리소스들에 대해 memranges를 세팅 후(by setup_resource_ranges)
+  device 하위에서 가장 큰 리소스정보를 찾아 리소스를 세팅한다.(by assign_resource)
+  이후 불필요 리소스를 해제한다.(by cleanup_domain_resource_ranges)
+
+line 437-466
+  allocate_bridge_resources()
+  bridge device의 리소스를 할당한다.(by search_bus_resources, assign_resource_cb)
+  이후 하위 device에 대해서도 allocate_bridge_resources()를 수행한다.
+
+line 468-503
+  allocate_domain_resources()
+  시스템에 존재하는 device들의 리소스를 allocation한다.(by allocate_toplevel_resources, allocate_bridge_resources)
+  compute_domain_resource()로 부터 업데이트된 리소스값 기준으로, struct resource 값들을 업데이트한다.
+  
+line 549-
+  allocate_resources()
+    bridge device의 struct resource정보를 적절하게 세팅한다.(by compute_domain_resources, allocate_domain_resources)
+
+$(top)/src/lib/memrange.c
+line 94-158
+  remove_memranges()
+  struct memranges에서 range를(struct range_entry) 제거한다.
+  *자세한건 skip
+
+line 160-191
+  merge_add_memranges()
+  struct memranges에 새로운 struct range_entry를 add.
+  필요하면, struct range_entry merge를 수행한다.
+  *자세한건 skip
+  
+line 235-239
+  memranges_insert()
+  struct memranges에 새로운 struct range_entry를 추가한다.(by merge_add_memranges)
+
+line 282-294
+  memranges_init_empty_with_alignment()
+  struct memrnages를 초기화한다.
+  struct memragents->free_list를 세팅한다.(free영역이 존재한다면)
+
+line 320-326
+  memranges_teardown()
+  struct memranges를 clear한다.
+
+line 417-440
+  memranges_steal()
+  이미 등록된 memranges에 대해서 hole을 만든다.
+
+$(top)/src/include/device/resource.h
+line 45-55
+  struct resource
+    한 디바이스의 리소스를 나타냄(리소스들은 linked list로 관리된다.)
+    ex) PCI device의 PCI config space의 base regiseter들...
+    주요필드
+      resource_t base, size, limit : resource의 base address, size, limit address(=base + size - 1)을 의미
+      struct resourec *next : 연관된 리소스들의 linked list 관리를 위한 필드. ex. 한 디바이스의 resource list or free resource list
+      long flags : resource 의 type(ex. IORESOURCE_IO, IORESOURCE_MEM). 0이면 미사용 resource로 처리(하는것으로 보임)
+      long index : resource 의 index. resource list 내에서 1개만 존재가능하다.(중복불가). ex. PCI의 경우, PCI config space의 base address들의 offset.
+    
+$(top)/src/include/device/pci_def.h
+PCI config register 참조를 위한 값들 define.
+config register 내 offset과, 각 register별 값들(1depth 들여쓰기되어있음)로 정의되어있음.
+PCI device type별로 구분해서 정의되어있음.(PCI device type별로 config register layout이 다르다!. 정보는 구글링하면 나오겠지 머...)
+
+8단계 - 7단계 부족분 분석
+  (v)static.c 파일 생성 과정 분석
+    7단계 $(top)/Makefile.mk 분석내용 참조
+
+  (v)struct device callback분석(샘플 아무거나 하나 잡아서 분석해봐도 될 듯?)
+    칩관련 초기화(chip_ops->init, chip_ops->enable_dev) -> 버스 스캔(ops->scan_bus) -> 스캔된 디바이스에 대한 리소스할당(ops->read_resources, ops->set_resources, ops->enable_resources) -> 각 디바이스 초기화(ops->init, ops->final) 뉘앙스로 보면 될 듯. *함수호출순서도 나열된 순서를 따름.
+    chip_operations vs device_operations
+      chip_operations : 해당 디바이스가 속해있는 chip(chipset)에 대한 operations callback. 
+                            동일 chipset에 속해힜는 모든 device는 동일한 chip_operations를 공유할 수도 있음.(ex. qemu-i440fx의 경우)
+      device_operations : device에 대한 operations callback. 각 장치마다 고유하다.
+      *coreboot 공식 doc 참조하면 도움됨 *chip_op vs device_op(https://doc.coreboot.org/internals/index.html#configuration)
+
+    chip_ops->init
+       호출되는 boot_state state : BS_DEV_INIT_CHIPS
+       호출 함수 : dev_initialize_chips() 에 의해 call됨.
+      qemu 현재 환경에서는 특별한 것은 없음.
+    chip_ops->enable_dev
+       호출되는 boot_state state : BS_DEV_ENUMERATE
+       호출 함수 : dev_enumerate() 에 의해 call됨.
+      struct device->ops등을 세팅한다. ex. northbridge_enable
+    ops->scan_bus
+       호출되는 boot_state state : BS_DEV_ENUMERATE
+       호출 함수 : scan_bus() 에의해 call 됨.
+       시스템BUS를 스캔하여 device정보를 세팅한다 필요시 재귀적으로 bus 하이라키를 따라 내려간다. ex. scan_static_bus, pci_host_bridge_scan_bus
+    ops->read_resources
+       호출되는 boot_state state : BS_DEV_RESOURCES
+       호출 함수 : read_resources() 에의해 call 됨.
+      device의 resource(ex. PCI BAR, I/O Port address range, Memory address range...)정보를 read(정확하게는 struct resource구조체를 세팅)한다. ex. cpu_pci_domain_read_resources, qemu_nb_read_resources
+    ops->set_resources 
+      호출되는 boot_state state : BS_DEV_RESOURCES
+      호출 함수 : assign_resource() 에의해 call 됨.
+     device의 resource들을 할당.(ex.PCI configuration space에 리소스정보를 세팅한다.) ex. pci_dev_set_resources()
+    ops->enable_resources
+       호출되는 boot_state state : BS_DEV_ENABLE
+       호출 함수 : enable_resources() 에의해 call 됨.
+      device를 enable(ex. PCI config spcae command register에 값을 write) ex. pci_dev_enable_resources
+      *(top)/build/mainboard/emulation/qemu-i440fx/static.c 에는 특별히 callback을 찾을 수 없어서, 다른 소스코드에 정의된 callback 함수로 뉘앙스 파악하였음.
+    ops->init : 
+       호출되는 boot_state state : BS_DEV_INIT
+       호출 함수 : init_dev() 에의해 call 됨.  
+      device 초기화작업들을 수행한다.(ex. qemu northbridge상의 PS/2 keyboard를 초기화한다... 등) ex. qemu_nb_init, cpu_bus_init
+      *enable_resources와 약간 겹쳐보이는데, enable_resources단계(device의 리소스할당/enable)에서 세팅된 리소스 기반으로, device를 초기화한다는 뉘앙스로 보면 될 듯 하다..
+    ops->final
+       호출되는 boot_state state : BS_POST_DEVICE
+       호출 함수 : final_dev() 에 의해 call됨.
+      device 초기화 후 마무리 작업을 수행. 디버그로그만 찍는다거나... 일부사소한(?)추가작업을한다거나... 하는 것으로 보여짐. 
+      qemu환경에서는 특별히 수행하는 건 없음.
+      *(top)/build/mainboard/emulation/qemu-i440fx/static.c 에는 특별히 callback을 찾을 수 없어서, 다른 소스코드에 정의된 callback 함수로 뉘앙스 파악하였음.
+
+  (v)struct device, struct bus, struct resource 분석
+    7단계 아래 코드 분석 참조.
+      $(top)/src/include/device/device.h
+      $(top)/src/include/device/resource.h
+      $(top)/build/mainboard/emulation/qemu-i440fx/static.c
+
+  (v)dev_configure
+    (v)특히 allocate_resources
+      다시봐도 난해하긴 함... 일단 하위 리소스들 정보를 aggregation해서 device의 struct resource값을 적절히 세팅한다... 정도로만 알고 skip...
+      진짜 간단하게 print_resource_tree() 에 찍혀지는 리소스정보(struct resource)들 만들고 assign위해서라고 일단... 알고만 있읍시다. *dev_configure함수
+    (v)set_vga_bridge_bits() 분석(머하는건지 아에 감도 안옴...ㅎ, dev_configure 함수에서 수행됨.)
+       7단계 set_vga_bridge_bits 분석 참조
+
+  (v)h/w 관련.
+    (v)devicetree?
+      devicetree?
+         목적 : to define and describe the runtime configuration and settings of the hardware on a board at chip / device level
+              mainboard종류마다 devicetree가 정의되어짐.
+              *chip : chipset을 의미
+              *device : 말그대로 device(=장치)를 의미
+
+              devicetree는 layering이 가능.(chipset.cb(가장 공통 정의) - devicetree.cb(메인보드 정의) - overridetree.cb(특정 메인보드군에 specific한 정의))
+
+        DSL(Domain Specific Language)로 정의. *coreboot 공식 Doc참조(https://doc.coreboot.org/internals/index.html#configuration)
+          sconfig에 의해 파싱되어 .cb -> static.c, static.h, etc... 로 컴파일 됨.
+           주요 keyword
+            chip [directory]: device의 모음을 정의함.(=chipset을 정의)
+                              [directory] : chip.h 파일이 위치하는 경로. 
+                                            *chip.h : 쉽게말하면, 해당 chipset의 속성값을 정의하고 있는 파일. 
+                                                      devicetree에서 chip.h에 정의된 키워드로 참조하는 형태.
+                                                              *자세한건 skip(qemu환경에서는 안씀)
+            device [type] [id] [on|off] [alias] ... : device를 정의함.(=장치를 정의)
+                                                      [type] : device의 type. 아래는 주요 타입
+                                                               cpu_cluster : CPU들과 PIC들을 포함하는 디바이스 형태.
+                                                               domain : 1개이상의 device/chip을 포함하는 디바이스 형태.
+                                                               pci : PCI 디바이스
+
+                                                      [id] : device의 id(ex. PCI dev인 경우, BDF)
+                                                      [on|off] : device definition enable/disable
+                                                      [alias] : 해당 device를 참조하기 위한 별칭.
+            end : 각 statement의(ex. chip, device) 끝을 의미. ex. 'chip ~~~~ end', 'device ~~~ end'
+            register [name=vlaue] : chip.h파일에 정의된 속성값을 세팅.
+            ops [identifier] : 사용할 chip_operations 구조체의 symbol
+
+       $(top)/src/mainboard/emulation/qemu-i440fx/devicetree.cb 
+          단순히 아래 구조를 정의하며, 
+          이로인해 생성된 static.c와 완전 1:1매핑은 아님(로지컬하게 디바이스/버스가 정의된다고 보면 될 듯. => device만 신경쓴다.!)
+           chipset                              //mapped to _dev_root in static.c 엄밀하진 않음!!! 최상위 디바이스로써 무조건 존재함!
+           |--cpu_cluster device                //mapped to _dev_0 in static.c
+           |--domain device                     //mapped to _dev_1 in static.c
+              |--pci device(northbridge i440fx) //mapped to _dev_2 in static.c
+              |--chipset(southbridge i82371eb)  
+                 |--pci device                  //mapped to _dev_3 in static.c
+                 |--pci device                  //mapped to _dev_4 in static.c
+                 |--pci device                  //mapped to _dev_5 in static.c
+      
+   (v)cpu_pci_domain_read_resources에서 왜 해당 구성으로 resource를 read하는지 궁금하다.
+      QEMU환경에서 제공되는 resource들(ex. firmware-config I/O address space)로 세팅. *QEMU환경을 잘 알아야 함. QEMU [port address] 로 구글링하면 정보 나오긴 함.
+      i440fx datasheet system address map에(ex. APIC를 위한 리소스를 할당 *해당 함수 'IO_APIC_ADDR' 심볼참조) 따라 세팅 *i440fx datasheet 구글링하면 datasheet검색가능.
+       자세한건 skip...
+       *참고. i440fx와 같은 chipset이 하는 일 개요.(i/o port address, memory-mapped address 관점에서)
+        bus controller로 보면 됨(northbridge)
+        CPU의 input(ex. address / data)을 bus를 통해 받아 디코딩 적절히 해서
+         특정 device(ex. memory, register, )에 access하도록 해줌.
+        access를 위해서는 h/w구성을 알아야 하므로 datasheet에는 i/o port address, memory mapped address가 기술되어있다!
+         즉, memory map을 보려면 cpu문서가 아닌 chipset문서를 봐야함!
+
+    (v)PS/2 keyboard spec
+      intel 8042 controller가 keyboard/mouse를 control함.
+      intel환경에서는 i/o port address 0x60(for Data), 0x64(for Command/Status)로 access가능
+      cpu <----> i8042 <----> keyboard 구성으로 보면 됨.
+           reg        PS/2port
+      상세내용은 필요할때 구글링해서 보는걸로
+
+    (v)ELCR1/2
+      Edge/Level Control Registers.
+       1/2나뉘어진 이유는 i8259 PIC가 2개 존재가능(2개가 cascaded)하므로, 2개의 irq 모두를 지원하기 위함임.
+      interrupt의 trigerring방식을 세팅(level / edge)하는 레지스터
+      i8259 PIC 자체레지스터는 아님!. *외부 레지스터이고(ex. intel system의 ELCR레지스터, I/O address 0x4d0,0x4d1), 해당 레지스터에 값을 적절히 쓰면 인터릅트트리거링이 기대한대로 동작하도록 적절히 low단에서 적절히 프로그래밍하는 개념으로 보면 됨.
+       참고. i8259 PIC programming 개요
+       i8259 PIC는 프로그래밍 가능하며, 프로그래밍 메카니즘이 존재함.
+        메카니즘의 엄청 러프한 개요는 다음과 같음.
+         i8259 PIC로 ICW/OCW(initial/operational control words)를 특정 signal과 함께 data bus통해서 전송하면,
+         i8259 PIC가 프로그래밍이 된다.
+       ex) intel x86환경의 경우
+         ICW/OCW값을 담고있는 레지스터가 존재. 특정 i/o port address로 매핑되어있음($(top)/src/include/pc80/i8259.h ICW define참조)
+          위 레지스터에 값을 적절히 써주는 것만으로 i8259 PIC가 적절히 프로그래밍이(위 메카니즘이 수행되겠지요) 된다.
+      
+    (v)D0F0가 뭘까요
+      intel host bridge device임.
+      intel D0:F0 로 구글링하면 관련 리소스들 나옴
+
+9단계(유용한 것을 할수있는 수준까지 파기) - 이슈 1개 처리
+  수정내역
+  수정1. coreinfo 빌드 nm이슈 처리 ㄱㄱ... (수정할만한거 찾을려고 repo 최신화해서 빌드다시 하는데 coreinfo빌드시 nm error발생. 추가로 할거없으면 여기서 끝내는 것도... ㅋㅋ)
+    status : open
+    gerrit : https://review.coreboot.org/c/coreboot/+/87906
+    local branch : feature/libpayload
+
+  수정2. 리팩토링(src/device/device_util.c파일에 'TODO'주석을 실제 설명으로 대체함.)
+    status : open
+    gerrit : https://review.coreboot.org/c/coreboot/+/87907
+    local branch : feature/comment
+
+10단계(가르치기) - 내용정리
+  알게된것
+    ramstage device init(bs_dev* 함수) 주요로직 파악
+     일부 하드웨어 관련 기본개념(ex. D0F0, ELCR etc...)
+
+  코멘트
+    진짜 주요로직만(주요 함수 플로우 그리는 수준)파악함. 그래도 처음 목적이었으니 의미는 있지않나 싶음.
+    9단계 실습하는 내용이 조금 아쉽고(역시 큰 흐름만 파악으로는 큰 일은 못하는 듯) 
+    하드웨어 dedicated 로직도 많이 부족하다.
+    좀 더 정진합시다.!

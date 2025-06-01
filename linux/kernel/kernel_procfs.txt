@@ -1,0 +1,156 @@
+next : 7-2 cmdline_proc_show 분석 ㄱㄱ(calltrace내용참조하여 분석하는게 좋을 듯)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel procfs
+
+학습이유
+  user space에서 자주 접하는 kernel interface이므로,
+  알게되면 이후 procfs 정보의 의미를 찾을때 도움될 것 으로 기대됨.
+
+학습목표
+  procfs 주요 흐름 분석
+  procfs에 항목 추가 실습
+    
+학습자료
+  $(top)/filesystems/proc.rst
+  googling
+
+학습계획
+  milestone1. 
+  
+================================================================
+7단계 *목표 : procfs 개념 / procfs 주요 흐름 분석
+7-1. 개념
+kernel information(ex. process정보 등)을 제공하는 pseudo-filesystem => 즉, interface
+일반적으로 /proc 에 마운트됨. mount -t proc proc /proc 로 마운트 가능
+
+calltrace
+  userspace calltrace
+    단순히 해당 proc path에 대해 open,read,write를 수행함.
+    ex) strace -f cat /proc/cmdline의
+      openat(AT_FDCWD, "/proc/cmdline", O_RDONLY) = 3
+      fstat(3, {st_mode=S_IFREG|0444, st_size=0, ...}) = 0
+      fadvise64(3, 0, 0, POSIX_FADV_SEQUENTIAL) = 0
+      mmap(NULL, 139264, PROT_READ|PROT_WRITE, MAP_PRIVATE|MAP_ANONYMOUS, -1, 0) = 0x7fd9e2270000
+      read(3, "BOOT_IMAGE=/boot/vmlinuz-5.15.17"..., 131072) = 110
+      write(1, "BOOT_IMAGE=/boot/vmlinuz-5.15.17"..., 110BOOT_IMAGE=/boot/vmlinuz-5.15.175 root=UUID=51215f83-58e4-48d4-9b61-9e57750c45c3 ro quiet splash vt.handoff=7) = 110
+
+  kernelspace calltrace
+    read systemcall을 통해서 최종적으로 cmdline_proc_show(/proc/cmdline의 정보 리턴)가 호출된다.
+    ex) cat /proc/cmdline의 경우 커널콜트래이스
+      cat-5177    [001] .....  1518.025494: cmdline_proc_show <-seq_read_iter
+      cat-5177    [001] .....  1518.025510: <stack trace>
+      => 0xffffffffc002a083
+      => cmdline_proc_show
+      => seq_read_iter
+      => proc_reg_read_iter
+      => new_sync_read
+      => vfs_read
+      => ksys_read
+      => do_syscall_64
+      => entry_SYSCALL_64_after_hwframe
+
+7-2. 주요 흐름 분석 */proc/cmdline 에 대한 주요로직/흐름을 분석한다
+$(top)/fs/proc/cmdline.c
+line 7-12
+  cmdline_proc_show
+
+line 14-19
+  proc_cmdline_init
+    /proc/cmdline entry를 생성한다.(by proc_create_single)
+
+$(top)/include/linux/proc_fs.h
+line 102-103
+  proc_create_single macro
+    proc_create_single_data() 로 치환.
+
+$(top)/fs/proc/generic.c
+
+
+line 158-181
+  __xlate_proc_name()
+    아래변수를 채워서 return함
+    residual = 인자(name)의 가장 마지막 경로.(ex. aaa/bbb/ccc면 "ccc")
+    ret = parent의 struct proc_dir_entry. (ex. aaa/bbb/ccc면 /proc/aaa/bbb에대한 struct proc_dir_entry). 
+          parent가 없다면(최상위라면) proc_root. 
+          by pde_subdir_find() 에 의해 parent struct proc_dir_entry를 search함.
+           *참고. search의 시작점(root)은 인자로 주어짐!!!!!!. 함수분석시 주의! 즉, 인자로넘어온 시작점이 /proc가 아닌 /proc/aaa일수 있다.
+
+line 183-192
+  xlate_proc_name()
+    __xlate_proc_name() 을 수행. 기능은 동일
+
+line 198-213
+  proc_alloc_inum()
+    proc entry에 대한 inode number를 할당(by ida_simple_get)
+
+line 366-390
+  proc_register()
+    추가할 struct proc_dir_entry에 inode값을 할당(by proc_alloc_inum)하고
+    parent struct proc_dir_entry하위에 추가되는 struct proc_dir_entry를 추가한다.(by pde_subdir_insert)
+
+line 392-457
+  __proc_create()
+    인자(name)로 넘어온 proc path에 대해 struct proc_dir_entry를 alloc한다.
+    line 401-424
+      인자(name)로 넘어온 proc path로부터 parent path struct proc_pid_entry와 자신의 이름을 가져오고, 해당 정보에 대해 sanity check수행
+     ex) /proc/cmdline이면, /proc에대한 struct proc_pid_entry와 자기자신 "cmdline" 정보를 추출하여 check수행.
+
+    line 426-428
+      struct proc_pid_entry 메모리 영역을 할당.
+
+    line 430-453
+      할당된 struct proc_pid_entry에 초기값을 세팅함.
+       세팅하는 필드는 다음과 같음 : name, namelen, mode, nlink, subdir, refcnt, pde_unload_ock, pde_openers, uid, gid, proc_dops
+
+  *struct qstr : string 자료형인데, metadata(ex.길이)가 있는 특수한 string 자료형이라고 보면됨
+
+line 541-559
+  proc_create_reg()
+    인자(name)로 넘어온 proc path에 대해 struct proc_dir_entry를 alloc한다.
+    line 546-551
+      생성할 entry의 권한을 체크.
+    line 553-557
+      struct proc_dir_entry 생성(by __proc_create)
+       생성 후 다음 필드를 세팅
+        struct proc_dir_entry->proc_iops = proc_file_inode_operations(커널에 정의됨)
+        struct proc_dir_entry->data = data(인자로 넘어옴)
+    line 558
+      생성된 struct proc_dir_entry를 return
+
+line 647-660
+  proc_create_single_data()
+    struct proc_dir_entry를 추가한다.
+    line 653-655
+      struct proc_dir_entry 생성 (by proc_create_reg)
+    line 656-657
+      callback function setting
+      struct proc_dir_entry->proc_ops = proc_single_ops(커널에 정의되어있음)
+      struct proc_dir_entry->signle_show = show(인자로넘어온값)
+    line 658
+      struct proc_dir_entry 등록(by proc_register)
+
+$(top)/fs/proc/internal.h
+line 20-67
+  struct proc_dir_entry 정의
+  주요필드
+    name : 해당 proc entry의 이름.(ex. cmdline) *path이름을 포함하지 않음! by __proc_create
+    namelen : name의 길이 by __proc_create
+    
+    low_ino : 해당 entry의 inode number by proc_register
+
+8단계 *목표 : 7단계 부족부분 확인. 디렉토리 구조의 경우(ex. /proc/[pid])도 분석 ㄱㄱ
+  directory구조등 좀 더 복잡한 케이스 처리로직흐름
+  fs_initcall 메카니즘(proc_cmdline_init)
+  kernel rbtree 메카니즘
+
+9단계 *목표 : procfs에 항목 추가 실습
+
+10단계 *목표 : 정리
+

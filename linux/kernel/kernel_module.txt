@@ -1,8 +1,4 @@
-next : 7-2-2 ㄱㄱ insmod 코드 분석 ㄱㄱ
-         finit_module() line 4247
-           load_module분석 ㄱㄱ(line 4035-4039 ㄱㄱ)
-             layout_and_allocate() line 3619 ㄱㄱ
-
+next : 완료
         *일단 1depth(지금 오브젝트 파일 하나있고, Makefile하나있는 수준으로 빌드어떻게 하는지 분석 ㄱㄱㄱㄱ)
         9단계전까지는 테스트머신내, /home/knw/Desktop/my_module 을 실습에 사용한다.(내용은 현단계에서 안중요함)
 *1-10단계학습법 적용
@@ -69,6 +65,7 @@ next : 7-2-2 ㄱㄱ insmod 코드 분석 ㄱㄱ
              
 $(top)/Makefile
   make modules,modules_install target rule과 그에대한 관련변수, prerequisites들이 기술되어있음.
+
   make M=[path/to/module/src] modules시의 흐름 *간단하게 보여지기 위해 target: prerequisites만 기술함
     prepare: *line 1794-1795
     $(build-dirs): prepare *line 1905
@@ -211,7 +208,7 @@ $(top)/scripts/Makefile.build
         
 $(top)/scripts/Makefile.modpost
   modpost를 실행하여 $(KBUILD_EXTMOD)/Module.symvers 생성한다.
-  *.mod.c도 생성하는 듯.(by modpost command에의해 *$(top)/scripts/mod/modpost.c line 2549-2550참조)
+  *.mod.c도 생성한다.(by modpost command에의해 *$(top)/scripts/mod/modpost.c line 2549-2550참조)
   line 47-51
     MODPOST정의
     $(top)/scripts/mod/modpost tool을 실행하는 것이 주요 골자임.
@@ -280,12 +277,22 @@ $(top)/scripts/Makefile.modfinal
   2) modprobe / modprobe -r
   모듈정보조회 : lsmod / modinfo
 
-7-2-2. load로직 흐름 분석
-1) syscall finit_module 분석
+7-2-2. load로직 흐름 분석 *syscall finit_module syscall
 $(top)/kernel/module.c
+  line 248-253
+    mod_update_bounds
+      struct module의 core_layout, init_layout정보를 기반으로 module_addr_min, module_addr_max를 업데이트(by __mod_update_bounds)한다.
+      즉, ko의 layout의 min, max address값을 struct mod_tree_root 구조체에 세팅한다.
+       *정확한 의미는 모르겠다.
   line 347-360
     find_sec()
       ko파일(ELF)로부터 이름이 name인 섹션의 index를 return한다.
+  line 362-367
+    section_addr()
+      kernel module에서 특정 section의 주소를 return한다.
+  line 369-380
+    section_objs()
+      kernel module에서 특정 section의 주소와, section내부 object갯수를 retrun한다.
   line 513-555
     find_symbol()
       kernel 및 kernel module(kernel에 load된)들의 exported symbol로부터 특정 symbol정보를 찾는다.
@@ -294,9 +301,33 @@ $(top)/kernel/module.c
         crc(s32)
         sym(struct kernel_symbol*)
         license(GPL이냐 아니냐)
-       참고. *___ksymtab*은 $(top)/include/asm-generic/vmlinux.lds.h에 정의되어있음.
-           ___ksymtab 섹션에 정의되는(=EXPORT_SYMBOL매크로로...) 변수들이 모여있다고 보면 되겠다.
+       참고. *__ksymtab*은 $(top)/include/asm-generic/vmlinux.lds.h에 정의되어있음.
+           __ksymtab 섹션에 정의되는(=EXPORT_SYMBOL매크로로...) 변수들이 모여있다고 보면 되겠다.
            $(top)/include/linux/export.h ___EXPORT_SYMBOL참조(line 87-112)
+  line 557-576
+    find_module_all()
+      인자로넘어온 모듈이름을 가진 struct module 을 modules list에서 찾아서 return한다.
+  
+  line 590-612
+    percpu_modalloc()
+    ko파일의 pcpu section size만큼 공간을 할당한다.(by __alloc_reserved_percpu *분석은 skip함)
+     아래 필드를 세팅한다.
+    struct module->percpu = 할당된공간
+    struct module->percpu_size = 할당된 공간의 size
+
+  line 717-742
+    MODINFO_ATTR macro
+    struct module_attribute modinf_##field를 정의한다.
+    modinfo_version, modinfo_srcversion을 해당 매크로로 생성함(line 744-745)
+
+  line 756-772
+    module_unload_init()
+    struct module의 아래 필드를 초기화한다.
+     *아마도 unload를 위한 데이터인듯. CONFIG_MODULE_UNLOAD on일때만 처맇마.
+      refcnt = 2
+      source_list 초기화 (자기자신에게 의존하는 모듈에 대한 리스트 *struct module 해당 필드 주석참조)
+      target_list 초기화 (내가 의존하는 모듈에 대한 리스트 *struct module 해당 필드 주석참조)
+
   line 1240-1287
     check_version()
       설정(CONFIG_MODVERSIONS)에따라 nop일수도있음.
@@ -306,6 +337,27 @@ $(top)/kernel/module.c
   line 1289-1308
     check_modstruct_version()
       'module_layout' symbol에 대해 version을 check한다(by check_version())
+
+  line 2240-2274
+    verify_exported_symbols()
+    kernel module의 symbol중 어느하나라도 이미 존재(kernel자체 or 또다른 kernel module)하는지를 체크한다.(by find_symbol)
+     존재하는 경우 ENOEXEC를 return한다.
+
+  line 2291-2361
+    simplify_symbols()
+    kernel module이 가지고있는 모든symbol의 value(=symbol의 메모리내 address)를 세팅(=resolution)한다.
+    ABS, COMMON, LIVEPATCH symbol에 대해서는 don't care.
+
+  line 2363-2396
+    apply_relocations
+    symbol value에 대한 relocation을 수행(by apply_relocate, apply_relocate_add)
+    apply_relocate, apply_relocate_add모두 기본적으로는 다음과 같음.
+      relocation 적용할 위치를 가져온다(loc variable)
+      loc이 참조하는 symbol정보를 가져온다.(sym variable)
+      symbol value relocation을한다(val variable)
+      loc위치에 val을 write한다.
+    *상세내용은 skip...
+
   line 2406-2416
     get_offset()
        해당 section의 size를 업데이트(=누적)하고,
@@ -355,6 +407,12 @@ $(top)/kernel/module.c
   line 2582-2585
     get_modinfo()
       ko파일의 .modinfo section에서 특정 filed의 value를 return한다.
+
+  line 2587-2596
+    setup_modinfo()
+    struct module의 특정필드에 값을 세팅한다.(by struct module_attribute->setup())
+     사실상 struct module->version, srcversion 필드에 strdup하는 수준인 듯.(line 744-745참조)
+
   line 2699-2754
     layout_symtab()
     ko파일의 symbol 관련 section layout을  init/core allocation section에 추가한다.(젤 마지막에) *layout_sections 와 비슷
@@ -446,12 +504,46 @@ $(top)/kernel/module.c
       line 3313-3314
         license(ex. GPLv2냐...)를 체크한다. 허용되지 않는 license면 tainted로 표기한다.
 
+  line 3319-3425
+    find_module_sections()
+      kernel module에서 section들의 정보(section의 주소와 section 내 object 갯수)를 struct module 대응하는 필드에 세팅한다.
+
+  line 3427-3488
+    move_module()
+      ko파일의 섹션들을 새롭게 할당된 메모리영역으로 copy한다.
+      line 3433-3444
+        ko의 core_layout 영역의 메모리를 할당하고 struct module->core_layout.base에 시작주소를 세팅
+        *core_layout은 layout_section 참조
+      line 3446-3462
+        ko의 init_layout 영역의 메모리를 할당하고 struct module->init_layout.base에 시작주소를 세팅
+        *init_layout은 layout_section 참조
+      line 3464-3485
+        ko파일의 각 section을 위에서 할당된 core_layout, init_layout으로 copy.
+        copy시, 각 섹션헤더의 sh_addr필드도 copy된 메모리 위치로 세팅함.
+      *참고.
+        kmemleak*은 memory leak detction mechanism관련내용임. 자세한건 skip. $(top)/Documentation/dev-tools/kmemleak.rst참조.
+        CONFIG_DEBUG_KMEMLEAK config에 따라 기능 on/off됨
+  
+  line 3490-3523
+    check_module_license_and_versions
+    kernel module의 license / version을 체크한다.
+    체크가 실패한 경우 taint 또는 -ENOEXEC(by try_to_force_load)를 리턴한다.
+    line 3492-3513
+       특정 kernel module(ex ndiswrapper, driverloader, lve이 load되는 경우, taint한다)
+    line 3515-3520
+      kernel module 심볼과 version존재유무(=crc정보존재유무)를 체크한다.
+      module심볼은 있으나, version이 없으면, try_to_force_load를 호출한다. CONFIG_MODULE_FORCE_LOAD가 noset이면 ENOEXEC를 리턴
+
   line 3534-3567
     blacklisted()
     커널모듈이름(ko파일로부터 가져옴 by setup_load_info)이 kernel parameter module_blacklist에 등록되었는 지 check한다.
     등록되어있다면 return true, 아니면 return false.
   line 3569-3628
     layout_and_allocate()
+      ko의 layout정보를 세팅하고
+      layout에 대한 메모리를 할당한 후
+       할당된 메모리로 ko각 섹션들을 copy한다.
+       이 과정에서, 각 섹션의 일부 필드(sh_addr, sf_flags ...)가 업데이트된다.
       line 3575-3577
         ko파일의 modinfo 정보를 체크한다(by check_modinfo())
       line 3579-3583
@@ -465,15 +557,80 @@ $(top)/kernel/module.c
         ko파일의 allocation section에 대한 layout을 세팅한다(by layout_sections)
       line 3617
         ko파일의 symbol관련 section에 대한 layout을 세팅한다.(by layout_symtab)
-      line 3619-
-        
+      line 3619-3622
+        ko파일의 섹션들을 새롭게 할당된 메모리영역으로 copy한다.(by move_module)
+      line 3625
+        struct module->mod의 메모리주소를 세팅한다.(move_module(*line 3619-3622)에 의해 copy된 주소로 세팅)
+
+  line 3646-3660
+    post_relocation()
+      struct module->extable을 소팅한다.(by sort_extable, 먼진몰라서 분석 skip)
+      percpu 섹션데이타들을 pcpu공간에 copy한다.(by percpu_modcopy)
+      kallsyms정보를 세팅한다.(by add_kallsyms) *CONFIG_KALLSYMS y이면 동작, 아니면 nop.
+        *kallsyms : kernel내부의 모든(all) symbol정보
+      x86 module_finalize를 호출한다.(alternative적용 / ORC unwind init등을 수행. 정확한건 skip...)
+       *난해해서 일단 상세분석은 skip하고 개요만 확인함
+
+  line 3727-3836
+    do_init_module()
+      kernel module load를 마무리한다.
+       주요 작업들은...
+         초기화 function수행(존재한다면, ex. module_init으로 등록된 함수)
+        kernel에 noti(???)
+         이후 불필요 리소스들 제거
+      line 3745
+        kernel module의 constructor를 실행한다.(by do_mod_ctors)
+        *constructor는 ko파일의 .ctors 섹션을 read하여 세팅된다.(by find_module_sections)
+      line 3747-3758
+        module_init() macro로 정의된 함수를 실행한다. 없으면 실행안한다.
+         실패(retrun < 0)이면, error를 리턴한다.
+         *성공은 == 0이고, 0보다큰값은 warning을직는다.(0/-E 리턴 convention을 따라야한다.)
+      line 3761
+        mod->state = MODULE_STATE_LIVE로 세팅한다.
+      rest of line
+        현재단계에서는 별로 안궁금... 등록해야할 리소스 등록하고, struct module리소스 해제하는 것들을 수행한다.
       
   line 3838-3844
     may_init_module()
       finit_module수행가능한지 권한 체크
       capability(CAP_SYS_MODULE)와 커널파라미터(modules_disabled)를 체크함
+
+  line 3846-3898
+    add_unformed_module()
+      struct module->state를 MODULE_STATE_UNFORMED(아직 초기화중이다를 의미, 정의부분 주석참조)로 세팅 후
+      modules 에 등록(=커널에 등록)
+       만약 동일 커널모듈(커널모듈이름으로 체크함 by find_module_all)이 존재한다면,
+       커널모듈로딩이 완료될때까지 기다린 후,(by wait_event_interruptible)
+       상태를 체크한다.(로드가되었다면 -EEXIST를 return 아니면, -EBUSY를 return)
+      *wait_event_interruptible : condition이 만족할때까지 현재 task를 sleep시킴. condition이 만족하면 깨어나서 중단된부분부터 다시 실행
+      *mod_tree_insert는 skip(tree형태 자료구조로 struct module 관리하는 걸로 보여짐... CONFIG_MODULES_TREE_LOOKUP on이어야사용됨)
+
+  line 3900-3930
+    complete_formation()
+      커널모듈의 complete마무리 작업 후 상태를 MODULE_STATE_COMING으로 업데이트한다.
+      line 3906-3909
+        kernel module symbol이 이미 커널이미지에 존재하는지를 체크한다. 존재한다면 fail을 return(by verify_exported_symbol)
+      line 3911-3912
+        kernel module의 bug entry정보를 세팅한다. 자세한건 skip(by module_bug_finalize)
+          __bug_table section 정보가 있으면 해당 섹션정보를 struct module->bug_table, num_bugs에 세팅하고,
+          struct module을 module_bug_list에 add함.
+      line 3914-3916
+        kernel module의 각 메모리영역 권한을 세팅한다. 
+        CONFIG_STRICT_MODULE_RWX on인경우만 동작한다.
+        $(top)/arch/Kconfig 'STRICT_MODULE_RWX'를 참조...
+         상세내용은 skip
+      line 3918-3922
+        kernel module의 state를 MODULE_STATE_COMING으로 업데이트한다.
+    
+  line 3932-3948
+    prepare_coming_module()
+      ftrace/livepatch관련 enable/coming작업을 수행 *정확한건 skip
+
   line 3975-4202
     load_module()
+      kernel module에 대한 check(ex. format, signature, symbol version, blacklist, etc...)를 수행하고,
+      kernel module의 실행환경 셋업 이후(ex. ko파일로부터 각section정보를 읽고, memory에 load, 이 과정에서 relocation도 일어남.)
+      kernel module의 초기화루틴실행(ex. module_init macro로 등록한 것) 및 kernel에 module을 등록한다.
       line 3982-3996
         kernel module signature(pkcs7)를 체크한다.(by module_sig_check)
       line 3998-4004
@@ -488,6 +645,56 @@ $(top)/kernel/module.c
       line 4028-4032
         로드되는 kernel module의 버전을(module_layout symbol을 이용) 체크한다.(by check_modstruct_version)
       line 4035-4039
+        kernel module의 layout정보세팅및 메모리를 할당하여, 해당 영역으로 kernel module을 copy한다.(by layout_and_allocate)
+      line 4041
+        audit log관련... 지금은 skip(ko랑크게 관련없음)
+      line 4043-4046
+        kernel module을 kernel에 등록한다.(by add_unformed_module)
+      line 4048-4056
+        kernel module signatrue 체크에 실패했다면(by 젤 처음 module_sig_check), kernel을 tainting한다.
+      line 4058-4061
+        kernel module percpu 영역을 할당한다.(by percpu_modalloc)
+      line 4063-4068
+        module의 일부 data들을 초기화한다.
+          module unload를 위한 data들을 초기화한다.(by module_unload_init)
+          lock을 초기화한다.(by init_param_lock)
+      line 4070-4076
+        kernel module의 섹션정보들(주소/object갯수)을 struct module의 각 필드에 세팅한다.(by find_module_sections)
+      line 4078-4080
+        kernel modue의 라이센스 및 버전(=심볼버전)을 체크한다.(by check_module_license_and_versions)
+      line 4082-4083
+        struct module의 attribute정보를 세팅한다.(by setup_modinfo)
+      line 4085-4096
+        symbol resolution(relocation포함)을 수행한다.(by simlify_symbols, apply_relocations, post_relocation)
+      line 4098
+        memory cache를 flush한다. x86은 해당 안하는 듯. 상세내용은 skip~
+      line 4100-4101
+        cfi를 초기화한다.(by cfi_init) CONFIG_CFI_LANG on인경우만 동작함. 상세내용은 skip~
+        *cfi : Clang's Control Flow Integrity 를 의미. $(top)/arch/Kconfig line 725 참조
+      line 4103- 4108
+        systemcall로 넘어온 argument(uargs)를 copy한다.
+      line 4110-4114
+        debug를 위한 초기화를 수행한다. *상세내용은 skip 
+      line 4116-4119
+        kernel module의 마지막 formation을 수행한다.(by complete_formation)
+      line 4121-4123
+        ftrace/livepatch관련 enable/coming작업 수행(by prepare_coming_module)
+      line 4125
+        async_probe 설정을 setting.($(top)/Documentation/admin-guide/kernel-parameters.txt 참조)
+      line 4127-4137
+        kernel parameter를 파싱/세팅한다.(by parse_args) *자세한건 skip함.
+      line 4139-4142
+        kernel module을 sysfs에 등록한다.(아마 sysfs에 module관련 인터페이스 잡아주고 그런거하는 듯... 자세한건 역시 skip)
+      line 4144-4148
+        kernel module livepatch관련... 자세한건 skip~
+      line 4150-4151
+        info resource(struct load_info->hdr)를 free한다.
+      line 4154
+        tracing log를 출력...
+      line 4156
+        kernel module load를 마무리한다.(by do_init_module)
+      line 4158-4200
+        위 과정들에서 할당받은 리소스들(ex. kernel module 메모리공간, lock, list와같은 자료구조 등)을 해제한다.
         
   line 4204-4222
     init_module()
@@ -506,34 +713,314 @@ $(top)/kernel/module.c
       파라미터로 넘어온 fd 파일을 read한다.
      fd 파일은 커널모듈(.ko)이 넘어온다.(strace -f insmod 로 확인가능)
     line 4247
-      call load_module()
+      커널 모듈을 로드한다.(by load_module)
+
 $(top)/kernel/module-internal.h
   line 11-29
     struct load_info
-    hdr : 커널모듈이 존재하는 메모리의 시작을 가리킴. 즉, ko파일의 ELF header영역을 가리킨다.
-    len : 커널모듈의 사이즈.
+    주요필드
+      name : 커널모듈이름. 일반적으로 빌드 시 ko파일의 .modinfo section에 'name' 필드로 정의됨 (set by setup_load_info)
+ 
+      mod : struct module. 커널모듈 빌드 시, .gnu.linkonce.this_module 섹션에 정의됨(빌드시 생성되는 .mod.c 파일에 의해) (set by setup_load_info)
+
+      hdr : 커널모듈(.ko파일)이 존재하는 메모리의 시작을 가리킴. 즉, ko파일의 ELF header영역을 가리킨다.(set by copy_module_from_user / finit_module)
+      len : 커널모듈(.ko파일)의 사이즈.(set by copy_module_from_user / finit_module)
+         *커널모듈은 시스템콜(init_module / finit_module)에 의해 메모리로 로드됨
         
+      sechdrs : 커널모듈(.ko파일)에서, ELF section header가 존재하는 메모리의 시작을 가리킴.(set by elf_validity_check)
+
+      sig_ok : 모듈 시그니쳐가 정상적으로 verified 되면 true.(set by module_sig_check)
+        *signature 체크방법은 module_sig_check함수 참조
+
+      index : 커널모듈(.ko파일)에서, ELF section header entry의 인덱스.(=sechdrs필드를 참조하기 위한 인덱스) (set by setup_load_info)
+        sym, str : 심볼테이블 섹션 인덱스
+        mod : .gnu.linkonce.this_module 섹션 인덱스
+        vers : __version 섹션 인덱스
+        info : .modinfo 섹션 인덱스
+
+$(top)/include/linux/module.h
+  line 364-541
+    struct module
+    주요필드
+      state : 모듈의 현재 상태(ex. 로드되고있는지, 로드다되었는지 ...). 모듈로드 코드들에서 상태를 업데이트 수행
+
+      list : global한 커널모듈리스트 entry. 리스트에 추가되는 시점에 세팅됨.
+
+      name : 커널모듈이름. 일반적으로 빌드 시 ko파일의 .modinfo section에 'name' 필드로 정의됨(objdump -s [/path/to/.ko]로 확인가능).
+               커널모듈빌드시점에 정의된다.
+               *아마도, mod.c파일의 KBUILD_MODNAME 일 듯(빌드할때 커널모듈이름으로 치환될 것 같다.)
+
+      syms : 커널모듈 exported symbol. ko파일의 __ksymtab section에 존재.(EXPORT_SYMBOL 매크로를 통해서 symbol이 정의되고 링크시 __ksymtab section으로 링크됨) (set by find_module_sections). 
+      num_syms : syms의 갯수.(set by find_module_sections)
+      crcs : 각exported symbol에 대한 crc값.(set by find_module_sections)
+             ko파일의 __kcrctab section에 존재.(EXPORT_SYMBOL 매크로를 통해서 정의되고 *CONFIG_MODVERSIONS enable이어야 존재. 아니면 없음. 링크시 __kcrctab section으로 링크됨) 
+             *crc계산 방법은 잘 모르겠음. skip.
+
+      gpl_syms, num_gpl_syms, gpl_crcs : syms, num_syms, crcs의 GPL버전. (EXPORT_SYMBOL_GPL 매크로를 통해 정의되고 링크시 각 필요한 section들(syms,crcs와 비슷한형태로)로 링크됨)
+
+      sig_ok : struct load_info->sig_ok의 값을 그대로 copy (set by load_module)
+
+      init : 커널 모듈 초기화 함수. module_init 매크로로 정의됨. *8단계 7-2-2 참조.
+
+      core_layout : ko파일의 layout(=섹션종류별)의 정보(위치, 전체크기, 종류별 크기). '.init'으로 시작되는 섹션은 제외하고 계산(set by layout_sections)
+      init_layout : core_layout과 의미는 동일. 단 '.init'으로 시작되는 섹션만 계산(set by layout_sections)
+         *공통필드(struct module_layout)
+        base : 해당 layout의 메모리에서의 시작주소.
+        size : ko파일에서 특정섹션(executable, ro(text/ro_data), ro_after_init, etc)들의 전체 size.
+        text_size : ko파일에서 특정섹션(executable)의 size
+        ro_size : ko파일에서 특정섹션(ro(text/ro_data))의 size
+        ro_after_init_size : ko파일에서 특정섹션(ro_after_init)의 size
+
+      taints : kernel module의 taint상태(ex. module signature verifying failed)를 나타냄. bit단위로 다뤄지는 변수임. (set by add_taint_module *커널모듈 로드 로직 곳곳에서 호출 됨.)
+
+7-2-3.
+  kernel module unload 로직 개요
+    delete_module systemcall을 수행($(top)/kernel/module.c line 912-987)
+    struct module을 찾고, 
+    module 상태등을 제거중인 상태로 변경(ex struct module->state를 세ㅣ팅),
+    exit(module_exit macro에 등록된 것)함수 실행하고,
+     관련 리소스들을 해제 및 커널에서 제거한다.
+    *만약 이미 제거중이면 로직을 중단(return)한다.
+  lsmod/modinfo 로직 개요
+    lsmod
+      /proc/modules를 기반으로 정보를 보여준다
+    modinfo
+      kernel module파일(ko파일)을 파싱하여 정보를 보여준다.(이 외 다른 파일들도 쓰는것으로 확인되는데(ex. modules.builtin.bin) 상세한건 일단 skip)
+  
   참고.
     insmod / modprobe모두 kmod 오픈소스에 포함됨.
     systemcall은 init_module/finit_module(load), delete_module(unload) 임.
       strace -f insmod하면, 최종적으로 finit_module 시스템콜 호출함을 알 수 있음.
       strace -f rmmod하면, 최종적으로 delete_module 시스템콜 호출함을 알 수 있다.
+      modprobe, modprobe -r도 결국 finit_module / delete_module 시스템콜 호출한다.
  
 8단계 *목표 : 7단계 부족부분 확인
   7-1-1.
-    kernel src tree가 정말 모두 필요한가?(헤더만 있으면 안되는가?) *$(top)/Documentation/kbuild/modules.rst 참조
-    module signing이란?(modules_install target rule 참조)
-    module versioning이란? *$(top)/Documentation/kbuild/modules.rst 참조
-    module symbol이란? *$(top)/Documentation/kbuild/modules.rst 참조
-    modpost란 정확히 뭔가? *$(top)/scripts/Makefile.modpost 참조
-    rule_cc_o_c 정확히 하는 역할? *$(top)/scripts/Makefile.build 참조
-    $(output_top)/scripts/module.lds 의미...(정확하게 잘 모르겠음, 간단한 형태긴 한데...)
+    (v)kernel src tree가 정말 모두 필요한가?(헤더만 있으면 안되는가?)
+      헤더만(make headers_install 로 생성되는)으로는 안됨. 커널모듈빌드시 필요한 Makefile들과 tool들도 필요하기 때문임.
+      그렇다고 full source가 필요한 것도 아님. but, 커널모듈은 빌드하지만 일부제약이 있음.(ex. module versioning이 동작안함) *(top)/Documentation/kbuild/modules.rst 2. How to Build External Modules 참조!
+     full featured로 모듈 빌드하고 싶다면, 커널모듈을 load할 대상의 full src tree(build된)이 필요하다.!
 
-  7-2-1.
-    mod*(modprobe, modinfo)과 *mod(ex. insmod, rmmod, lsmod) 차이
+    (v)module signing이란?
+      개요 : 커널모듈 설치시점에 서명을 함. 이 후 커널모듈로드 과정에서 서명을 체크해서 커널모듈 로드 or 로드X 를 함.
+      상세
+       signing 수행
+          시점 : module install 시(make modules_install) 수행됨. $(top)/Makefile.modinst line 64-76 참조
 
-9단계 *목표 : hello.ko kernel module 구현하여 load(load하면 helloword띄우고, unload하면 byeword띄우고...하는 수준)
-Makefile생성은 $(top)/Documentation/kbuild/modules.rst 참조필요할듯.(section 3.)
+          하는일
+           $(top)/scripts/sign-file 바이너리를 호출하여 ko파일에 module signature정보를 append함. sign-file.c 참조
+
+           $(top)/scripts/sign-file [해시종류(ex. sha256)] [키파일패스(.pem파일)] [인증서패스(.x509파일)] [커널모듈(.ko파일)] 로 호출됨.
+
+           $(top)/script/sign-file 코드 분석 개요(상세 분석은 X) *$(top)/scripts/sign-file.c, openssl 기반으로 동작
+             line 297-357 : ko파일의 signature를(ex. pkcs7) 계산함.
+             line 362-373 : signature를 붙이기 위해 ko파일 데이터를 copy
+             line 394-397 : module signature를(signature정보와 MARKER string(magic_number 변수)) ko파일에 append. *layout은 load_module()의 module_sig_check 참조
+
+       signing 검증
+          시점 : load_module시 module_sig_check 함수에 의해 수행 
+          하는 일 : 상세내용은 module_sig_check 분석 내용 참조
+      
+   (v)module versioning이란? *$(top)/Documentation/kbuild/modules.rst 6. Module Versioning 참조, modpost.c도 참조
+      개요
+        해당 커널모듈과 커널모듈이로드되는 커널자체가 버전이같냐(=호환되냐)를 체크한다(같으면 로드, 아니면 로드X)!
+       CONFIG_MODVERSION option enable이어야 사용됨. 아니면 사용X
+        개념은 다음과 같음
+          커널모듈 빌드 시 사용된 커널의 버전정보(=커널모듈이 참조한 외부export커널심볼의 CRC값 *커널의 Module.symvers 파일을 참조하여 얻어옴) 커널모듈에 추가.
+          커널모듈 로드 시, 버전정보(CRC값) 비교를 수행.
+          *전체가아닌 일부 심볼만 버전이 같으면 로드해도되기때문에, 심볼버전을 체크하는 듯.
+
+      상세.(커널모듈의 버저닝 처리 순서)
+        커널모듈이아닌 커널이미지자체(+static 커널모듈)에 대해서도 비슷하게 Module.symvers가 생성되고, 커널모듈 빌드시 해당 파일 기반으로 버전관련 정보를 처리한다라고보면 될 듯(로직은 보진 않았으나 이게 없으면 버저닝 동작 할 수가 없음. 자세한건 skip...) *$(top)/Documentation/kbuild/modules.rst 6.1 참조.
+
+       export symbol 정의
+         EXPORT_SYMBOL 매크로 *커널 export symbol(ex. 변수/함수)를 정의
+           ___ksymtab+[symbol] 섹션에, struct kernel_symbol __ksymtab_[symbol] 변수를 정의. (by __KSYMTAB_ENTRY 매크로)
+           ___kcrctab+[symbol] 섹션에, long __crc_[symbol] 변수를 정의(by __CRC_SYMBOL 매크로)
+ 
+           ___ksymtab+* 섹션들은 ko파일의 __ksymtab섹션으로 링크
+           ___kcrctab+* 섹션들은 ko파일의 __kcrctab섹션으로 링크
+         
+         EXPORT_SYMBOL_GPL 매크로 *커널 export symbol(ex. 변수/함수)를 정의
+           ___ksymtab_gpl+[symbol] 섹션에 변수 정의(EXPORT_SYMBOL과 동일함)
+           ___kcrctab_gpl+[symbol] 섹션에 변수 정의(EXPORT_SYMBOL과 동일함)
+
+           ___ksymtab+gpl* 섹션들은 ko파일의 __ksymtab_gpl섹션으로 링크
+           ___kcrctab+gpl* 섹션들은 ko파일의 __kcrctab_gpl섹션으로 링크
+
+       export symbol crc계산
+          커널모듈에 링크되는 각각 .o파일에 대해서 빌드 시 생성됨. *symbol의 crc생성은 $(top)/scripts/Makefile.build line 184, $(top)scripts/genksyms/genksyms.c 참조. *상세분석은 skip. 동작으로만 확인함.
+         
+          각 오브젝트(.o)에 대해서 아래를 수행한다고 보면 됨.
+
+         genksyms tool
+           EXPORT_SYMBOL* 매크로에 의해 정의된 각 심볼에 대해 crc값을 계산
+           output은 linker script임(__crc* 변수(위 EXPORT_SYMBOL 매크로 내용 참조)에 crc value 값을 세팅)
+           ex)
+             __crc_export_func = 0x6dd4d6df;
+             __crc_export_func2 = 0x245b006c;
+
+          위 linker script기반으로 링크를 다시 수행하여 .o 파일을 재생성
+           ex)
+             linker script수행전 .o파일의 crc심볼정보 *objdump -t [path/to/object]
+               0000000000000000  w      *UND*	0000000000000000 __crc_export_func
+               0000000000000000  w      *UND*	0000000000000000 __crc_export_func2
+
+             linker script수행후 .o파일의 crc심볼정보. *symbol value, section type이 변경되었음!
+               00000000245b006c g       *ABS*	0000000000000000 __crc_export_func2
+               000000006dd4d6df g       *ABS*	0000000000000000 __crc_export_func
+
+       export symbol 버전 정보 출력
+         modpost
+           $(top)/scripts/mod/modpost -o [Module.symvers출력경로] -e -i [커널이미지의 Module.symvers경로] -T [커널모듈 main 오브젝트파일(.o *모든 커널모듈의 오브젝트들이 링크된)] 로 실행. 
+           output은 Module.symvers(해당 모듈의 export symbol 버전 정보(=해당커널모듈의버전))과 mod.c(외부export커널심볼의 버전 정보(=모듈이빌드된커널버전)를 포함)파일.
+
+           $(top)/scripts/mod/modpost 코드 분석 개요(상세 분석은 X) *$(top)/scripts/mod/modpost.c
+             line 2514-2521 : 커널이미지의 Module.symvers로부터 각 symbol정보를 read함. 포맷은 '[crc] [name] [module] [export] [ns]' 형태이며 struct symbol 구조체에 읽어진 값을 세팅함.
+                                   읽어들인 심볼(struct symbol*) 과 심볼을 포함하는 모듈정보(struct module*)를 자료구조에 insert.
+                                 struct module *modules : 심볼 포함하는 모듈
+                                 struct symbol *symbolhash : 심볼
+                        
+             line 2526-2527 : 커널모듈의 main 오브젝트파일(.o파일)을 read함.(ELF포맷을 reading / parsing)
+                              read된 정보를 다음 자료구에 insert
+                                struct module *modules : 해당 커널모듈.
+                                struct module->unres : 해당 모듈에 정의되지 않은 심볼.(=외부 커널 심볼)
+                                struct symbol *symbolhash : 해당 모듈에서 EXPORT로 정의된 심볼 with CRC value.
+                                struct module->srcversion : 해당 모듈에 포함된 오브젝트파일경로(string, .mod 파일)에 대한 md4 hash
+
+             line 2529-2551 : 위 내용 기반으로 mod.c 파일 생성(write)
+                              version관련 write되는 정보는 다음과 같음.
+                                struct modversion_info ____versions[] //__version 섹션
+                                       외부 커널 심볼의 crc, name 배열.
+                                       이게 진짜 커널모듈 로드시 사용하는 버전정보!!!!!!!!!!!!!!!!!!!
+                                MODULE_INFO(srcversion, struct module->srcversion);
+                                       커널모듈의 srcversion
+                                       이건 다른거임... 커널모듈버저닝에서는 무시해도 됨.!
+
+             line 2556-2557 : Module.symvers 파일(=자기자신에 대한 버전정보) 생성(write). *$(top)/Documentation/kbuild/modules.rst 6.2 참조
+                                  포맷은 '[crc] [name] [module] [export] [ns]'
+                              line 2514-2521에서 읽어들인 symbol정보는 제외됨. =>  해당 커널 모듈의 심볼만 포함.
+
+      export symbol 버전 정보 check
+        load_module() 시, check_version()으로 비교함.
+          by check_modstruct_version() *layout_module symbol만 비교
+          by simplify_symbols()  *ko파일에서 UND 섹션 symbol만 비교
+               resolve_symbol_wait()
+                 resolve_symbol()
+
+    (v)modpost란 정확히 뭔가? 
+     커널모듈 빌드 시, 커널모듈의 버전정보와 mod.c파일을 생성하는 tool *8단계 module versioning의 modpost분석내용 참조.
+     $(top)/scripts/Makefile.modpost 에 의해 실행됨.
+     
+    (v)rule_cc_o_c 정확히 하는 역할? *$(top)/scripts/Makefile.build 참조
+       커널의 소스코드 컴파일하기 위한 make 매크로. *커널모듈만 해당하는 게 아님.
+       단순히 .c->.o만 수행하는 것은 아니고 모듈버저닝정보 생성 등을 수행한다. *상세내용은 범위를 넘으므로 skip.
+  
+    (v)$(output_top)/scripts/module.lds 의미..
+      .ko파일에 커널모듈에서 나중에 필요한 정보들(ex. 커널모듈이 정의한 export심볼/심볼의crc(버전정보)) 등등)을 link(aggregation)함.
+       커널모듈 로드시 load_module()과정에서 여러군데에서 사용됨.(ex. __ksymtab섹션은 find_symbol 함수참조) *상세한 건 skip
+
+  (v)7-2-1.
+    (v)mod*(modprobe, modinfo)과 *mod(ex. insmod, rmmod, lsmod) 차이
+      insmod/rmmod vs modprobe/modprobe -r : 궁극적으로 시스템콜(finit_module, delete_module)을 통해 모듈 load/unload하는건 동일하다. 대신 application단 동작이 다르다.!
+      lsmod vs modinfo : 용도자체가 다름. lsmod는 커널내 모듈 리스팅(/proc/modules), modinfo는 커널모듈로부터 정보를 읽어서 보여줌.
+
+  (v)7-2-2.
+    (v)do_init_module(line 3747-3758)
+      (v)module_init 매크로와 do_one_initcall의 관계.
+         개요는 다음과같음
+           커널모듈소스코드 .c파일내 module_init(my_module_init) 매크로 기술. 
+           커널모듈 빌드가 수행되며 위 .c파일 module_init macro expansion시, init_module()은 my_module_init()에 대한 alias하는 코드가 됨.
+          .mod.c파일이 빌드과정에서 자동생성되며, 여기에 struct module 구조체가 정의됨(.gnu.linkonce.this_module section에). 주요 필드는 다음과 같음
+            .init = init_module     // init_module == my_module_init
+            .exit = cleanup_module  // 구조는 init과 동일!
+            위 모듈코드(.c, .mod.c)들로 ko파일 빌드됨.
+            최종적으로, ko파일의 .gnu.linkonce.this_module section에 바이너리로 위 정보가 세팅되게됨!
+            이후 해당 ko파일 메모리로 load. by systemcall(ex. finit_module)
+           load시 .gnu.linkonce.this_module정보를 읽어서 적절히 메모리로 로드하게되고, do_one_initcall()에 의해 module_init() 매크로 인자로넘긴 함수가 실행된다!
+
+        module_init 매크로 : init_module() function을 
+                           kernel module소스코드의 module_init매크로 인자에 대한 alias(아래참조)로 정의함.
+                           *module_exit도 동일한 구조임.
+
+        .mod.c : struct module 구조체변수(__this_module)를 정의한 파일.
+                   커널모듈빌드시 자동생성됨. *$(top)/scripts/Makefile.modpost참조.
+        
+        .mod.c에 왜 .init = init_module 로 세팅되는 지? *100%는 아니지만 90%이상 적중은 될 듯!
+            모듈개발자가 작성한 소스내의 module_init매크로로 선언하는 함수 symbol은 랭귀지레벨에서 커널코드상으로 알 수 없어서임.
+          init_module symbol과 module_init매크로로 선언하는 함수 symbol은 alias이므로 정보는 동일하며(아래 참고. objdump~ 참조),
+            모듈 load시 relocation이 일어나도 똑같은 심볼이므로, 
+            코드상으로는 do_one_initcall을 통해 struct module->init(즉, init_module)을 호출하는 것이지만, 
+            최종적으로는 module_init매크로로 선언된 함수가 실행된다.!
+        
+         테스트용 커널모듈에서 printk()로 출력한 custom_init()과 init_module()의 address. 같음을 알 수 있다!
+          [ 1721.815624] Hello world driver loaded., custom_init:00000000a7dc7f30, init_module:00000000a7dc7f30
+           관련코드일부
+            static int __init custom_init(void) { // init function!
+              printk(KERN_INFO "Hello world driver loaded., custom_init:%p, init_module:%p\n", custom_init, init_module);
+              ...
+             }
+             module_init(custom_init); //init_module alias로 정의!
+
+         참고. gcc alias attribute
+           특정 함수 declaration을, 이미 정의된 다른 함수와 동일하게 해줌.(다른 symbol이지만 동일한 함수(=address)를 의미)
+          ex) void a() { //do something }
+              void b() __attribute__((alias("a"))) // a();, b(); 모두 동일 함수임.
+
+         참고. objdump -t my_module.ko로 확인한 init_module, custom_init(module_init매크로로 선언하는 함수)의 symbol 정보.
+          visibility(local / glboal)랑 symbol name빼고 모두 동일 함!
+          0000000000000000 l     F .init.text	0000000000000032 custom_init
+          0000000000000000 g     F .init.text	0000000000000032 init_module
+
+    (v)struct load_info, struct module 각 필드 및 관련 자료구조(ex. modules) 내용 정리.
+      (v)module load시 layout도 정리(할수있었으면 좋겠다 제발)
+
+(v)9단계 *목표 : 예제보지말고, kernel소스트리만(./Documentation도 포함 ㅋ)참조하여 hello.ko kernel module 구현하여 load(load하면 helloword띄우고, unload하면 byeword띄우고...하는 수준)
+코드
+-Makefile
+obj-m := knwtest.o
+knwtest-y := main.o
+
+-main.c
+#include <linux/module.h>
+
+MODULE_LICENSE("knwtest license");
+
+int knwtest_init(void)
+{
+        printk("This is the knwtest. Hi!\n");
+        return 0;
+}
+
+void knwtest_exit(void)
+{
+        printk("This is the knwtest. Bye!\n");
+}
+
+module_init(knwtest_init);
+module_exit(knwtest_exit);
+
+-dmesg출력
+[  155.577865] knwtest: loading out-of-tree module taints kernel.
+[  155.577877] knwtest: module license 'knwtest license' taints kernel.
+[  155.577890] Disabling lock debugging due to kernel taint
+[  232.321370] This is the knwtest. Hi!
+[  238.937113] This is the knwtest. Bye!
 
 10단계 *목표 : 정리
+  알게된 것
+    커널모듈 빌드 방법
+    커널모듈 빌드 로직(make)
+    커널모듈 로드 로직
+      모듈싸이닝
+      모듈버저닝
+     module_init/exit 매크로
+    커널모듈 유틸(insmod, lsmod, rmmod, modprobe)
 
+  코멘트
+    잘된거
+      커널모듈 빌드/로드/관련유틸/일부개념(싸이닝,버저닝)에 대해 기본적인 내용을 코드로 분석해보았다. 이후 디테일한 분석에 좋은 시발점이 될 듯.
+    안된거
+      기본적인 내용(간단한 형태의 모듈(파일1개만존재)에 대한...) 중 일부만 확인했으며, detail한 부분과 분석중 마주친 다른 영역들(ex. sysfs관련 코드 등등) 은 좀 더 확인이 필요하다.
+      너무 오래걸리다보니(=호흡이길다) 지쳐서 일관성(봐야하는데 skip or 대충만보고넘어감) 유지가 잘 안된 듯... 좀 더 인내심을 가지는것도 좋을듯.
+    
