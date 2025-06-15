@@ -33,3 +33,11 @@ SECTIONS {
                 *(*);
         }
 }
+
+TODO list
+  SMBIOS로직분석
+  하드웨어로직 상세분석 ex) cpu bring up 상세분석, hardware dedicated logic 상세분석
+  실제이슈해결(버그/개선/리팩토링(큰 덩어리로) 등)
+  CBMEM 로직 분석
+  CBFS layout / 관련 로직(빌드, 툴, etc) 분석
+  

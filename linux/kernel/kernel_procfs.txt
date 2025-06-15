@@ -1,4 +1,5 @@
-next : 7-2 cmdline_proc_show 분석 ㄱㄱ(calltrace내용참조하여 분석하는게 좋을 듯)
+next : 9단계 ㄱㄱ (proc_module 디렉토리에 구현중...)
+       
 *1-10단계학습법 적용
 *참고.
   1-6단계, 목표, 계획, 학습데이터 모으는 단계
@@ -18,7 +19,8 @@ next : 7-2 cmdline_proc_show 분석 ㄱㄱ(calltrace내용참조하여 분석하
   procfs에 항목 추가 실습
     
 학습자료
-  $(top)/filesystems/proc.rst
+  $(top)/Documentation/filesystems/proc.rst
+  (top)/Documentation/filesystems/vfs.rst (struct file, inode 등의 개념 설명있음)
   googling
 
 학습계획
@@ -42,6 +44,20 @@ calltrace
       write(1, "BOOT_IMAGE=/boot/vmlinuz-5.15.17"..., 110BOOT_IMAGE=/boot/vmlinuz-5.15.175 root=UUID=51215f83-58e4-48d4-9b61-9e57750c45c3 ro quiet splash vt.handoff=7) = 110
 
   kernelspace calltrace
+    open systemcall을 통해서 proc를 open.(proc_single_open을 호출)
+    cat-4993    [000] .....  8375.311957: proc_single_open <-proc_reg_open
+    cat-4993    [000] .....  8375.311975: <stack trace>
+    => 0xffffffffc026a083
+    => proc_single_open
+    => proc_reg_open
+    => do_dentry_open
+    => path_openat
+    => do_filp_open
+    => do_sys_openat2
+    => do_sys_open
+    => do_syscall_64
+    => entry_SYSCALL_64_after_hwframe
+
     read systemcall을 통해서 최종적으로 cmdline_proc_show(/proc/cmdline의 정보 리턴)가 호출된다.
     ex) cat /proc/cmdline의 경우 커널콜트래이스
       cat-5177    [001] .....  1518.025494: cmdline_proc_show <-seq_read_iter
@@ -56,10 +72,48 @@ calltrace
       => do_syscall_64
       => entry_SYSCALL_64_after_hwframe
 
-7-2. 주요 흐름 분석 */proc/cmdline 에 대한 주요로직/흐름을 분석한다
+7-2. 주요 흐름 분석 */proc/cmdline 에 대한 주요로직/흐름을 분석한다 *분석중, 어쩌다보니(callback들때문에 이것저것 코드써치하다가 이 부분인 것 같다라고 생각해서...) 셋길로 세서 분석하다 그만한것도 있음. but /proc/cmdline에 대한 등록/open/read 주요로직분석은 다 함.
+procfs의 각 항목들(directory, file, symlink)는 struct proc_dir_entry로 나타내어짐. *$(top)/fs/proc/internal.h line 20-67 참조
+항목의 종류별 struct proc_dir_entry의 필드가(ex. callback들) 서로다르게 세팅되는 개념으로 보면 됨.
+procfs 초기화.
+  proc_root_init()에 의해 수행됨.(in start_kernel())
+procfs 항목 등록.
+  핵심은 struct proc_dir_entry가 생성되고 procfs에 등록(즉, parent의 struct proc_dir_entry에 link)됨.
+  일반파일 : proc_create_reg()를 호출하는 wrapper들(ex. proc_create_single)
+  디렉토리 : proc_mkdir()
+  symlink : proc_symlink()
+  *위 타입 모두 근본적으로 __proc_create()와 proc_register()가 수행되며, struct proc_dir_entry에 세팅되는 정보(ex. callback)가 다름.
+  아래는 /proc/cmdline의 생성의 경우의 예.(by proc_cmdline_init, 콜백관점)
+    struct proc_dir_entry //얘먼저 세팅(open과별도로 procfs에 항목 등록시점)
+      single_show = cmdline_proc_show
+      data = NULL
+      proc_ops = proc_single_ops
+        proc_open = proc_single_open             //procfs open시 호출되는 callback
+        proc_reader_iter = seq_read_iter         //procfs read시 호출되는 callback
+procfs 데이타 open *일반파일(/proc/cmdline) case
+  calltrace는 위 참조
+  calltrace 수행 후에는 다음과같이 구조체가 세팅됨.(callback관점)
+    struct file
+      private_data = struct seq_file
+        op
+          start = single_start
+          next = single_next
+          stop = single_stop
+          show = struct proc_dir_entry->single_show // cmdline_proc
+        private = struct proc_dir_entry->data       // NULL
+procfs 데이타 read *일반파일(/proc/cmdline) case
+  calltrace는 위 참조
+  seq_read_iter()함수에서 struct_file->struct seq_file->op->start/next/stop/show를 적절하게 호출하여 데이터를 읽어옴.
+참고. struct file_operations proc_iter_file_ops
+  proc_get_inode에 의해 sturct inode->i_fop callback으로 등록됨.(시점/의미 등은 추후 분석, proc에서할영역은 아닌듯.)
+  사실상 procfs의 VFS call(ex. open/read)에 대한 entry point로 볼 수 있음. *위calltrace 참조(proc_reg_open, proc_reg_read_iter)
+
 $(top)/fs/proc/cmdline.c
 line 7-12
   cmdline_proc_show
+    saved_command_line 값(string)을 struct seq_file에 write한다.
+    결국에는 user buffer로 리턴됨.
+   *calltrace및, seq_read_iter, proc_reg_read_iter 분석 참조.
 
 line 14-19
   proc_cmdline_init
@@ -71,8 +125,6 @@ line 102-103
     proc_create_single_data() 로 치환.
 
 $(top)/fs/proc/generic.c
-
-
 line 158-181
   __xlate_proc_name()
     아래변수를 채워서 return함
@@ -111,8 +163,32 @@ line 392-457
 
   *struct qstr : string 자료형인데, metadata(ex.길이)가 있는 특수한 string 자료형이라고 보면됨
 
+line 459-479
+  proc_symlink()
+    procfs에 symlink를 생성한다.
+    name에 대한 struct proc_dir_entry를 생성후, 
+    해당 struct proc_dir_entry 필드에 다음을 세팅한다.
+     data : symlink name
+     proc_iops : proc_link_inode_operations
+    이후 struct proc_dir_entry를 등록한다.(by proc_register)
+    *참고. procfs에서 아래 형태의 symlink를 만들어 냄. ('mounts'가 struct proc_dir_entry->name, 'self/mounts'가 struct proc_dir_entry->data)
+      lrwxrwxrwx  1 root             root                          11 Jun  3  2025 mounts -> self/mounts
+
+line 482-502
+  _proc_mkdir()
+    procfs에 directory를 생성한다.(by __proc_create)
+    name에 대한 struct proc_dir_entry를 생성하여 다음 필드를 세팅한다.
+      data : 인자로넘어온 데이타
+      proc_dir_ops : proc_dir_operations
+      proc_iops : proc_dir_inode_operations
+
+line 518-523
+  proc_mkdir()
+    procfs에 directory를 생성한다.(결국에는 by _proc_mkdir)
+
 line 541-559
   proc_create_reg()
+    procfs에 일반파일을 생성한다.
     인자(name)로 넘어온 proc path에 대해 struct proc_dir_entry를 alloc한다.
     line 546-551
       생성할 entry의 권한을 체크.
@@ -123,6 +199,10 @@ line 541-559
         struct proc_dir_entry->data = data(인자로 넘어옴)
     line 558
       생성된 struct proc_dir_entry를 return
+
+line 632-637
+  proc_single_open()
+    struct file객체와 struct proc_dir_entry의 callback, data를 연관시킴.(by single_open)
 
 line 647-660
   proc_create_single_data()
@@ -138,19 +218,269 @@ line 647-660
 
 $(top)/fs/proc/internal.h
 line 20-67
-  struct proc_dir_entry 정의
-  주요필드
-    name : 해당 proc entry의 이름.(ex. cmdline) *path이름을 포함하지 않음! by __proc_create
-    namelen : name의 길이 by __proc_create
-    
-    low_ino : 해당 entry의 inode number by proc_register
+  struct proc_dir_entry
+    procfs 트리구조에서 각 항목을 정의.
+    필드(ex. proc_ops)가 어떻게 셋업되냐에따라, 엔트리의 종류(procfs의 일반파일인지, 디렉토리인지, symlink인지,,,)가 결정됨.
+    주요필드
+      proc_ops : 해당 entry의 callback operation by proc_create_single_data
+        proc_open : procfs open시 호출되는 callback.
+        proc_read_iter : procfs read시 호출되는 callback.
+      single_show : procfs 데이타 추출 시, 호출되는 callback. by proc_create_single_data
 
-8단계 *목표 : 7단계 부족부분 확인. 디렉토리 구조의 경우(ex. /proc/[pid])도 분석 ㄱㄱ
-  directory구조등 좀 더 복잡한 케이스 처리로직흐름
-  fs_initcall 메카니즘(proc_cmdline_init)
-  kernel rbtree 메카니즘
+      data : private data(?). symlink라면 symlink걸리는 이름을 세팅. by proc_symlink
+
+      parent : 해당 entry의 parent entry by proc_register
+      subdir : 해당 entry 하위 엔트리(RB-tree root). by __proc_create
+
+      name : 해당 proc entry의 이름.(ex. cmdline) *path이름을 포함하지 않음! by __proc_create
+      namelen : name의 길이 by __proc_create
+    
+      low_ino : 해당 entry의 inode number by proc_register
+      
+$(top)/include/linux/seq_file.h
+line 16-29
+  struct seq_file
+    buf : 데이터를 저장할 버퍼
+    size : buf의 사이즈
+    count : buf에 카피된 데이터 사이즈
+    index : 현재 레코드의 index(첫번째면 0, 두번째면 1 ...)
+    op : callback들. by seq_read_iter()
+    file : 해당 seq_file과 연관된 파일(struct file) by seq_open()
+
+line 31-36
+  struct seq_operations
+    struct seq_file에 대한 callback
+    주요필드 *seq_open함수 주석 참조
+      start: 첫번째레코드를 return
+      next: 다음레코드를 return
+      show: struct seq_file버퍼에 인자로 넘어온 데이타(일반적으로 start / next 에 의해 retrun된 레코드)를 카피.
+
+$(top)/fs/seq_file.c
+line 41-88
+  seq_open()
+    struct seq_file을 alloc/초기화 후, struct file객체와 연관시킴.
+
+line 168-298
+  seq_read_iter()
+    다음개념임.(seq_open함수 주석 및 예시코드참조.($(top)/kernel/module.c line 4593-4653 참조 *cat /proc/modules))
+      record = struct seq_file->seq_operations->start(seq_file, offset);
+      struct seq_file->seq_operations->show(seq_file, record);
+      loop {
+        record = struct seq_file->seq_operations->next(seq_file, record)
+        struct seq_file->seq_operations->show(seq_file, record);
+      }
+      struct seq_operations callback들은 위 개념을 기반으로 적절히 코딩 필요한 듯.
+
+    struct seq_operations callback이 single_start/single_next/single_stop인 경우,('레코드가 1개이다'를 의미하는 듯)
+       1개의 레코드를 read하여 strcut seq_file에 카피.
+       이후 struct seq_file의 데이타를 struct iov_iter에 카피.
+       => 즉, /proc/cmdline의 경우라면, procfs데이타를 읽어서 유저스페이스 공간으로 1회 copy 수행 후 종료.
+
+    line 188-191
+      offset 초기화(read offset이 처음부터 시작인 경우만 해당)
+    line 208-213
+      struct seq_file->buf를 할당
+    line 223-249
+      첫번째 레코드를 read
+      일반적인 상황이라면, goto Fill; 수행하게 됨.
+    line 254-279
+      나머지 모든 레코드를 read
+    line 280-284
+      읽어들인 레코드를 유저버퍼로 copy(by copy_to_iter)
+      이후 관련 정보(ex. 읽어들인 버퍼 사이즈)를 업데이트
+    line 285-293
+      읽어들인 버퍼사이즈를 return
+      
+    참고.
+      struct kiocb 개요 *new_sync_read()참조
+        주요필드
+         ki_filp : VFS operation이 수행되는 대상의 struct file객체(프로세스에서 open한 파일을 의미 $(top)/Documentation/filesystems/vfs.rst 참조)
+         ki_pos : read를 시작할 offset.
+      struct iov_iter 개요 *new_sync_read()참조
+        주요필드 
+         count : 버의 사이즈(모든 iov의 size로 보면 될 듯)
+         iov : VFS operation을 수행할 데이터(read이면 데이터를 읽을 버퍼)
+           iov_base : 데이터의 시작 주소
+           iov_len : 데이타의 사이즈
+         nr_segs : iov갯수 *아마 시스템콜 인자로 넘어올 수 있어보이고, new_sync_read의 경우는 무조건 1.
+    
+line 588-607
+  single_open()
+    struct seq_file, struct seq_operations를 할당/초기화 후 struct file객체와 연결시킴.(by seq_open)
+    *struct seq_operations 각 필드의미는 seq_open함수 주석 참조
+
+line 679-686
+  seq_putc()
+    struct seq_file->buf에 1byte char을 write.
+
+line 688-699
+  seq_puts()
+    struct seq_file->buf에, string을 write.
+
+$(top)/fs/proc/inode.c
+line 95-111
+  proc_init_kmemcache
+    proc관련 cache를(proc_inode_cache, pde_opener, proc_dir_entry) 생성.
+        
+line 290-303
+  proc_reg_read_iter
+    procfs read calltrace의 entry point.(그전에는 vfs_read호출됨)
+    struct proc_dir_entry->proc_ops->proc_read_iter callback을 호출한다.
+    *callback은 proc_create_single_data() 에 의해 등록된다.(다른데서도 등록 될 수 있음. /proc/cmdline 분석기준으로는 해당 함수에 의해 등록됨.)
+    *line 570-580참조(callback함수로 등록됨)
+
+line 484-542
+  proc_reg_open()
+    struct proc_dir_entry->proc_ops->proc_open을 call.
+
+line 570-580
+  struct file_operations proc_iter_file_ops
+    procfs 항목에 대한 struct file_operations을 정의.
+    proc_get_inode()에 의해 struct inode->i_fop으로 callback 세팅됨.
+    
+$(top)/fs/proc/root.c
+line 288-309
+  proc_root_init()
+    시스템초기화시(by start_kernel()) 호출됨.
+    procfs의 캐시메모리(kmemcache)를 할당하고 (by proc_init_kmemcache)
+    proc/fs, proc/driver 등 기본적으로 존재하는 procfs 디렉토리/파일을 생성한다.(by proc_mkdir, proc_self_init, etc...)
+    이후 procfs를(struct file_system_type proc_fs_type) 시스템에 등록한다.(by register_filesystem)
+ 
+$(top)/fs/proc/self.c
+line 70-73
+  proc_self_init
+    self_inum값을 세팅(by proc_alloc_inum)
+
+$(top)/fs/proc/thread_self.c
+line 70-73
+  proc_thread_self_init
+    thread_self_inum값을 세팅(by proc_alloc_inum)
+
+$(top)/fs/proc/proc_net.c
+line 395-400
+  proc_net_init()
+    procfs에 net -> self/net을 엔트리를 생성(by proc_symlink)
+
+$(top)include/linux/uio.h
+line 149-156
+  copy_to_iter()
+    struct iov_iter로 버퍼(addr)을 bytes만큼 copy한다. (by _copy_to_iter)
+    line 152-153
+      카피할 버퍼의 사이즈를 체크한다. 버퍼사이즈가 잘못되었으면 컴파일타임 에러 발생(by check_copy_size)
+     *gcc built-in function들 사용하여 수행함.
+    line 154-155
+      버퍼를 카피한다.(by _copy_to_iter)
+
+$(top)/lib/iov_iter.c
+line 20-39
+  iterate_iovec()
+    파라미터
+      i: struct iov_iter (데이터가 카피될 버퍼 이터레이터)
+      n: read할 데이터 size(전체크기)
+      base: read할 데이터의 시작주소
+      len: read할사이즈. 임시지역변수.
+      off: read할 버퍼의 시작오프셋(base기준의 offset). 임시지역변수.
+      __p : struct iov (데이터가 카피될 버퍼)
+      STEP : 실제 copy 수행할 function
+    버퍼(__p *struct iov)에 버퍼(base)를 사이즈(n)만큼 copy(by STEP)한다.
+    
+line 111-147
+  __iterate_and_advance()
+    파라미터
+     i: struct iov_iter. (데이터가 카피될 버퍼 이터레이터)
+     n: read할 데이터 size
+     base: read를 시작할 버퍼의 주소
+     len: read할 사이즈
+     off: base에 대한 offset.
+     I: copy를 수행할 function
+     K: struct iov_iter type이 ITER_IOVEC이 아닌 경우 copy수행할 function. I, K는 베타적임.
+    line 115-122
+      버퍼(__p *struct iov)에 버퍼(base)를 사이즈(n)만큼 copy한다.(by iterate_iovec)
+      이후 struct iov_offset의 다음 필드를 업데이트한다.(버퍼를 채웠으므로)
+       struct iov_iter->nr_segs, iov *사용가능한 struct iov와, struct iov갯수로 보여짐
+    line 123-144 : skip.(struct iov_iter type이 ITER_IOVEC이 아닌 경우이므로 일단 skip함.)
+    line 145
+      읽어들인데이타만큼 남아있는 버퍼사이즈를 줄임.
+      
+line 663-676
+  _copy_to_iter()
+    struct iov_iter에 버퍼(addr)을 사이즈(bytes)만큼 copy한다. (by iterate_and_advance macro)
+    
+8단계 *목표 : 7단계 부족부분 확인. 디렉토리 구조의 경우 분석 ㄱㄱ
+  (v)directory구조가 포함되어있는 좀 더 복잡한 케이스 로직 분석.(/proc/irq/default_smp_affinity의 경우)
+    proc_root_init과 크게 다를바 없음.
+    proc_mkdir, proc_create* 들로 procfs내 항목을 등록하며, 이 때 세팅되는 callback(struct proc_ops)이 조금 다름.
+    /proc/irq/default_smp_affinity 경우
+      procfs 항목등록 *$(top)/kernel/irq/proc.c line 425 참조
+        proc_create() 로 수행
+        proc_ops callback = default_affinity_proc_ops
+      procfs 항목 등록시 자료구조 상태(callback관점)
+        struct proc_dir_entry //얘먼저 세팅(open과별도로 procfs에 항목 등록시점)
+        single_show = NULL                              //이거안씀
+        data = NULL
+        proc_ops = default_affinity_proc_ops
+          proc_open = default_affinity_open             //procfs open시 호출되는 callback
+          proc_reader_iter = seq_read                   //procfs read시 호출되는 callback
+          proc_wirte = default_affinity_write           //procfs write시 호출되는 callback
+      open 후 자료구조 상태(callback관점)
+        struct file
+          private_data = struct seq_file
+            op
+              start = single_start
+              next = single_next
+              stop = single_stop
+              show = default_affinity_show              // /proc/cmdline과는 다르게, struct proc_dir_entry->single_show로 세팅하지않음.
+            private = struct proc_dir_entry->data       // PDE_DATA(inode)
+      open/read/write흐름은 동일 7단계 calltrace와 동일
+        open
+         => default_affinity_open
+         => proc_reg_open
+         => do_dentry_open
+         => path_openat
+         => do_filp_open
+         => do_sys_openat2
+         => do_sys_open
+         => do_syscall_64
+         => entry_SYSCALL_64_after_hwframe
+        
+        read
+        => default_affinity_show
+        => seq_read_iter
+        => seq_read
+        => proc_reg_read
+        => vfs_read
+        => ksys_read
+        => do_syscall_64
+        => entry_SYSCALL_64_after_hwframe
+
+        write // write의 경우, 단순히 내부 변수에 값 카피하는 수준.
+        => default_affinity_write
+        => proc_reg_write
+        => vfs_write
+        => ksys_write
+        => do_syscall_64
+        => entry_SYSCALL_64_after_hwframe
+
+  (v)seq_read_iter 상세분석
+     7단계 분석 내용 참조
+    
+  fs_initcall 메카니즘(proc_cmdline_init) *추후에 해도 될 듯
+  kernel rbtree 메카니즘 *추후에 해도 될 듯
 
 9단계 *목표 : procfs에 항목 추가 실습
+요구사항
+  kernel module 형태로 추가.
+  module load시 procfs에 항목추가, module unload시 procfs에 항목제거
+  directory구조
+    proc
+      knwtest
+        val1(r)
+        val2(rw)
+        dir
+          val3(rw)
+    val1 : "1"을 read하는 readonly 인터페이스.
+    val2,val3 : 사용자가 write한 string을 read하는 인터페이스.
+
 
 10단계 *목표 : 정리
 

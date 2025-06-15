@@ -777,7 +777,7 @@ PCI device type별로 구분해서 정의되어있음.(PCI device type별로 con
 9단계(유용한 것을 할수있는 수준까지 파기) - 이슈 1개 처리
   수정내역
   수정1. coreinfo 빌드 nm이슈 처리 ㄱㄱ... (수정할만한거 찾을려고 repo 최신화해서 빌드다시 하는데 coreinfo빌드시 nm error발생. 추가로 할거없으면 여기서 끝내는 것도... ㅋㅋ)
-    status : open
+    status : merged!
     gerrit : https://review.coreboot.org/c/coreboot/+/87906
     local branch : feature/libpayload
 

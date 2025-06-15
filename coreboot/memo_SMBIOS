@@ -1,0 +1,165 @@
+next : 완료
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - SMBIOS 처리 로직 분석
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+
+학습목표
+  SMBIOS개념확인
+  coreboot에서 SMBIOS 주요 로직 확인
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+  https://www.dmtf.org/standards/smbios *RFC spec
+  https://en.wikipedia.org/wiki/System_Management_BIOS
+
+학습계획
+  milestone1. 
+  
+=======================
+milestone1. 
+
+7단계(대충 사용 수준까지) - SMBIOS 개념 / 주요로직 확인
+코드분석은 coreboot 24.05 version기준!
+
+7-1. SMBIOS 개념
+System Management BIOS를 의미
+
+BIOS가 생성한 정보(=즉 HW 컴포넌트의 정보)에 접근하도록 하는 표준화된 정의된 인터페이스(data structures, access methods)
+the SMBIOS Specification addresses how motherboard and system vendors present management information about their products in a standard format through platform firmware *스펙문서 introduction 인용.
+
+표준화된 인터페이스 제공 외에 SMBIOS 스펙에 의해서, OS/App에서 HW를 probing하는 등의 error-prone한 작업이 불필요해 짐.
+
+스펙은 DMTF에 의해 만들어짐. 
+  공식스펙위치 : https://www.dmtf.org/standards/smbios
+
+SMBIOS table개요
+  ---------------------
+  ...
+  entry point structure
+    structure table address --
+  ...                        |
+  ---------------------      |pointing to
+  ...                        |
+  SMBIOS structure         <--                       -----
+    header                  formatted section          |
+    structure of the type   formatted section          |     structure table lenth 
+    text string             unformmated section        |
+  SMBIOS structure                                     |
+  SMBIOS structure                                   -----
+  ...
+  ---------------------
+
+SMBIOS정보에 접근가능한 유틸리티가 존재. 대표적으로는 dmidecode가 있음.  
+
+참고. DMIBIOS
+  Desktop Management Information BIOS
+  컴퓨터 내 components에 대해 관리하기 위한 프레임워크를 제공.
+  SMBIOS와는 다른것!이며(첨엔 DMIBIOS라는 명칭이었는데 바뀜, DMIBIOS랑 interaction이 있었어서.), DMIBIOS를 통해 SMBIOS정보를 제공해줄 수도 있음.
+  마찬가지로 DMTF에 의해 스펙명시되었으나, 현재는 End of life되었음.
+  공식스펙위치 : https://www.dmtf.org/standards/dmi
+
+7-2. coreboot 로직
+boot_states BS_WRITE_TABLES단계에서 수행됨.
+핵심 함수는 smbios_write_tables() 임
+
+$(top)/src/include/smbios.h
+line 288-303
+  struct smbios_entry
+    SMBIOS 32bit entry point 정의
+
+line 305-316
+  struct smbios_entry30
+    SMBIOS 64bit entry point 정의
+
+line 318-322
+  struct smbios_header
+    모든 SMBIOS structure가 공통으로 포함하는 header를 정의
+
+line 324-340
+  struct smbios_type0
+    SMBIOS structure type = 0를 정의.
+    *다른 type들도 똑같은 형식으로 정의되어있음.!(그러므로 다른 type들은 별도 기술하지 않음)
+    *eos 필드의 의미.
+      SMBIOS structure의 종료(end of structure)를 의미.
+       2개의 NULL byte.
+       필요시, SMBIOS structure의 string테이블의 시작을 의미하게 됨.(smbios_add_string 참조)
+      SMBIOS 공식스펙 6.1.1. Structure evolution and usage guidelines 참조.
+
+$(top)/src/lib/smbios.c
+line 29-56
+  smbios_add_string()
+    SMBIOS structure에 string table을 생성
+     즉, string table에 항목을 추가.
+     이후 추가된 string에 대한 string table내 index를 return.
+    string table은 아래포맷.(SMBIOS 공식스펙 6.1.3. Text Strings 참조)
+      string NUL string NUL string NUL string NUL NUL
+
+line 58-73
+  smbios_string_table_len()
+    SMBIOS structure의 string table의 사이즈를 return.(NUL을 포함한 크기임.)
+
+line 75-78
+  smbios_full_table_len()
+    SMBIOS structure의 사이즈(stirng table 포함)를 return
+
+line 80-90
+  smbios_carve_table()
+    SMBIOS structure의 header(struct smbios_header) 값을 세팅.
+
+line 368-412
+  smbios_write_type0()
+    SMBIOS structure type0 정보를 채움.
+    line 370
+      struct smbios_header 정보 세팅(by smbios_carve_table)
+    line 373-408
+      SMBIOS structure type0정보 세팅
+    line 409-411
+      SMBIOS structure의 사이즈를 구하고,(by smbios_full_table_len)
+       해당 사이즈만큼 offset이동.
+       그리고 해당 사이즈를 return
+    *다른 type도 똑같은 형식임. 채우는 정보만 다르므로 분석하지 않음.
+
+line 1203-1289
+  smbios_write_tables()
+    SMBIOS table을 생성한다.
+    line 1226-1256
+      SMBIOS structure를 write
+    line 1258-1286
+      SMBIOS entry point structure 세팅
+
+(v)8단계 - 7단계 부족분 분석
+  (v)하드웨어 정보 긁어와서 SMBIOS 구조체에 세팅 로직 확인(예시로 하나 딱 찝어서 분석하면 좋을 듯)
+    다양한 소스들로부터(ex. x86 'cpuid' instruction or coreboot초기화과정에서 추출한 정보 등) 추출한 정보를 기반으로 적절히 SMBIOS값을 세팅해줌.
+
+  (v)SMBIOS access(ex. read)방법.
+    메모리에 존재하는 SMBIOS structure를 찾아서 디코딩하여 보여줌. *dmidecode 소스 참조함.
+    다른 시스템(ex. SMBIOS정보 보여주는 BIOS라거나...)에서도 동일한 방식으로 할 듯.
+    
+9단계(유용한 것을 할수있는 수준까지 파기) - 이슈 1개 처리
+  smbios_write_tables함수 se, se3 초기화로직 함수로 빼기
+    status : in review
+    gerrit : https://review.coreboot.org/c/coreboot/+/88100
+
+10단계(가르치기) - 내용정리
+알게된것
+  SMBIOS 개념
+  coreboot에서 SMBIOS 정보 생성 주요로직(smbios_write_tables function)
+  외부에서 SMBIOS 정보 접근 방법(dmidecode 함수 참조)
+
+코멘트
+  스펙이 공개되어있어서, 스펙문서 보면서 SMBIOS주요로직 분석은 빠르게 할 수 있었음.
+  But, 아직 기본적인 수준만 보는거고, 실제 개선도 리팩토링 수준이 다라서 아쉬움.
+  좀 더 정진해서... 리팩토링 수준을 넘어보자...
+
