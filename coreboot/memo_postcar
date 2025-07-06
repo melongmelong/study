@@ -119,6 +119,7 @@ $(top)/src/arch/x86/postcar.c
       console_init() 수행
     line 30-31
       cbmem영역 초기화수행(by cbmem_initialize)
+      *해당 이미지 내 IMD관리구조체가(ex. struct imd imd)  CBMEM영역을 가리키고 있지 않으므로, 가리키도록 세팅이 필요함.
     line 33
       timestamp 추가(by timestamp_add_now)
     line 35

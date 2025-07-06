@@ -168,6 +168,7 @@ line 424-468
       exception초기화(by exception_init)
     line 450-454
       cbmem초기화(by cbmem_initialize)
+       *해당 이미지 내 IMD관리구조체가(ex. struct imd imd)  CBMEM영역을 가리키고 있지 않으므로, 가리키도록 세팅이 필요함.
     line 456
       timestamp찍음
     line 457
@@ -199,7 +200,7 @@ line 182-195
      이후단계들에서는 stage argument로 계속 전달되어진다.(cascaded)
   (v)cbmem왜 다시 세팅해야하는 지?
     cbmem영역자체는 romstage에서 최초로 만들어지지만,
-    이미지자체가 달라 정보를 다시 세팅해줘야 한다... 말고는 현재 특별한 이유는 모르겠음.
+    이미지자체가 달라 정보를 다시 세팅해줘야 한다...
     더 상세한 내용은 잘 모르겠다... 이건 추후에 ㄱㄱ..
     
 9단계(유용한 것을 할수있는 수준까지 파기) - ramstage 이슈1개처리.
