@@ -1,0 +1,543 @@
+next : 완료
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel sysfs
+
+학습이유
+  user space에서 자주 접하는 kernel interface이므로,
+  알게되면 이후 sysfs 정보의 의미를 찾을때 도움될 것 으로 기대됨.
+
+학습목표
+  sysfs 주요 흐름 분석
+  sysfs에 항목 추가 실습
+    
+학습자료
+  $(top)/Documentation/filesystems/sysfs.rst
+  $(top)/Documentation/core-api/kobject.rst
+  $(top)/samples/kobject/kobject-example.c kobject커널예시코드(위 kobject.rst에서 참조) *이 코드자체를 분석하면 될 듯?
+  googling
+
+학습계획
+  milestone1. 
+  
+================================================================
+7단계 *목표 : sysfs 개념 / sysfs 주요 흐름 분석
+7-1. sysfs 개념
+kernel data structure를 유저스페이스로 노출하는 수단(interface)
+ram-based file system임(=ramfs기반이다.)
+kernel의 kobject infra와 연관되어있다.(*Documentation/core-api/kobject.rst 참조)
+
+커널빌드시, config enabled되어야 함(CONFIG_SYSFS)
+
+mount -t sysfs sysfs /sys 로 mount가능
+
+7-2. sysfs 주요 로직 *$(top)/samples/kobject/kobject-example.c 를 entry point로 분석 함.(sysfs 가장 기본적인 커널의 예시코드)
+주요개념
+  kobject : sysfs에서 디렉토리(정확하겐 struct kernfs_node로 표기)역할.
+            parent kobject와 연결되어 hierarchy이룸. struct kobject 구조체로 정의됨.
+
+  attributes : sysfs에서 파일역할. struct attribute 구조체로 정의됨.
+               struct kobject의 attribute로 등록된다.
+                   즉, kernfs hierarchy에서 struct kobject의 kernfs_node의 하위 노드(kernfs_node)로 등록된다.
+               struct kobject로 정의되는게 아님!
+
+  sysfs : kobject, attribute에 대한 interface. kernfs로 구현됨.
+
+  kernfs : 실제 sysfs를 관리
+             즉 kobject, attribute에 대한 interface(=파일시스템/노드들의hierarchy(디렉토리,파일))를 관리.
+           struct kernfs_node로 정의됨.
+
+  구조
+    kobject는 kobject대로 관리(ex. kobject node간 hierarchy가 존재. 쉽게말해 sysfs내 디렉토리끼리의 hierarchy가 관리)
+    kernfs는 kernfs대로 관리(kernfs node간 hierarchy가 존재. 쉽게말해 sysfs내 디렉토리/파일 전체에 대한 hierarchy가 관리)
+       해당 구조체로 디렉토리, 파일 모두 표기한다.
+    sysfs는 kernfs기반으로 구현. kobject 와 kernfs사이의 인터페이스 느낌으로 보면 될 듯.
+    일반적으로 kobject와 sysfs(즉 kernfs)는 같이 움직임.(ex. kobject가 추가되면 sysfs(즉 kernfs)에도 추가된다.(ex. kobject_create_and_add())
+
+  kobject sysfs attribute read/write/open calltrace(ftrace) *$(top)/samples/kobject/kobject-example.c out-of-tree module로 빌드하여 테스트(cat으로)함.
+  '=>'표기 없는거는 코드레벨에서 유추해서 추가함...
+             cat-5567    [000] .....   550.707604: foo_show <-sysfs_kf_seq_show
+             cat-5567    [000] .....   550.707643: <stack trace>
+ => 0xffffffffc033e083
+ => foo_show
+ kobj_attr_show
+ => sysfs_kf_seq_show
+ => seq_read_iter
+ kernfs_fop_read_iter
+ => new_sync_read
+ => vfs_read
+ => ksys_read
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+            bash-5516    [002] .....   594.230407: foo_store <-kernfs_fop_write_iter
+            bash-5516    [002] .....   594.230426: <stack trace>
+ => 0xffffffffc033e083
+ => foo_store
+ kobj_attr_store
+ sysfs_kf_write
+ => kernfs_fop_write_iter
+ => new_sync_write
+ => vfs_write
+ => ksys_write
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+             cat-5049    [000] .....  3616.740619: kernfs_fop_open <-do_dentry_open
+             cat-5049    [000] .....  3616.740637: <stack trace>
+ => 0xffffffffc012e083
+ => kernfs_fop_open
+ => do_dentry_open
+ => path_openat
+ => do_filp_open
+ => do_sys_openat2
+ => do_sys_open
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+  주요구조체간 관계 및 주요필드(상세내용은 아래 분석내용 참조) *open/read/write관점, 아래 구조체 모두 하나의 kernfs 엔트리(파일/디렉토리)에 대한 정보들임.
+    struct kernfs_node //kernfs내 각 엔트리(디렉토리 / 파일). 즉, 파일시스템에 생성된 파일로 보면 됨.
+      attr.ops(struct kernfs_ops. (ex. sysfs_file_kfops_rw))
+      attr.open(struct kernfs_open_node) //해당 엔트리가 open되면 open file정보를 관리함.
+        file(list of struct kernfs_open_file)
+
+    struct kobject //얘는 kerfs내 디렉토리랑만 1:1매핑된다 보면 됨. 단 attribute(kernfs내 파일)은 sysfs_ops callback이 사용됨.
+      ktype
+        sysfs_ops(struct sysfs_ops (ex. kobj_sysfs_ops))
+
+    struct kernfs_open_file //kernfs내 각 엔트리(디렉토리 / 파일)에 대해 오픈된 오픈파일 정보. 즉 kernfs_node에 대해 open()한다로 보면 됨.
+      kn(struct kernfs_node) //오픈한 실제 kernfs상의 엔트리(디렉토리 / 파일)
+      file(struct file)
+      seq_file(struct seq_file)
+        op(kernfs_seq_ops)
+        file(struct file)
+        private(struct kernfs_open_file)
+
+    struct file // struct kernfs_open_file의 parent class비슷한 느낌으로 보면 될 듯.
+      f_op(kernfs_file_fops)
+
+  sysfs초기화 함수
+    sysfs_init() *아래분석내용참조
+  sysfs내 항목등록 함수
+    kobject생성(kernfs 디렉토리엔트리생성) : kobject_create_and_add() *sysfs layer에서 sysfs_create_dir_ns을 호출
+      struct kobject, struct kernfs_node가 생성됨.
+    attribute생성(kernfs 파일엔트리생성) : sysfs_create_group(), sysfs_create_file() *sysfs_add_file_mode_ns을 공통으로 호출
+      struct kernfs_node가 생성됨.
+    *다른 함수들도 있으나 여기 기술한것이 $(top)/Documentation/core-api/kobject.rst에 기술된 가장 기본형태임.
+    
+$(top)/lib/kobject.c
+line 57-81
+  populate_dir()
+    kobject에 default attribute(sysfs내 파일)가 있다면, 생성한다.(by sysfs_create_file)
+
+line 83-127
+  create_dir()
+   sysfs내 디렉토리를 생성한다.
+    단, 필요한 경우(생성하는 kobject에 default attribute가 존재) 하위 파일들도 생성한다.
+    line 89-91
+      sysfs내 디렉토리를 생성(by sysfs_create_dir_ns())
+    line 93-97
+       생성된 디렉토리내 하위 파일들을 생성한다. *필요한경우만.(해당 kobject에 대해 default atrribute가 존재)(by populate_dir())
+    line 99-105
+      line 93-97과 비슷(ktype에 대한 attribute를 생성 by sysfs_create_groups())  
+    line 107-124
+      skip
+    
+line 220-230
+  kobject_init_internal()
+    struct kobject를 초기화한다.
+    kref, entry, state_* 멤버변수들을 적절한 값으로 초기화한다.
+
+line 233-281
+  kobject_add_internal()
+    kobject를 kobject hierarchy에 추가한다.
+    line 238-246
+      sanity check
+    line 248
+      추가되는 kobject의 parent kobject를 가져옴.
+    line 250-256
+      kobject가 kset에 포함된 경우, kset에 포함시킨다.(by kobj_kset_join)
+      *kobject_add 함수 주석(parent parameter가 NULL인 케이스)도 참조
+    line 263-278
+      kobject에 대한 sysfs내 디렉토리트리를 생성 (by create_dir)
+       이후 kobject가 sysfs에 등록되었다고 플래그세팅(struct kobject->state_in_sysfs = 1로 세팅)
+
+line 283-321
+  kobject_set_name_vargs()
+    struct kobject->name 필드를 세팅한다.
+    *name은 printf style로 전달됨(ex. "%s", "kobj_name")
+
+line 345-384
+  kobject_init()
+    struct kobject를 초기화한다.
+    line 361-374
+      sanity check
+    line 376-377
+      kobject 초기화(by kobject_init_internal)
+
+line 386-399
+  kobject_add_varg()
+    kobject를 kobject hierarchy에 추가한다.
+    line 392-396
+      struct kobject->name을 세팅(by kobject_set_name_vargs)
+    line 397
+      추가되는 kobject에 parent kobject를 연결
+    line 398
+      kobject를 kobject hierarchy에 추가(by kobject_add_internal)
+
+line 401-454
+  kobject_add()
+    kobject를 kobject hierarchy에 추가한다.
+    line 440-448
+      sanity check
+    line 450
+      kobject를 kobject hierarchy에 추가(by kobject_add_varg())
+
+line 777-798
+  kobject_create()
+    struct kobject 메모리 할당 후 초기화를 한다.(by kobject_init)
+  
+line 800-830
+  kobject_create_and_add()
+    kobject를 parent kobject 하위에 생성(by kobject_create) 후
+    kobject를 kobject hierarchy에 등록(by kobject_add) 한다.
+
+line 843-854
+  kobj_attr_show()
+    kobject attribute의 show() callback을(=struct kobj_attribute로 정의함.) 호출한다.
+     
+$(top)/include/linux/kobject.h
+line 64-80
+  struct kobject
+    kref : kobject의 reference count (set by kobject_init_internal)
+    state_initialized : kobject가 초기화된 경우 1 아니면 0. (set by kobject_init_internal)
+    state_in_sysfs : kobject가 시스템에 등록이 된 경우 1 아니면 0, (set by kobject_add_internal)
+    name : kobject의 이름 (set by kobject_set_name_vargs)
+    parent : kobject의 parent kobject (set by kobject_add_varg)
+    sd : kobject의 sysfs내 directory entry. (struct kernfs_node이고 set by sysfs_create_dir_ns())
+
+$(top)/fs/sysfs/group.c
+line 34-105
+  create_files()
+    line 42-73
+      attribute group(struct attribute_group)에 있는 각 attribute에 대해서 sysfs에 등록(=kobject에 등록)한다. (by sysfs_add_file_mode_ns())
+    *line 75-102는 skip(bin_attr에 대해서도 비슷한 작업 수행 됨)
+    
+line 108-160
+  internal_create_group()
+    struct kobject에 attribute group(struct attribute_group)을 등록한다.
+    line 116-126
+      sanity check
+    line 128-147
+      attribute를 등록할 parent directory를 찾음(=struct kernfs_node)
+      *line 128-145는 일단 skip. (결국에는 attribute를 등록할 struct kernfs_node를 세팅한다.)
+    line 148-154
+      attribute를 등록(by craete_files())
+
+line 162-177
+  sysfs_create_group()
+    struct kobject에 attribute group(struct attribute_group)을 등록한다(by internal_create_group())
+    
+$(top)/fs/sysfs/file.c
+line 35-78
+  sysfs_kf_seq_show()
+    kobject attribute의 값을 읽어서 seq_file layer buffer에 할당한다.
+     즉, 결국에는 userspace로 전달된다.(=user layer에서 read함.)
+    line 48-54
+      seq_file layer로부터 data를 저장할 임시 버퍼를 할당(by seq_get_buf)
+    line 56-64
+      show callback수행
+       사실상 kobj_attr_show가 수행됨(set by kobject_create)
+       결국엔, kobject attribute에 대한 show function을 수행
+    line 66-76
+      truncate가 필요하면 truncate 후, seq_file layer에 commit한다.(by seq_commit)
+  
+line 257-325
+  sysfs_add_file_mode_ns()
+    sysfs내에 파일을 생성한다.
+    line 266-295
+      struct sysfs_ops(callback function)을 세팅한다.
+       모드(rw / ro / wo / empty)별 로 구분되어 세팅 됨.
+    line 295-310
+      skip(bin_attr에 대해서도 위와 비슷한 작업 수행.)
+    line 317-323
+      attribute(struct attribute)를 등록(by __kernfs_create_file())
+
+line 327-347
+  sysfs_create_file_ns()
+    sysfs내 파일을 생성한다.(by sysfs_add_file_mode_ns())
+
+$(top)/fs/sysfs/dir.c
+line 35-70
+  sysfs_create_dir_ns()
+    sysfs내 디렉토리를 생성한다.
+    line 49-54
+      parent kernfs node를(struct kernfs_node) 가져옴.
+      parent가 존재하면, parent의 것, 없다면 sysfs_root_kn(sysfs 내 최상위 노드)
+    line 59-66
+      kernfs directory 생성(by kernfs_create_dir_ns())
+    line 68
+      kobject에 sysfs directory node를 연결지음. (struct kobject->sd에 생성한 struct kernfs_node로 세팅됨)
+
+$(top)/include/linux/sysfs.h
+line 604-608
+  sysfs_create_file()
+    sysfs내 파일을 생성한다.(by sysfs_create_file_ns())
+
+$(top)/fs/kernfs/file.c
+line 245-312
+  kernfs_fop_write_iter()
+    user layer로부터 전달받은 buffer를 write한다.
+    line 262-281
+      user buffer를 copy할 buffer를 할당하고
+       해당 buffer로 user buffer data를 copy한다.(by copy_from_iter)
+    line 283-304
+      write callback을 수행(by ops->write)한다.
+      kobj_attr_store()을 통해서 실제 kobject attribute에 대한 callback이 수행됨
+      
+line 509-561
+  kernfs_get_open_node()
+    struct kernfs_open_node를 생성(없는경우)하고, struct kernfs_node->attr.open와 연결하고
+    kernfs_open_node->refcnt를 늘리고
+    kernfs_open_node->files(해당 kernfs 노드를 open한 file 리스트)에 struct kernfs_open_file을 추가한다.
+    *일반적인 디스크상 하나의 파일에 대해 여러번 오픈을 지원하기위함으로 보면 될 듯.
+    
+
+line 597-723
+  kernfs_fop_open
+    kernfs내 파일을 open한다.(일반적인 디스크 파일도 오픈하는 개념으로 보면 될 듯.)
+    line 626-630
+      struct kernfs_open_file 을 위한 공간 할당(by kzalloc)
+    line 632-695
+      struct kernfs_open_file의 초기값 세팅.
+       할당되는 값은 다음과 같음
+        kn : 오픈된 kernfs node(struct kernfs_node*)
+        file : 오픈된 파일에 대한 file struct
+        atomic_write_len : atomic하게 write할수있는 최대 사이즈
+        prealloc_buf : 버퍼가 미리 할당되어야하는 경우, 미리 할당해놓는 버퍼
+        seq_file : 오픈파일과 연관된 struct seq_file 
+    line 697-700
+      struct kernfs_open_node정보를 생성/업데이트한다.(by knerfs_get_open_node)
+    
+
+line 956-1020
+  __kernfs_create_file()
+    kernfs내에 파일을 추가한다.
+    line 985-988
+      struct kernfs_node 할당(by kernfs_new_node)
+    line 990-1013
+      struct kernfs_node의 다음 필드를 세팅
+        attr, ns, priv, flags
+    line 1014-1018
+      struct kernfs_node를 시스템에 등록(by kernfs_add_one)
+    
+$(top)/fs/kernfs/dir.c
+line 579-648
+  __kernfs_new_node()
+    struct kernfs_node를 할당/초기화한다.
+    line 589-591
+      name을 strdup
+    line 593-595
+      struct kernfs_node 메모리를 allocation
+    line 597-609
+      struct kernfs_node에 대한 uniq ID값을 구함. *자세한건 skip
+    line 609-617
+      struct kernfs_node의 아래 필드값 초기화 수행.
+        id
+        count
+        active
+        rb
+        name
+        mode
+        flags
+
+line 650-676
+  kernfs_new_node()
+    struct kernfs_node를 할당/초기화한다(by __kernfs_new_node)
+
+line 740-794
+  kernfs_link_sibling()
+    kernfs_node->parent하위에 kerfns_node를 추가한다.
+    즉 특정 kernfs_node하위에 kernfs_node를 추가함.
+
+    kernfs는 child는 아래 트리형태로 관리함. 각 kernfs_node(디렉토리타입만해당)마다 개별적인 트리를 가지고 있음.
+    *kernfs_node구분
+      children달린애는   디렉토리
+      children안달린애는 파일
+    *rbtree는 이름으로 정렬된다..(kernfs_sd_compare 참조)
+
+                            kernfs_root <- kernfs 최상위 root
+                                 |
+                            kernfs_node
+                                 |
+                          children(rb_root)
+    -----------------------------------------------------------------
+        |                        |                    |
+    kernfs_node             kernfs_node          kernfs_node
+        |                        | 
+    children(rb_root)     children(rb_root)       
+        |                        |
+    kernfs_node             kernfs_node
+        .                        .
+        .                        .
+        .                        .
+                
+  kernfs_add_one()
+    kernfs node를 kernfs hierarchy에 추가 하고 활성화함.
+    parent kernfs_node가 directory인 경우만 수행함.(directory이어야 하위트리에 추가가능)
+    line 749-763
+      sanity check
+    line 765
+      kernfs node에 대한 해시값을 구함(by kernfs_name_hash())
+    line 767-769
+      kernfs node를 kernfs hierarchy에 추가.(by kernfs_link_sibling)
+    line 771-776
+      parent kernfs node의 속성(ctime, mtime)값을 업데이트
+    line 780-788
+       추가된 kernfs node를 활성화(by kernfs_activate())
+
+line 916-970
+  kernfs_create_root()
+    kernfs의 root(struct kernfs_root)를 만듬. 즉 kernfs 를 최초생성한다.
+    line 931-933
+      struct kernfs_root 메모리공간 할당
+    line 949-959
+      kernfs_root에대응하는 kernfs node 할당(by __kernfs_new_node)/초기값세팅
+    line 961-967
+      kernfs root의 초기값 세팅
+       특히 kernfs node를 kernfs root에 연관시킴
+      
+
+line 984-1021
+  kernfs_create_dir_ns()
+    kernfs상에서 하나의 directory를 생성한다.
+    line 1005-1008
+      struct kernfs_node를 할당(by kernfs_new_node())
+    line 1010-102
+      할당된 struct kernfs_node의 다음 필드를 세팅
+        dir.root, ns, priv
+    line 1014-1017
+      할당된 struct kernfs_node를 연결(by kernfs_add_one())
+
+$(top)/fs/kernfs/kernfs-internal.h
+line 39-51
+  kernfs_root()
+    struct kernfs_node가 속해있는 root struct kernfs_node를 return
+
+$(top)/include/linux/kernfs.h
+line 119-164
+  struct kernfs_node
+    kernfs(=sysfs)내 실제 노드(ex. 디렉토리, 파일)를 나타내는 구조체
+    id : kernfs node의 uniq ID. set by __kernfs_new_node()
+    count : 레퍼런스카운트 set by __kernfs_new_node()
+    name : 노드의 이름 set by __kernfs_new_node()
+    mode : 노드의 권한 set by __kernfs_new_node()
+    flags : 노드의 속성(ex. 타입(file이냐 dir, link이냐) etc...) set by __kernfs_new_node()
+            $(top)/include/linux/kernfs.h line 34-88 참조
+    ns : namespace set by __kernfs_create_file()
+    priv : private data. set by __kernfs_create_file()
+             kernfs내 디렉토리이면, struct kobject.
+             kernfs내 파일이면, struct attribute.
+    dir : kernfs_node가 디렉토리인 경우 사용되는 정보
+      children : 노드의 하위 kernfs_node들. rbtree로 관리하며 rbtree의 root임.
+      root : 노드가 속해있는 kernfs hierarchy에서의 최상위 root정보(struct kernfs_root)
+      subdirs : 노드의 하위 kernfs_node중 디렉토리타입의 갯수.(즉 subdir의 갯수)
+    attr : kernfs_node가 파일(kobject attribute)인 경우 사용되는 정보(kobject의 attribute정보를 의미)
+      ops : attribute를 조작하기위한 callback set by __kernfs_create_file()
+      open : 해당 노드에 대한 오픈파일(struct file)정보를 관리하는 정보 set by kernfs_get_open_node()
+    parent : parent(바로위) 노드
+    rb : kernfs rbtree에 대한 rbtree노드.
+
+$(top)/fs/sysfs/mount.c
+line 97-115
+  sysfs_init()
+    sysfs를 초기화한다.(by kernfs_create_root)
+     이후 sysfs파일시스템을 시스템에 등록(by register_filesystem)
+    start_kernel()에서 vfs_caches_init()에 의해 간접적으로(몇번 calltrace거쳐) 호출된다!
+      vfs_caches_init -> mnt_init -> sysfs_init()
+
+8단계 *목표 : 7단계 부족부분 확인.
+  (v)struct kernfs_node에서 rbtree의 용도
+    쉽게말해, 각 kernfs_node(디렉토리타입인)마다 하위 kernfs_node에대한 트리를 가지고 있음.
+    7단계 kernfs_link_sibling 분석내용참조
+
+  (v)kernfs_root()의 정확한 역할.
+    말그대로 kernfs의 최상위 root정보(struct kernfs_root)를 return.
+
+9단계 *목표 : sysfs에 항목 추가 실습
+스펙
+  /sys/knwtest/attribute 디렉토리구조 만들기
+  attribute는 문자열 read/write 가능함.
+  커널모듈로 구현.(모듈로드시 sysfs에 등록, 모듈제거시 sysfs에서 제거)
+
+  특이사항
+    __ATTR에서 permission의 경우, other에 write권한은 못주도록 되어있는 것으로 보여짐. 컴파일 에러 발생함(BUILD_BUG_ON 매크로에 의해)
+    MODULE_LICENSE("GPL v2")아닌경우, 커널모듈 빌드 실패함. 아래 메시지 출력
+      ERROR: modpost: GPL-incompatible module kobject_module.ko uses GPL-only symbol 'kobject_create_and_add'
+
+  소스코드
+  1 #include <linux/module.h>
+  2 #include <linux/kobject.h>
+  3 #include <linux/sysfs.h>
+  4 
+  5 MODULE_LICENSE("GPL v2");
+  6 
+  7 static struct kobject *kobject_root;
+  8 
+  9 static char attribute[1024];
+ 10 static ssize_t show_attribute(struct kobject *kobj, struct kobj_attribute *attr, char *buf)
+ 11 {
+ 12         return sprintf(buf, "%s", attribute);
+ 13 }
+ 14 
+ 15 static ssize_t store_attribute(struct kobject *kobj, struct kobj_attribute *attr, const char *buf, size_t count)
+ 16 {
+ 17         sprintf(attribute, "%s", buf);
+ 18         return count;
+ 19 }
+ 20 
+ 21 static struct kobj_attribute kobject_attribute = __ATTR(attribute, 0664, show_attribute, store_attribute);
+ 22 static struct attribute *kobject_attributes[2] = { &kobject_attribute.attr, NULL};
+ 23 static struct attribute_group kobject_attribute_group = {
+ 24         .name = NULL,
+ 25         .is_visible = NULL,
+ 26         .is_bin_visible = NULL,
+ 27         .attrs = kobject_attributes,
+ 28         .bin_attrs = NULL
+ 29 };
+ 30 
+ 31 static int init_kobject(void)
+ 32 {
+ 33         kobject_root = kobject_create_and_add("knwtest", NULL);
+ 34         sysfs_create_group(kobject_root, &kobject_attribute_group);
+ 35 
+ 36         return 0;
+ 37 }
+ 38 
+ 39 static void deinit_kobject(void)
+ 40 {
+ 41         kobject_put(kobject_root);
+ 42 }
+ 43 
+ 44 module_init(init_kobject);
+ 45 module_exit(deinit_kobject);
+                                 
+10단계 *목표 : 정리
+알게된 것
+  sysfs 개념
+  sysfs 주요로직
+    kobject
+    kernfs
+    sysfs
+  
+코멘트
+  sysfs의 기본개념 주요로직은 파악했음.
+  하지만 여전히... 아주 기본만 아는 것이므로, 다 안다고는 할 수 없음.
+  더 정진합시다...
