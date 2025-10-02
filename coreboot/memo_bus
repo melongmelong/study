@@ -1,0 +1,183 @@
+next : 완료.
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - PCI BUS 개념 / 관련 로직(PCI관련 모든로직 분석이 아니라 low-level접근을 어케하냐?위주) 분석
+
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+  이번에는 PCI BUS가 무엇인지 알아보자.
+    특히 개념과, 관련 로직분석을 통해서 PCI가 뭔지 명확해야 함.
+
+학습목표
+  PCI BUS에 대한 개념
+  coreboot에서 PCI BUS 로직 분석
+    *PCI관련 모든로직 분석이 아니라 PCO low-level접근을 어케하냐? 위주
+      ex. BAR에 접근을 어떻게(어떤 I/O Port로)한다, enumberation을 어떻게한다, => O
+          struct device의 특정정보를 PCI로 읽어오더라 => X
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+  구글링
+
+학습계획
+  milestone1. PCI BUS 개념과 로직 분석
+  
+=======================
+milestone1. PCI BUS 개념과 로직 분석
+
+7단계(대충 사용 수준까지) - PCI BUS 개념, 로직 분석.
+*memo_ramstate_deviceinit pci관련 소스코드를 시발점으로, 하나씩 보면서 주요용어, 추가분석하는 느낌으로 접근 ㄱㄱ
+
+7-1. BUS / PCI BUS 개념
+BUS : a communication system that transfers data between components inside a computer or between computers.
+      단순한 h/w적인 전선부터 소프트웨어/하드웨어들이 결합된 형태까지 존재함.
+      종류 : PCI, ISA, USB, I2C, System Bus(CPU/Memory 간 통신)등등...
+
+Bridge : Bus와 Bus를(종류무관) 연결해주는 communication system.
+          얘도 마찬가지로, 단순한 h/w적인 전선부터 소프트웨어/하드웨어들이 결합된 형태까지 존재함.
+          종류 : PCI to PCI brdige(PCI bus와 PCI bus를 연결), Host bridge(CPU, memory 연결), PCI-ISA bridge 등등...
+
+PCI : BUS중 하나. 매우 널리 쓰임.
+      PCI의 확장으로 PCI-X 존재하고 그다음 확장으로 PCIe가 존재.
+
+BDF(Bus / Device / Function)
+  하나의 PCI device의 PCI configuration space에 대한 주소 => 쉽게말해, 하나의 PCI device의 주소라고 볼 수 있음.
+  Bus / Device / Function으로 addressing.
+    Bus : 8bit => 하나의 시스템에는(=즉, 하나의 PCI domain) 최대 256개의 PCI BUS존재가능함을 의미.
+    Device : 5bit => 각 PCI BUS에는 최대 32개의 Device가 존재가능함을 의미.
+    Function : 3bit => 각 Devcie에는 최대 8개의 Funciton이 존재가능함을 의미.
+
+  관련코드
+    $(top)/src/include/device/pci_def.h line 593-603 : PCI device, function number set/get macro.
+    $(top)/src/include/device/pci_type.h : PCI bus, device, function number 구해오는 macro.
+
+PCI configuration space
+  PCI device의 정보를 가지고있는 레지스터 셋.
+  IO Port Address or Memory Mapped I/O로 접근가능. 
+    두방식모두 chipset에서 지원이 되어야하고,
+    x86관련 chipset의 경우
+      IO Port Address : IO Address 0xcf8, 0xcfc 가 PCI configuration space에 접근하도록 chipset이 구현되어있음.
+      Memory Mapped I/O : 특정 메모리주소에 접근시, memory가 아닌 PCI configuration space에 접근하도록 chipset이 구현되어있음.
+  PCI는 256bytes
+  PCI-X, PCIe는 좀 더 PCI configuration space보다 더 확장됨(PCI extended configuration space)
+
+  관련코드
+    $(top)/src/include/device/pci_def.h : PCI configuration space 각 레지스터 offset에 대한 #define. 
+
+x86시스템에서 PCI configuration space접근을 위한 IO Port Address
+  0xcf8 : PCI configuration space의 주소(=BDF). 어떤 PCI device이냐?
+          format
+          |CFGE(31)|Reserved(30-24)|Bus(23-16)|Device(15-11)|Function(10-8)|Register(7-2)|Reserved(1-0)|
+  0xcfc : data.
+
+  IO Port address를 통한 PCI configuration access sequence는 다음과같음.
+    0xcf8에 PCI configuration space의 주소를 write후
+    0xcfc에 데이터를 write or read
+
+  관련코드
+    $(top)src/arch/x86/include/arch/pci_io_cfg.h line 30-75 : PCI configuration space 접근로직.
+
+PCI bus enumeration
+  PCI bus에 존재하는 PCI device를 찾는 행위를 의미.
+  PCI device의 각 configuration space에 접근 시, 응답을 통해 device의 존재여부를 체크함.
+  
+  PCI device가 필요로 하는 address space 체크
+    BAR에 0xffffffff write후, read하면, device단에서 응답줌.
+    여기서 상관없는 필드는 0으로 세팅됨.
+
+  관련코드
+    $(top)/src/device/pci_device.c line 1411 : PCI device의 존재여부 확인 로직.
+
+PCI 리소스(BAR, interrupt)할당
+  BAR할당
+    4KB사이즈를 가지는 BAR의 사이즈 calculation 예시
+      Writing 0xffffffff to the register and then Reading back the value (0xffffff00x)
+      Clear the lower four bits to zeros (0xfffff000)
+      Invert all 32 bits (0x00000fff)
+      Add one to the result (0x1000 = 4096 bytes)
+
+    BAR접근을 통해 실제 pci device를 제어한다고 볼 수 있음.(ex. GPIO에 특정 register들이 BAR에 매핑되고, host는 특정 BAR을 적저맇 control하여 원하는 동작을 수행시킴.)
+
+    BAR에 세팅가능한 address는, chipset의 address map에 따름.
+      메모리가아닌 PCI로 접근하는 address영역이 chipset datasheet에 명시되어있음, I/O address도 마찬가지임. 
+      즉, CPU에서의 해당 address로의 접근은 PCI bus를 통해서 수행되도록 하드웨어 구성이되어있다.(via chipset)
+       ex) cpu + i440fx(northbridge) + piix4(southbridge) 이면 *qemu default구성.
+           cpu의 메모리접근(memory, i/o모두동일) i440fx를 통하게되며, address기반으로 i440fx가 알아서, 메모리로보낼지 PCI수행할지를 결정함.
+     coreboot의 경우, resource allocator에 의해서 세팅 됨. 자세한건 skip.(넘복잡하고, 지금 주제에서 굳이 깊게 파고들 건 없어보임.)
+    
+    관련코드
+      $(top)/src/device/pci_device.c, line 81-199, line 596-614 *moving의 의미는 아직 불명확하나, BAR할당에 대한 주요개념은 알았으니 자세한건 skip.
+        
+  interrupt할당
+    관련 PCI configuration space
+     Interrupt pin : PCI device가 사용할 PCI하드웨어의 인터럽트핀(ex. INTA#, INTB#). Read Only임.(=H/W적으로 fixed)
+     Interrupt line : Interrupt pin 이 연결되어있는 Interrupt controller의 정보. Read/Write임.
+                      PCI device자체적으로 사용되는건 아니고, OS에서 사용하는 정보임.
+                         사용할 Interrupt line은 시스템구성에 따라 다름.(ex. Interrupt pin이 I8259의 어디에 연결되느냐...)
+                      ex) x86의경우, 8259 PIC의 IRQ number.
+    관련코드
+      $(top)/src/device/pci_device.c, line 1776-1818
+    
+참고.
+  https://en.wikipedia.org/wiki/PCI_configuration_space
+  https://web.archive.org/web/20180927050219/http://www.csit-sun.pub.ro/~cpop/Documentatie_SMP/Intel_Microprocessor_Systems/Intel_ProcessorNew/Intel%20White%20Paper/Accessing%20PCI%20Express%20Configuration%20Registers%20Using%20Intel%20Chipsets.pdf
+  pci local bus specification
+  i440fx datasheet
+  piix4 datasheet
+
+8단계(이것저것해보기) - 7단계 주요흐름에서 잘 이해안가던 내용들 파악(w/코드수정하면서 디버깅) 
+  BAR관련
+    host address(memory든 io든)접근이 PCI address로 변환되어 PCI 인터페이스 수행하는 것이 맞는가?
+       맞다. 아래개념으로 동작한다고 이해하면 된다
+      CPU <-> host-to-pic bridge(ex. i440fx) <-> pci device(ex. piix4) <-> pci device
+        host addr                          pci addr                  pci addr
+      
+       더 추상적으로는, H/W적으로 host address를 적절한 장치로 접근하도록 하게 함.(chipset이라는 게 이런 역할을 수행)
+
+    PCI device 동작시 BAR기반으로 동작하는가?
+      맞다.
+     When a transaction is initiated on the interface, each potential target compares the address
+     with its Base Address register(s) to determine if it is the target of the current transaction. If
+     it is the target, the device asserts DEVSEL# to claim the access
+
+  interrupt할당관련
+    PCI device의 interrupt pin이 어디에 연결되었는지 H/W적으로 알아야 하는게 맞나?
+      맞다.
+    맞다면 이 정보는 어디에 있는가?
+     datasheet 등.
+     qemu는 에뮬레이션을 특정 고정된 irq할당하도록 되어있다.(쉽게말하면, 하드웨어적으로 이렇게 구성되어있다.)
+
+9단계(유용한 것을 할수있는 수준까지 파기) - 관련 이슈1개처리.
+  https://review.coreboot.org/c/coreboot/+/89282
+  지금 수준에서 딱히 할만한건 안보여서 주석수정수준만 진행함....
+
+10단계(가르치기) - 내용정리
+  알게된것
+    BUS, Bridge개념.
+    PCI BUS 주요개념
+      BDF
+      configuration space
+      device enumeration
+      BAR / Interrupt 리소스 할당
+    chipset(i440fx, piix4) datasheet도 접할 수 있었다.
+      특히, 메모리맵이 구성되어있을때, 왜 이렇게 동작하는지? 흐름에 대한 low-level 개념을 좀 더 실물로 볼 수 있어서 좋았다.
+  코멘트
+    BUS에 대한 개념을 좀 더 명확하게 할 수 있었다.
+    특히 PCI(PCIe는 말고) 관련해서는 기존보다는 좀 더 많이 알 수 있었다.
+    +로, low-level공부이다보니 qemu에서 사용하는 chipset(i440fx, piix4) datasheet도 보면서 이때까지 애매했던 부분들에 대해서 좀 더 명확히 할 수 있었다.
+    다만, 너무 기본개념정도만 아는 수준이다보니, coreboot관련코드분석이나 9단계에서 내가 할 수 실습할수있는 것은 없었다는게 아쉽다.
+

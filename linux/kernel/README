@@ -1,1 +1,16 @@
 README
+
+-next subject candidates
+socket layer
+tcp/ip network layer
+netfilter
+interrupt
+  low level내용(x86에 IDT세팅해서 어떻게 호출되냐...)
+  irq_desc, irqaction내용(low level내용기반으로 실제 driver에 등록한 interrupt는 어떻게 호출되냐)
+kernel utility functions(ex 자료구조, 락프리미티브들, etc)
+scheduleing
+memory management
+SMP관련 내용(?)
+  pause_on_oops동작방식(do_oops_enter_exit function)
+kernel SMP동작 어떻게 할까?(coreboot SMP셋업이랑 어떻게 다를까)
+this_cpu_read/write 등 per-cpu 변수 내부 구현.

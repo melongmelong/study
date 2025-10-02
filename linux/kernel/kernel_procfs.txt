@@ -1,4 +1,4 @@
-next : 9단계 ㄱㄱ (proc_module 디렉토리에 구현중...)
+next : 완료
        
 *1-10단계학습법 적용
 *참고.
@@ -475,12 +475,79 @@ line 663-676
     proc
       knwtest
         val1(r)
-        val2(rw)
         dir
-          val3(rw)
+          val2(rw)
     val1 : "1"을 read하는 readonly 인터페이스.
-    val2,val3 : 사용자가 write한 string을 read하는 인터페이스.
-
-
+    val2 : 사용자가 write한 string을 read하는 인터페이스.
+  소스코드
+  1 #include <linux/module.h>
+  2 #include <linux/proc_fs.h>
+  3 #include <linux/seq_file.h>
+  4 
+  5 MODULE_LICENSE("");
+  6 
+  7 static int proc_val1_show(struct seq_file *m, void *v)
+  8 {
+  9         seq_printf(m, "%d\n", 1);
+ 10         return 0;
+ 11 }
+ 12 
+ 13 static char val2_buf[1024];
+ 14 static ssize_t proc_val2_write(struct file *file, const char __user *buffer, size_t count, loff_t *pos)
+ 15 {
+ 16         copy_from_user(val2_buf, buffer, count);
+ 17         return count;
+ 18 }
+ 19 
+ 20 static int proc_val2_show(struct seq_file *m, void *v)
+ 21 {
+ 22         seq_printf(m, "%s", val2_buf);
+ 23         return 0;
+ 24 }
+ 25 
+ 26 static int proc_val2_open(struct inode *inode, struct file *file)
+ 27 {
+ 28         return single_open(file, proc_val2_show, PDE_DATA(inode));
+ 29 }
+ 30 
+ 31 static struct proc_ops proc_ops = {
+ 32         .proc_open = proc_val2_open,
+ 33         .proc_read = seq_read,
+ 34         .proc_release = single_release,
+ 35         .proc_write = proc_val2_write,
+ 36 };
+ 37 
+ 38 struct proc_dir_entry *parent_top = NULL, *parent = NULL;
+ 39 
+ 40 static int init_proc(void)
+ 41 {
+ 42         parent_top = proc_mkdir("knwtest", NULL);
+ 43                 proc_create_single_data("val1", 0444, parent_top, proc_val1_show, NULL);
+ 44                 parent = proc_mkdir("dir", parent_top);
+ 45                         proc_create("val2", 0666, parent, &proc_ops);
+ 46 
+ 47         return 0;
+ 48 }
+ 49 
+ 50 static void deinit_proc(void)
+ 51 {
+ 52         remove_proc_entry("val2", parent);
+ 53         remove_proc_entry("dir", parent_top);
+ 54         remove_proc_entry("val1", parent_top);
+ 55         remove_proc_entry("knwtest", NULL);
+ 56 }
+ 57 
+ 58 module_init(init_proc);
+ 59 module_exit(deinit_proc);
+                                 
 10단계 *목표 : 정리
+알게된 것
+  procfs 개념
+  procfs 일반파일의 read/write/open 에 대한 주요 interface 로직
+  procfs 초기화(시스템부팅시) 로직
+  procfs에 항목 추가
 
+코멘트
+  procfs에 대해 가장 기본적인 로직 알 수 있었던 것 좋았음.
+  but, 너무 기본만 아는 것 같고 더 디테일 그리고 더 복잡한 구조(ex. struct seq_file을 좀더 복잡하게 써서 데이터를 read/write하는 형태) 
+  그리고 procfs관련한 다른 로직들(ex. VFS관련)은 잘 모르는 점이 아쉬우나, 일단 목표만큼은 했음. 추후 더 분석을 위한 자양분이 될 것임에는 자명함.! 좀 더 정진합시다.

@@ -1,0 +1,374 @@
+next : 완료
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - CBMEM 상세 분석
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+
+학습목표
+  CBMEM 이 정확하게 뭐하는건지(개념/역할, 메모리상 어디에 위치하냐, CBMEM조작코드) 상세 분석
+  *기존에는 'CBMEM이라는게 있다'는 정도였고 보다 더 디테일하게 알아야 할 필요있음.
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+  memo_romstage, cbmem분석내용. *deprecated(해당 문서로 모두 이동함.)
+
+학습계획
+  milestone1. 
+  
+=======================
+milestone1. 
+
+7단계(대충 사용 수준까지) - CBMEM 개념/역할/CBMEM관련 로직 확인
+코드분석은 coreboot 24.05 version기준!
+
+개요
+  CBMEM은 cbmem_top() 위치(chipset별로 다름! ex. TSEG memory에 위치한다거나, qemu tolud(Top of Low Usable DRAM)) 에 존재.
+  CBMEM은 IMD영역으로 구성되어있음. *IMD영역은 아래 $(top)src/lib/imd.c 분석참조.
+  CBMEM 사용 기본 시나리오
+    id가 존재하는 malloc같은 역할로 보면 됨.
+      *메모리 영역이 필요한 다양한 로직들에서(cbmem_add or cbmem_find로 grep해보면 됨) cbmem을 사용한다.!
+    cbmem_add(id, size)로 영역할당받고(할당영역에 대한 포인터를 리턴), 해당 영역을 사용.
+     이미할당받은영역은, cbmem_find(id)로(id값통하여) 찾을 수 있음.(마찬가지로 할당영역에 대한 포인터가 리턴됨.)
+  CBMEM영역의 life for each stage(현재 빌드 config 기준)
+    특정시점에서 최초생성되고, 
+    이 후에는 CBMEM영역 포인터(cbmem_top())을 전달하고
+    전달받은측에서는 recover(by cbmem_initalized())하여 사용하는 방식임.
+    bootblock : N/A *CBMEM무관.
+    romstage : CBMEM영역 초기화 수행.(by mainboard_romstage_entry)
+                 이후 CBMEM영역(cbmem_top() return value)을 postcar로 전달(by run_postcar_phase)
+    postcar : romstage로부터 CBMEM영역을 전달받음(= _cbmem_top_ptr 변수를 전달받은 값으로 세팅, by $(top)/src/arch/x86/exit_car.S)
+                이후 CBMEM recovery를 수행(by cbmem_initialize)
+                *postcar 이미지의 imd 관리 변수들(ex. struct imd imd)이 CBMEM영역을 가리키지 않으므로, 가리키도록 세팅함
+                이후 ramstage로 CBMEM영역(cbmem_top() return value))를 postcar로 전달
+    ramstage : postcar로부터 CBMEM영역을 전달받음(= _cbmem_top_ptr 변수를 전달받은 값으로 세팅, by $(top)/src/arch/x86/c_start.S)
+                 이후 CBMEM recovery를 수행(by cbmem_initialize)
+                 *ramstage 이미지의 imd 관리 변수들(ex. struct imd imd)이 CBMEM영역을 가리키지 않으므로, 가리키도록 세팅함.
+    
+$(top)/src/lib/imd_cbmem.c
+line 18-31
+  cbmem_top()
+    cbmem영역의 top address를 return한다.
+    line 20-29
+      bootblock or romstage(seperated)인 경우,
+        chipset정보로부터 cbmem의 top address를 가져온다.(by cbmem_top_chipset)
+          *qemu환경에서는 QEMU firmware config interface를 사용하여 해당 정보를 얻어온다.
+      다른 stage인 경우(postcar / ramstage), 
+       _cbmem_top_ptr 변수값을 그대로 사용.(전 stage에서 parameter로 전달받음.)
+    line 30
+      dead_code 임을 명시(정의부분 주석참고, 간단하게말하면, 해당 영역은 실행되선 안되므로 컴파일타임에 잡겠다(컴파일에러출력하겠다))  
+    
+line 45-48
+  cbmem_initialize_empty()
+    cbmem영역을 생성 / 초기화 수행
+    call cbmem_initialize_empty_id_size()
+
+line 50-59
+  cbmem_top_init_once()
+    bootblock(with romstage(not seperated)) 또는 romstage(seperated)인 경우만 수행함.
+      *즉, romstage가 별도로 존재하면, romstage, 아니라면 bootblock에서 CBMEM 초기화를 허용한다.
+    memory check를 수행한다.(quick_ram_check_or_die())
+      *x86인 경우만 의미가있음, 그 외 아키텍쳐는 의미없음(nop)
+
+line 61-85
+  cbmem_initialize_empty_id_size()
+    cbmem영역을 생성 / 초기화 수행.
+    line 65
+      cbmem memory영역 check를 수행한다.(by cbmem_top_init_once)
+    line 67 - 75
+      imd handle을 초기화하고(by imd_handle_init)
+       2개의 IMD영역을 생성한다.(by imd_create_tiered_empty)
+    line 77-79
+      cbmem영역을 생성한다.(by cbmem_add)
+      *cbmem_initialize()로 진입된 경우, 실행안함.
+    line 81-82
+      cbmem 초기화 hook func을 실행한다.(by cbmem_run_init_hooks)
+    line 84
+       초기화플래그세팅~
+ 
+line 87-90
+  cbmem_initialize()
+    cbmem영역에 초기화(=recover)를 수행(by cbmem_initialize_id_size)
+
+line 92-124
+  cbmem_initialize_id_size()
+    cbmem영역에 대한 recover를 수행
+    이미 존재하므로 새로생성은 하지않고, 필요한 변수값들을(이미지가 달라졌으므로) 세팅해줌.
+    line 96
+      cbmem영역 정상적인지 체크 수행(by cbmem_top_init_once)
+    line 98
+      imd handle 초기화(by imd_handle_init)
+    line 100-101
+      imd영역 recover(by imd_recover)
+       *즉 cbmem영역 recover
+    line 103-109
+      imd영역에 lock수행(by imd_lockdown)
+    lien 111-113
+      cbmem영역추가(추가가 필요한 경우)
+    line 115-116
+      cbmem hook들 수행(by cbmem_run_init_hooks)
+    line 118
+      cbmem_initialized flag 1로 세팅
+
+line 124-132
+  cbmem_recovery()
+    cbmem영역 recovery를 수행함.
+     시스템이 reumse을 지원하는 경우, resume시에는 CBMEM영역을 다시 생성할 필요없음. 
+    이를 위해 is_wakeup변수로 동작을 제어함
+      1이면 resume이다, 
+      0이면 아니다, 즉 최초 system-up(normal boot)이므로 새로 생성한다.
+    line 127-128
+      cbmem영역 생성 수행 (by cbmem_initialize_empty)
+    line 129-130
+      cbmem영역 recovery 수행(by cbmem_initialize)
+
+line 143-153
+  cbmem_add()
+    cbmem에 메모리영역을 추가함.
+    line 147-150
+      imd entry 영역을 추가(이미존재하면 해당 영역을 사용)하고(by imd_entry_find_or_add)
+    line 152
+      imd entry 영역의 포인터를 리턴한다.(by imd_entry_at)
+    
+$(top)/src/lib/cbmem_common.c
+line 6-20
+  cbmem_run_init_hooks()
+    cbmem초기화 hook function들을 call한다.
+    *romstage의 경우, $(top)/build/romstage/lib/program.ld에 _cbmem_init_hooks, _ecbmem_init_hooks, _cbmem_init_hooks_size가 정의되어있음.
+    *hook 정의 매크로는 src/include/cbmem.h의 CBMEM_INIT_HOOK 포함하는 매크로들 참조 
+
+$(top)/src/lib/ramtest.c
+line 176-207
+  quick_ram_check_or_die()
+    RAM체크를 수행. 
+     방식은 매우 단순함(특정영역에 값 쓰고 다시 읽어서 같은지를 비교. 이걸 몇번정도만 함.)
+     실패하면 die.
+     참고. 단순히쓰는거긴한데, sfence(by phys_memory_barrier())), movnti(by write_phys()) 명령어등을 통하여 메모리접근 명령어 오더링, 캐싱미사용을 고려하여 코드가 구현되어 있음.
+
+$(top)/src/mainboard/emulation/qemu-i440fx/memmap.c
+line 44-60
+  cbmem_top_chipset()
+    QEMU firmware config interface를 통해 cbmem영역의 top address를 return한다.
+
+$(top)src/mainboard/emulation/qemu-i440fx/fw_cfg.c
+*QEMU firmware config interface 관련 코드가 존재하는 소스파일임!
+*코드를 봤을때... 큰 흐름은 다음과 같음
+*fw_cfg_present()로 인터페이스 존재 및 version정보를 세팅
+*fw_cfg_select()를 통해 정보를 읽을 인터페이스ID를 선택하고, fw_cfg_read()로 정보를 읽음(fw_cfg_get()가 두작업 모두 수행)
+*QEMU firmware config interface의 detail은 따로 확인 필요함. 이번엔 skip.
+
+line 25-43
+  fw_cfg_present()
+    QEMU firmware config interface의 존재여부 및 version정보를 리턴함.
+
+line 67-86
+  fw_cfg_find_file()
+    인자로 넘어온 특정 firmware config file(아마 인터페이스...)을 찾음.
+
+line 95-104
+  QEMU firmware interface중 e820 interface를 찾아서 초기세팅함.(해당 인터페이스를 사용하겠다를 명시함.)
+
+line 118-132
+  fw_cfg_tolud()
+    QEMU firmware e820 interface를 통해
+    메모리 정보를 조회하여) tolud(Top of Low Usable DRAM)를 찾아서 return한다.
+    => 4GB하위 메모리 영역 중, 가장 마지막(=큰) address를 return한다.
+
+$(top)src/lib/imd.c
+*In-Memory Directory(imd) 관련 코드.
+*struct imd : imd handle. imdr을 관리
+               lg : large imd영역.
+               sm : small imd영역.
+*struct imdr : imd_root를 관리.
+               limit : imd_root영역의 limit address(upper) *메모리는 upper limit부터 시작하여 아래로 growth 함. set by 
+               r     : IMD영역에서 imd_root영역의 address.
+*struct imd_root : IMD에서의 imd root영역. imd_entry도 관리
+                   max_entires : 최대 imd_entry의 갯수
+                   num_eintries : 현재 imd_entry의 갯수
+                   entries : imd_entry.
+                                 *첫번째 항목은 imd root영역에 대한 entry로 무조건 할당됨.!
+                   entry_align : imd entry영역에 대한 alignment
+                   max_offset : imd entry영역의 최대할당사이즈.(offset이 아래로 자라므로 음수로 표기됨.)
+*struct imd_root_pointer : IMD에서 imd root영역으로의 포인터. (miscellaneous 느낌의 구조체)
+                           magic       : magic signature
+                           root_offset : IMD영역에서 root영역(struct imd_root)으로의 offset(struct imd_root_pointer 기준)
+*struct imd_entry : IMD애서 imd entry 영역.
+                    struct imd_root 구조체내에 array로 관리되며,
+                    entry index는 오름차순으로, entry가 사용하는 실메모리영역은 내림차순(start_offset이 내림차순으로됨)으로 등록.
+  magic : magic signature
+  start_offset : imd_entry memory영역의 시작주소(struct imd_root기준.). start_offset은 아래로 자란다!(offset이 0부터 아래로 자라므로  음수값임)
+  size : imd_entry memory영역의 size
+  id : imd_entry memory영역의 ID
+*imd 메모리구조는 imdr_create_empty함수 분석내용 참조!
+*기본 시나리오
+  빈 IMD를 생성(IMD root영역만 존재).
+  이후 IMD에 영역(IMD entry영역)을 할당.
+
+line 14-19
+  relative_pointer()
+    base + offset의 주소를 리턴.
+
+line 35-42
+  imdr_get_root_pointer
+    struct imd_root_pointer를 return
+    struct imd_root_pointer는 struct imdr->limit이 나타내는 address 에 상대적(바로 인접하게)이게 붙어있음.
+
+line 55-64
+  root_num_entries
+    root_size - (struct imd_root_pointer + struct imd_root)사이즈에 포함할 수 있는 struct imd_entry갯수를 return한다.
+
+line 66-76
+  imd_root_data_left
+    IMD영역(struct imd_root말고, struct imd_entry가 사용할 실메모리영역)의 남아있는 사이즈를 return.
+
+line 83-90
+  imd_entry_assign
+    imd_entry를 세팅한다.
+
+line 100-155
+  imdr_create_empty()
+    아래 프래임을 가진 IMD메모리영역을 생성.(src/include/imd.h 최상단 주석도 참조) *구조체 내 필드순서는 다를 수 있음.!
+    하나의 IMD영역은, 하나의 IMD root영역과 여러개의 IMD entry영역으로 이루어져 있다.
+    upper -> lower로 growth.
+    
+                               => memory address
+      ------------------------------------------------------------------------------- lower address
+      regions for struct imd_entry (by imdr_entry_add() / imd_entry_add_to_root()) *초기에는 없음. 추가해야 생성됨.  -> regions for IMD entry
+      ------------------------------------------------------------------------------- -----
+      struct imd_root          => struct imdr->limit - root_size = struct imdr->r         |             
+        struct imd_entry                                                                  |
+        struct imd_entry                                                                  |
+        ...(variable list of struct imd_entry)                                            |                   -> a region for IMD root.
+      --------------------------------------------------------------------------------    |                   'struct imd_root_pointer' included in IMD root.
+      struct imd_root_pointer  => struct imdr->limit - sizeof(struct imd_root_pointer)    |
+      --------------------------------------------------------------------------------    |
+                               => struct imdr->limit                                   ----
+
+      -------------------------------------------------------------------------------- upper address
+    구조체의 값을 다음과 같이 세팅한다.
+      struct imdr->r = struct imd_root의 address
+      struct imd_root_pointer->root_offset = struct imd_root로의 offset(by imd_link_root, 자기address 기준)
+      struct imd_root->max_entries = 할당영역(root_size)에서 생성가능한 struct imd_entry의 최대갯수
+    마지막으로, 1개의 새로운 struct imd_entry를 초기할당한다.(struct imd_root 영역자체를 의미함.)
+      
+    line 108-131
+      sanity check
+    line 133
+      struct imd_root_pointer 메모리영역을 획득
+    line 135-141
+      struct imd_root 메모리영역을 획득 및 struct imd_root_pointer->root_offset을 세팅
+    line 141-145
+      struct imd_entry 갯수를 세팅
+    line 147-150
+      1개의 struct imd_entry를 assign(by imd_entry_assign())
+
+line 157-210
+  imdr_recover()
+    imd root영역을 recover한다.(해당 메모리영역을 가리키도록 변수를 세팅함)
+    line 167-172
+      imd root영역 정보(struct imd_root)를 가져옴
+      *cbmem_top기준으로 -4 bytes위치에 struct imd_root_pointer가 존재함.
+    line 174-204
+      imd root영역에 대한 sanity check를 수행.
+      ex) 위치, entry갯수, etc ...
+    line 206-207
+      imd root영역 위치를 세팅
+
+line 212-234
+  imdr_entry_find
+    IMD영역에서 특정 id를 가진 imd_entry를 찾는다.
+    line 219
+      imd_root를 가져옴(by imdr_root)
+    line 224-233
+      imd_entry를 찾음
+
+line 270-304
+  imd_entry_add_to_root()
+    struct imd_entry를(메모리영역도 함께) 추가한다
+    line 278-296
+      struct imd_entry갯수 및 가용 사이즈를 체크
+    line 298-301
+      new struct imd_entry를 추가!
+
+line 306-320
+  imdr_entry_add()
+    struct imd_entry를 추가한다.(by imd_entry_add_to_root)
+
+line 353-356
+  imd_handle_init
+    struct imd를 초기화함.(by imdr_init)
+
+line 391-426
+  imd_create_tiered_empty
+    IMD영역을 2개(large, small) 생성한다(by imdr_create_empty())
+      large는 limit이 cbmem_top()
+      small은 limit이 large IMD영역 내부에 존재.
+
+line 428-456
+  imd_recover()
+    imd영역을 recover수행.
+    line 434-436
+      imd영역(large)에 대해 recover를 수행(by imdr_recover)
+    line 438-453
+      imd영역(small)에 대해 recover를 수행(by imdr_recover) *존재하는 경우
+
+line 463-478
+  imd_lockdown()
+    imd영역(large, small영역 모두)에 대해 IMD_FLAG_LOCKED 플래그를 세팅.
+
+line 509-534
+  imd_entry_add
+    imd_entry를 추가한다. *메모리영역도같이 by imdr_entry_add
+
+line 536-548
+  imd_entry_find
+    IMD영역에서 특정 id를 가지는 imd_entry를 찾는다.(by imdr_entry_find)
+
+line 550-561
+  imd_entry_find_or_add
+    imd_entry영역이 존재하면 entry를 return(by imd_entry_find) 없다면 새로 추가(by imd_entry_add)
+
+line 568-578
+  imd_entry_at
+    imd_entry 메모리영역의 시작 주소를 return
+
+8단계 - 7단계 부족분 분석
+  cbmem_recovery()란 뭘까?
+    시스템이 resume(normal boot이 아닌)되는 경우를 지원하기 위한 로직.
+    즉,
+      if   reumse이면 기존 CBMEM영역 정보를 가져온다.
+      else 최초system-up(normal boot)이므로 CBMEM을 새로 생성한다.
+    참고. 7단계 cbmem_recovery 코드분석내용 참조.
+    참고. resumse은 ACPI power state의 S3 state를 의미. 상세한건 skip.
+  
+9단계(유용한 것을 할수있는 수준까지 파기) - 이슈 1개 처리
+  수정. CBMEM관련해서는 리팩토링 / 주석달만한게 딱히보이진 않아, format이슈(공백한칸...)를 해결함.
+  status : open
+  gerrit : https://review.coreboot.org/c/coreboot/+/88325
+  local branch : feature/cbmem
+  참고
+    coreboot은 linter로 clang-format을 사용중이며, clang-format사용시 해결은 가능해보임
+    but, 현재 coreboot프로젝트에서는 clang-format이 사용불가상태임.(./util/lint/check-style line139참조)
+    결국 사람개입이 필요하므로, 본 건을 수정진행함.
+    궁극적으로는 clang-format이 다시 잘되게 만드는 수정이 필요해보임.
+
+10단계(가르치기) - 내용정리
+  알게된것
+    CBMEM 역할(목적, 사용방법)/동작.
+    clang-format(개요정도)
+  코멘트
+    CBMEM의 상세내용에 대해 알수있었음.
+    그러나, CBMEM영역코드 현재 수준으로 딱히 건드릴건 안보여서 style이슈만 수정한 부분은 아쉬움.
+    cbmem_recovery처럼 HW지식(ACPI S3 state 실습을... 못해봄)은 여전히 더 필요하겠다싶음.
+    역시 늘 남기는 말이지만, 더 정진합시다.

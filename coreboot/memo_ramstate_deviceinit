@@ -366,11 +366,11 @@ line 555-584
   struct device에 3개의 리소스를 할당한다.(by new_resource)
 
 line 591-609
-  pci_stroe_resource()
+  pci_store_resource()
   PCI configuration space에 resource정보를 write한다.
 
 line 611-651
-  pci_store_brdge_resource
+  pci_store_bridge_resource()
   PCI configuration space에 resource정보를 write한다.
 
 line 653-711

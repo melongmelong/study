@@ -1,0 +1,450 @@
+next : 완료
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel calltrace
+
+학습이유
+  dmesg등 이슈가 있을때 자주접하는 kernel calltrace의 의미를 알면 트러블슈팅에 조금이나마 도움이 될 듯
+
+학습목표
+  kernel calltrace의 의미/분석방법을 파악한다.
+  kernel calltrace의 출력 로직 소스코드를 분석한다.(의미/보는방법에 대한 detail을 알 수 있을 것.)
+  kernel calltrace에 임의의 정보를 추가해본다.
+    
+학습자료
+  이것저것 많다.!
+
+학습계획
+  milestone1. kernel calltrace 학습.
+  
+================================================================
+7단계 *목표 : calltrace 의미/분석법과 소스코드 분석
+7-1. calltrace출력로직 *마땅한 리소스를 찾기 어려우므로, 코드분석을 하고 7-2를 정리함.
+panic(), die(), show_stack(), dump_stack() 4가지의 각 주요로직과 함수별 비교분석 이 목적 필요.
+show_stack() : stacktrace를 출력한다(커널에서 stacktrace를 출력하기 위한 일반화된 공통 function뉘앙스로 보면될듯.)
+               show_stack직접적으론 주로 아키텍쳐레벨 코드($(top)/arch/[arch]/ 하위코드들..)에서 사용되지만,  간접적으로는 커널 전반적으로 사용됨.(by dump_stack)
+dump_stack() : 현재 task에 대한 관련정보와 현재 task에 대한 stacktrace를 출력한다.
+               stacktrace정보는 show_stack()함수로 출력한다.
+                 커널 내에서 범용적으로 사용됨.
+die() : die정보를 출력하고 해당 이벤트발생을 notify한다.
+        stacktrace정보도 출력하며, 이 때 show_trace_log_lvl함수(show_stack()과 동일)를 사용하게된다.
+         아키텍쳐레벨 코드($(top)/arch/[arch]/ 하위코드들..)에서만 사용됨.
+         +심각한 상황(자세한건 skip) 에서는 panic발생도 수행된다.(oops_end코드 참조)
+panic() : 커널 panic을 발생시킨다.
+          panic관련 정보(stacktrace등) 뿐만이 아니라,
+          kexec, kgdb관련 작업들도 처리된다.
+           커널 내에서 범용적으로 사용됨.
+참고.
+  BUG_ON : 특정 조건 만족 시 panic()을 수행. $(top)/include/asm-generic/bug.h 주석참조
+  WARN_ON : 특정 조건 만족 시, 커널 디버그정보를 출력.(by __warn()) $(top)/include/asm-generic/bug.h 주석참조
+             참고. kernel CONFIG에 따라서는 x86 UD2 instruction으로 exception발생시킨 후, exception handler를 통해서 먼가 처리를 하는 것 같음($(top)/arch/x86/kernel/traps.c line 250-267 참조 *상세한건 skip)
+
+$(top)/arch/x86/kernel/dumpstack.c
+line 68-73
+  printk_stack_address()
+    stack정보를 출력한다.(by printk)
+    %pBb : printk의 format종류. ./Documentation/core-api/printk-formats.rst 참조!
+
+line 186-307
+  show_trace_log_lvl()
+     각 종류의 스택에대해 stacktrace를 출력한다.
+    line 197
+      stack unwind를 위한 정보초기세팅(by unwind_start)
+    line 216-306
+       각 종류의 스택에 대해서, stacktrace를 출력한다.
+      line 221-233
+        stack정보(struct stack_info)를 가져옴.(by get_stack_info())
+      line 235-305
+        stacktrace를 출력
+        line 242-302
+           현재 스택을 순회하면서(top->bottom으로 순회) stacktrace를 출력한다.
+          line 258-267
+             정보출력대상이 아니면 skip한다.(ex. 커널텍스트주소가 아니다, 이미출력된정보다)
+          line 272-285
+             strackframe정보를 출력한다.(by printk_stack_address)
+             *line 272-284는 특수상황(ftrace 걸려있는 경우)에 대한 정보출력임. 본체는 line 285임.
+          line 290-296
+            stack을 unwind(=다음 stackframe으로 이동)한다.(by unwind_next_frame)
+
+line 309-322
+  show_stack()
+    stacktrace를 출력한다.
+    line 312
+      stacktrace를 보여줄 task를 세팅. 파라미터로 NULL이었다면, current task정보를 세팅한다.
+    line 314-319
+      stack pointer를 가져옴(by get_stack_pointer()) *파라미터로 sp는 NULL이고 task == current인 경우.
+    line 321
+      stack trace를 출력한다.(by show_trace_log_lvl)
+
+line 333-355
+  oops_begin()
+    oops처리를 위한 시작작업을 수행한다.(ex. pause_on_oops(by oops_enter), lock획득, oops처리관련 정보들(어떤 cpu가 oops발생했냐 등) 세팅)
+    line 338
+      kernel oops 전처리작업을 수행한다.(by oops_enter())
+    line 340-348
+      oops처리를 위한 lock을 잡는다.
+    line 349-352
+      oops처리를 위한 정보를 세팅한다.
+        die_nest_count(oops가 몇번 nested되었는지), die_owner(oops발생한 cpu id)
+        console level 변경(to verbose level)
+    
+line 359-394
+  oops_end()
+    oops처리를 위한 종료작업을 수행한다.(lock해제, kexec수행, 레지스터정보 출력 등)
+    line 361-362
+      kexec관련 작업 수행 자세한건 skip
+    line 364-371
+      oops처리관련 정보/리소스(ex.락) 해제
+    line 372
+      oops처리 종료 수행(by oops_exit)
+    line 375-393
+      register정보 및 panic처리(필요시) 수행
+
+line 396-416
+  __die_header()
+    아래 커널 설정정보를 출력한다.
+     CONFIG_PREEMPTION
+     CONFIG_SMP
+     CONFIG_DEBUG_PAGEALLOC
+     CONFIG_KASAN
+     CONFIG_PAGE_TABLE_ISOLATION
+
+line 418-429
+  __die_body()
+    아래 정보를 출력하고,
+      레지스터정보를 출력(by show_regs)
+      커널 내 모든 커널모듈정보출력(by print_modules)
+    die이벤트를 notify한다.(by notify_die)
+
+line 431-436
+  __die()
+    die정보를 출력하고 해당 이벤트발생을 notify한다.(by __die_header, __die_body)
+
+line 438-450
+  die()
+    die정보를 출력하고 해당 이벤트발생을 notify한다.(by __die)
+    oops_begin - oops_end로 감싸져있다.(oops관련 처리를 수행한다 oops_begin, oops_end분석내용 참조)
+    
+line 465-479
+  show_regs()
+    아래 정보들을 출력한다.
+      일반적인 디버그정보출력(by show_regs_print_info)
+     register정보출력(by show_regs)
+     stacktrace출력(by show_trace_log_lvl)
+    
+$(top)/arch/x86/include/asm/stacktrace.h
+line 26-29
+  struct stack_info
+    type : stack의 종류(TASK스택, IRQ스택 등) set by get_stack_info()
+    begin, end : stack영역의 시작(begin)/끝(end) 메모리 주소 set by get_stack_info()
+    next_sp : 다른종류의 다음스택 주소(다 가지는 건 아니고 옵셔널임). 아래 내용 참고하면 될 듯.(show_trace_log_lvl함수 주석 참조함)
+              * Each stack has a pointer to the next one.
+              *
+              * x86-64 can have several stacks:
+              * - task stack
+              * - interrupt stack
+              * - HW exception stacks (double fault, nmi, debug, mce)
+              * - entry stack
+
+line 53-61
+  on_stack()
+    주어진 주소가, stack(struct stack_info)내에 존재하는 지 확인한다.
+
+line 89-99
+  get_stack_pointer()
+    stack pointer를 return한다.(=즉 stack의 주소(stack의 상단의 주소))
+     아래 셋 중 하나임.(즉, 케이스by케이스로 스택포인터를 다르게 가져가겠다임)
+       스택에 저장된 스택포인터
+       현재 task의 최상단 스택포인터
+       인자로 전달받은 task의 스택포인터
+   참고. __builtin_frame_address
+     gcc build-in function
+     function frame(stack frame말하는거)의 주소를 return해준다. 상세한것은 gcc doc을 참조.
+     gdb로 샘플프로그램 짜서 분석해보면 확인할 수 있음(gdb의 info frame [n] 명령어 사용하면 될 듯)
+      
+$(top)/arch/x86/include/asm/unwind.h
+line 13-36
+  struct unwind_state
+    stack unwind를(=stackframe을 top->bottom방향으로 순회) 위한 정보
+     사실상, stack에 저장된 register정보, return address정보를 가져와서 stacktrace 출력에 사용함.
+      register정보 : show_regs_if_on_stack()에서 출력(by show_trace_log_lvl)
+      return address정보 : unwind_get_return_address_ptr()로 값을 가져와서 스택정보 reliable출력에 사용됨.(by show_trace_log_lvl)
+       *높은확률의 추측임, guess unwinder는 딱히 특별한게 없어서... 정확한 파악은 하지 못하였음.
+    stack_info, stack_mask : stack의정보 set by get_stack_info().
+                             stack_mask의 경우, stack_info에 대해 처리가 이미되었는지에 대한 visit flag임.(일단 지금까지 봐온걸론)
+    task : 태스크 정보 set by __unwind_start()
+    sp : 스택의 주소. unwind시 스택에서의 현재위치를 의미함. set by __unwind_start()
+
+line 44-47
+  unwind_done()
+    unwind stack의 타입이 UNKNOWN인지를 확인한다.
+
+line 54-61
+  unwind_start()
+    stack unwind를 위한 정보를 세팅한다.(by __unwind_start())
+    line 58
+      stack의 첫번째 프래임(=stack자료구조에 최상단, 즉 제일 마지막에 push됨)을 세팅한다.
+    line 60
+      stack을 unwind정보를 세팅한다.(by __unwind_start())
+      
+$(top)/arch/x86/kernel/unwind_guess.c
+rough한 stack unwinder임. 다른 종류의 unwinder도 있음.!
+
+line 28-50
+  unwind_next_frame()
+    현stack을 unwind한다.(=kernel text address를 가지고있는 스택정보까지 stack top->bottom방향으로 이동.)
+    만약 현재스택에 정보가 없다면,(kernel text address를 가지고있는 스택정보가 없다),
+    다음종류의 stack으로 넘어간다.(by get_stack_info)
+    즉, 쉽게말해 다음 stackframe으로 이동한다고 보면 될 듯.
+
+line 52-73
+  __unwind_start()
+    stack unwind를 위한 정보를 초기세팅한다.
+    line 55-61
+      stack unwind를 위한 정보(struct unwind_state)를 초기화한다
+    line 63-71
+      stack에 저장된 주소값이 kernel text 영역인 스택을 찾는다.(by unwind_next_frame)
+    
+$(top)/arch/x86/kernel/dumpstack_64.c
+line 170-189
+  get_stack_info_noinstr()
+    stack이 어떤 스택에 속해있는 지(ex. task stack, irq stack, exception stack, etc) 확인하고,
+    struct stack_info의 정보를 적절히 세팅한다. 세팅되는 정보는 다음과 같다.
+      type
+      begin
+      end
+      next_sp
+    stack종류 확인은, 인자로 전달된 stack의 주소가, 각 스택 범위내에(스택의 시작주소, 끝주소 내부에 속하냐?) 있는지 체크한다.
+
+line 191-221
+  get_stack_info()
+    stack정보를 세팅(by get_stack_info_noinstr)한다.
+    line 194-200
+      stack정보를 세팅한다(by get_stack_info_noinstr)
+    line 202-214
+      stack에 대한 sanity check.
+
+$(top)/lib/dump_stack.c
+line 48-71
+  dump_stack_print_info()
+    dump_stack()에 대한 일반적인 정보를 출력한다. 출력되는 정보는...
+      processor ID
+       현재 task의 정보(pid, command)
+      kdump load여부
+      kernel version / buildid
+      kernel workqueue 정보
+      stop정보
+      
+line 73-83
+  show_regs_print_info
+    dump_stack_print_info()를 호출한다.
+
+line 85-89
+  __dump_stack
+    현재 task에 대한 관련정보와(by dump_stack_print_info) stacktrace를(by show_stack) 출력한다.
+
+line 91-109
+  dump_stack_lvl()
+    현재 task에 대한 관련정보와 stacktrace를 출력한다(by __dump_stack)
+
+line 111-115
+  dump_stack()
+    현재 task에 대한 관련정보와 stacktrace를 출력한다(by dump_stack_lvl)
+
+$(top)/arch/x86/kernel/process_64.c
+line 65-142
+  __show_regs()
+    전달받은 레지스터 정보를 출력한다.
+    
+$(top)/kernel/panic.c
+line 203-222
+  panic_print_sys_info()
+    panic_print 커널 파라미터에 따라서, 커널패닉에 출력되는 추가적인 시스템정보(ex. memory정보, lock정보 등)
+    $(top)/Documentation/admin-guide/kernel-parameters.txt panic_print 파라미터 설명 참조.
+line 237-447
+  panic()
+    kernel panic을 발생시킨다.
+    stacktrace등 디버깅 정보 출력 뿐 아니라, kgdb, kexec 관련 작업들도 수행된다.
+    line 254-262
+       panic_on_warn 커널 파라미터 관련 처리 수행 자세한건 skip
+       $(top)/Documentation/admin-guide/kernel-parameters.txt panic_on_warn도 참조(파라미터의미)
+     line 264-271
+       interrupt / permmption disable수행.
+     line 273-292
+       panic코드를 수행해선 안되는 cpu에 대해서 wait.
+        실행해야하는 cpu만 go ahead
+     line 294-434
+       panic관련 디버그로그출력 및 kgdb, kexec 관련 작업 수행(*자세한건 skip)
+       line 296-310
+         panic start string(Kernel panic ~) 출력
+          및 dump_stack()호출
+       line 312-317
+         kgdb관련처리
+       line 319-343
+         kexec관련처리
+       line 345-349
+         panic handler 수행
+       line 351
+         kernel message dump
+       line 368-381
+         panic관련 시스템정보를 출력.(by panic_print_sys_info())
+       line 383-411
+          리부팅전 timeout시간만큼 대기 후 리부팅.(panic_timeout 파라미터가 0보다 큰 값으로 세팅되어야 함)
+       line 424-434
+         panic end string(end Kernal panic ~ ) 출력
+       line 436-444
+          무한대기...
+    
+line 548-585
+  do_oops_enter_exit()
+    pause_on_oops 파라미터로 설정된 시간(초)동안 CPU들을 halt시킨다. *자세한건 skip.
+    디버깅 목적임(ex. oops 메시지가 overwrite되는 것을 막는 용도)
+    참고. $(top)/Documentation/admin-guide/kernel-parameters.txt의 pause_on_oops 파라미터 참조.
+    참고. oops_enter()주석참조
+
+line 596-619
+  oops_enter()
+    oops 처리 시작시 불려짐.
+    kernel디버깅용 정보출력, pause_on_oops파라미터처리, all cpu backtrace출력을 수행한다.
+    line 612-614
+      kernel 디버깅용 정보
+    line 615
+      pause_on_oops 파라미터로 설정된 시간(초)동안 CPU들을 halt시킨다(by do_oops_enter_exit())
+    line 617-618
+      모든 cpu의 backtrace 출력을 trigger한다.(by trigger_all_cpu_backtrace) *상세한건 skip
+
+line 643-652
+  oops_exit()
+    oops 처리 완료시 불려짐.
+    line 649
+      pause_on_oops 파라미터로 설정된 시간(초)동안 CPU들을 halt시킨다(by do_oops_enter_exit())
+    line 650-651
+      커널 디버그로그를 출력한다.(by kmsg_dump)*자세한건 skip
+
+7-2. calltrace 개요(의미/분석방법) *7-1분석완료후 정리함.
+calltrace 의미
+  calltrace자체는 커널이 뱉는 calltrace.(ex. show_stack())
+   => 근데 사실상 내가 생각했던 dmesg에 찍히는 커널콜트래이스는, kernel calltrace라는 용어보다는
+     die, show_stack, dump_stack, panic에 의해서 출력되는 커널디버깅용 정보이므로(calltrace뿐 아니라 다양한 정보(ex. 레지스터 정보,  커널모듈정보)들 및 다양한 행위들을 수행함.(ex kexec, kgdb)
+      커널이 내뱉는 디버깅정보라고 부르는게 더 맞을 듯.
+
+  panic vs oops
+    panic : 심각한 에러. kernel동작이 중단됨. panic() 커널함수를 통해 발생.
+    oops : 심각하지만 non-fatal 에러. kernel은 동작은 unreliable하게 계속할 수 있다.(근데 이러다가 결국엔 panic발생할수있음)
+           die() 커널함수(정확하게는 die()류의 함수)를 통해 발생.
+
+calltrace 분석법
+  각 디버그함수들(die, panic, show_stack, dump_stack) 코드에서 뿌리는 정보들(ex. stacktrace / register)의 의미를 파악하면서 해야함.
+  => 즉, 커널을 잘 모르면, 분석하기가 어렵다.(calltrace(=stacktrace)는 단순히 스택에 있는 정보를 심볼화하여 출력해줄뿐임)
+
+(v)8단계 *목표 : 7단계 부족했던 부분 추가 학습 + 이것저것해보기
+(v)struct task 관련 일부 코드의미, 즉 show_stack(), get_stack_pointer()의 정확한의미파악필요?(왜 task, sp 값 조건이 여러개냐???)
+  current macro?
+    현재 task의 struct task를 의미. $(top)/Documentation/kernel-hacking/hacking.rst line 349-358 참조
+    *상세구현은 skip
+  struct task->thread.sp?
+    struct task->thread(struct thread_struct) : task의 h/w dependant 정보(ex. register). task가 중단되었을때의 정보를 가지고 있음(출처는 https://blog.naver.com/djlee118/221501181524)
+    struct task->thread.sp : 해당 task의 최종(가장최근)의 stack pointer 레지스터값.
+    *상세구현은 skip
+
+struct stack_info->next_sp의 의미가 뭘까? 인터럽트같은것과 연관있어보이긴 하는데... 아마 스택들에 대한 구조가 있나봄... 이거 파악이 되야할 듯.
+$(top)/arch/x86/include/asm/stacktrace.h 내용말고 다른 녀석들이 더 있을까????(여기저기 있긴할텐데, 콜트래이스 관련 봐왔었고, 코드상에서도 많이 보여지는 건 얘네들이니... 더 볼것도 없어보이긴 하기도..., show_trace_log_lvl() 관련)
+  하나의 task에 대해 여러종류의 stack이(task에대한스택, 인터럽트콘텍스트스택 등) 존재할 수 있음.
+  각 스택은 다른 스택 영역정보(ex. stack의 top/bottom address)로 얻어올 수 있다.
+  *상세는 skip
+
+(v)9단계 *목표 : 커널모듈에서 dump_stack()으로 dmesg에 콜트래이스 찍어보기.
+커널모듈코드
+  1 #include <linux/module.h>
+  2 #include <linux/printk.h>
+  3 
+  4 MODULE_LICENSE("knwtest license");
+  5 
+  6 int knwtest_init(void)
+  7 {
+  8         printk("This is the knwtest. Hi!\n");
+  9         dump_stack();
+ 10         return 0;
+ 11 }
+ 12 
+ 13 void knwtest_exit(void)
+ 14 {
+ 15         printk("This is the knwtest. Bye!\n");
+ 16 }
+ 17 
+ 18 module_init(knwtest_init);
+ 19 module_exit(knwtest_exit);
+
+insmod시, dmesg내 dump_stack 출력.
+3450 [  876.260075] CPU: 1 PID: 4659 Comm: insmod Tainted: P           O      5.15.175 #8
+3451 [  876.260078] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.10.2-1ubuntu1 04/01/2014
+3452 [  876.260085] Call Trace:
+3453 [  876.260107]  <TASK>
+3454 [  876.260108]  ? 0xffffffffc019d000
+3455 [  876.260113]  dump_stack_lvl+0x45/0x5d
+3456 [  876.260142]  init_module+0x16/0x1d [knwtest]
+3457 [  876.260148]  do_one_initcall+0x44/0x1e0
+3458 [  876.260166]  ? trace_hardirqs_on+0x2b/0xc0
+3459 [  876.260174]  ? __cond_resched+0x15/0x30
+3460 [  876.260177]  ? kmem_cache_alloc_trace+0x3f/0x1b0
+3461 [  876.260184]  do_init_module+0x4c/0x210
+3462 [  876.260197]  load_module+0x2517/0x27a0
+3463 [  876.260200]  ? __do_sys_finit_module+0xa0/0xe0
+3464 [  876.260202]  __do_sys_finit_module+0xa0/0xe0
+3465 [  876.260205]  do_syscall_64+0x33/0x80
+3466 [  876.260215]  entry_SYSCALL_64_after_hwframe+0x6c/0xd6
+3467 [  876.260226] RIP: 0033:0x7f260b69495d
+3468 [  876.260228] Code: 00 c3 66 2e 0f 1f 84 00 00 00 00 00 90 f3 0f 1e fa 48 89 f8 48 89 f7 48 89 d6 48 89 ca 4d 89 c2 4d 89 c8 4c 8b 4c 24 08 0f 05 <48> 3d 01 f0 ff ff 73 01 c3 48 8b 0d 03 35 0d 00 f7 d8 64 89 01 48
+3469 [  876.260230] RSP: 002b:00007ffd961c08d8 EFLAGS: 00000246 ORIG_RAX: 0000000000000139
+3470 [  876.260233] RAX: ffffffffffffffda RBX: 000055a888f9f770 RCX: 00007f260b69495d
+3471 [  876.260235] RDX: 0000000000000000 RSI: 000055a87ee18358 RDI: 0000000000000003
+3472 [  876.260236] RBP: 0000000000000000 R08: 0000000000000000 R09: 00007f260b76b580
+3473 [  876.260238] R10: 0000000000000003 R11: 0000000000000246 R12: 000055a87ee18358
+3474 [  876.260239] R13: 0000000000000000 R14: 000055a888fa17f0 R15: 0000000000000000
+3475 [  876.260241]  </TASK>
+
+dump_stack dmesg 로그 분석
+line 3450
+  해당 instruction을 수행한 CPU logical number, 해당 instruction수행한 task의 PID, Command정보, Tainted정보, 버전 / 빌드 정보를 출력
+  dump_stack_print_info() 에서 출력
+line 3451
+  해당 machine의 정보 
+  dump_stack_print_info()에서 출력
+line 3452-3475
+  stack에 존재하는 stacktrace정보와 register정보.
+  show_trace_log_lvl()에서 출력
+    <TASK> ~ </TASK> : 출력하는 stackframe의 스택종류(TASK냐 인터럽트냐...) *show_trace_log_lvl line 235-237, line 304-305
+    line 3454-3466
+      calltrace정보. 최상단이 stack top임.(젤마지막으로호출됨).
+       해당 dmesg에서는, insmod가 systemcall(finit_module())을 호출했고,
+       커널모듈의 init_module()수행 최종적으로 dump_stack()호출하는 흐름을 표기
+    line 3467-3474
+      stack에 저장된 레지스터정보를 보여줌. *상세한건 skip.(스택에 저장된 레지스터가 의미하는게 정확히 뭔지 모르겠다.)
+       *아마도, exception, interrupt발생시, 스택에 저장된 레지스터정보. 시스템콜호출했으니 아마 이게 맞을듯.(즉 finit_module시스템콜 호출시점의 정보...) perplexity참조함.
+      show_regs_if_on_stack()에서 출력
+      line 3467-3469
+        RIP : RIP레지스터정보
+        Code ~ : RIP에 위치하는 instruction정보를 보여줌. 포맷은 프롤로그 <hex> 에필로그. *<hex>는 프롤로그와 에필로그를 구분해줌.
+        RSP, ELFAGS, ORIG_RAX : 각 레지스터 정보
+      line 3470-3474
+         각 레지스터정보
+
+10단계 *목표 : 정리
+  알게된 것
+    커널 calltrace의 개요
+    커널 calltrace의 주요함수
+      show_stack, die *외부인터페이스는 아님
+      dump_stack, panic *외부인터페이스.
+    작게나마 실제 dump_stack()호출하여 calltrace 내용 분석.
+  코멘트
+   calltrace의 기본 개요와, 실제 간단한 calltrace 분석(9단계)해본건 의미있음.
+    9단계 실습이 너무 야메같애서 좀 아쉽다. 그래도 calltrace분석해봤으니 조금이나마 도움되지 않을까?
+    호흡이 길어서 어느정도 러프하게 study진행한 감도 있음.
+    여전히 하는 거지만, 역시... 계속 정진필요함...(연관된 다른 부분들을 잘 모르니, 명확하게는 이해가 안됨.)
