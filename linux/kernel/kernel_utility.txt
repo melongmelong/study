@@ -1,0 +1,42 @@
+next : 
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel util function특히 자주 마주치는 자료구조관리 / 동시성(락/atomic operation) 함수 사용법과 구현개념을 익힌다.
+
+학습이유
+  커널소스에서 자주 나오는 util function의 개념을 이해하여 추후 커널소스분석에 도움이 목적
+
+학습목표
+  kernel util function특히 자주 마주치는 아래 자료구조관리 / 동시성(락/atomic operation)  함수 사용법과 구현개념을 익힌다.
+    자료구조
+      linked list
+      rbtree
+    동시성(락/atomic operation)
+      spinlock
+      mutex
+      semaphore
+      RCU
+      atomic연산(ex. atomic_inc)
+    기타 *할지말지... TBD
+      waitqueue
+      notifier
+  
+학습자료
+  
+
+학습계획
+  milestone1. kernel util function 중 자료구조 / 락관리 함수 사용법과 구현개념 학습.
+  
+================================================================
+7단계 *목표 : kernel 자료구조관리 / 락관리 함수 인터페이스와 구현개념을 학습
+8단계 *목표 : 실제 구현 분석(정 어려우면 포기)
+9단계 *목표 : kernel util function 실사용해보기.(ex. 자료구조에 데이터넣고 검색하고 삭제하고)
+10단계 *목표 : 정리
+  알게된 것
+  코멘트

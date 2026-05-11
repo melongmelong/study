@@ -143,7 +143,7 @@ PCI 리소스(BAR, interrupt)할당
   BAR관련
     host address(memory든 io든)접근이 PCI address로 변환되어 PCI 인터페이스 수행하는 것이 맞는가?
        맞다. 아래개념으로 동작한다고 이해하면 된다
-      CPU <-> host-to-pic bridge(ex. i440fx) <-> pci device(ex. piix4) <-> pci device
+      CPU <-> host-to-pci bridge(ex. i440fx) <-> pci device(ex. piix4) <-> pci device
         host addr                          pci addr                  pci addr
       
        더 추상적으로는, H/W적으로 host address를 적절한 장치로 접근하도록 하게 함.(chipset이라는 게 이런 역할을 수행)

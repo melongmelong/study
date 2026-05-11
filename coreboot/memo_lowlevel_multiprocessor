@@ -1,0 +1,92 @@
+next : 7단계 7-2내용확인(누가 halt상태인 AP를 깨워서 작업을 수행하냐, 퍼플렉시티등으로 정보검색수준만하고 7단계 시마이치자.)
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - x86 arch에서 multiprocessor 초기화 및 task구동방식에 대핸 lowlevel 지식 학습
+
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+  multiprocessor가 low단에서 실제로 어떻게 동작하냐를 알고싶다.
+
+학습목표
+  x86 arch에서 multiprocessor 초기화 방법
+  x86 arch에서 multiprocessor에서의 task가 어떻게 처리되는 지?
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+  memo_bringup(multiprocessor관련 코드 분석 내용 있음)
+  Intel Software Developer Manual
+
+학습계획
+  milestone1. x86 arch multiprocessor low level 내용 확인
+  
+=======================
+milestone1. x86 arch multiprocessor low level 내용 확인
+
+7단계(대충 사용 수준까지) - x86 arch multiprocessor low level 내용 확인.
+코드분석은 coreboot 24.05 version기준!
+
+7-1. x86 arch multiprocessor 초기화
+step1) 각 프로세서에 uniq APIC ID가 할당됨 based system topology. 
+       code : N/A *coreboot이 아닌 HW에의해 셋팅됨.
+step2) 각 프로세서에 uniq arbitration priority가 할당됨. based on APIC ID
+       code : N/A *coreboot이 아닌 HW에의해 셋팅됨.
+step3) 모든 프로세서는 동시에 BIST를 수행함
+       code : N/A *coreboot이 아닌 HW에의해 셋팅됨.
+step4) BSP, AP를 선택(프로세서종류마다 다른 메카니즘을 사용)
+       code : N/A *coreboot이 아닌 HW에의해 셋팅됨.
+step5) BSP가 bootstrap코드를 수행. ACPI or MP table을 생성하고, APIC ID를 table에 추가
+       code : $(top)/src/cpu/x86/mp_init.c, init_bsp() *구조체에 LAPIC ID값 세팅하는 게 table에 APIC ID추가하는 걸로 보면 될 듯.
+step6) BSP의 bootstrap코드 마지막에, processor counter를 1로 셋업후, SIPI message를 모든 AP로 보냄
+       SIPI message에는 AP가 수행할 초기화코드의 vector가(=address) 포함되어있음. 
+       code : $(top)/src/cpu/x86/mp_init.c, start_aps(), line 449-493 *INIT-SIPI-SIPI 시퀀스를 보냄
+step7) 각 AP마다, 초기화코드를 수행. BSP가 생성한 ACPI or MP table에 APIC ID를 table에 추가하고 processor counter를 +1수행. 
+        그리고 halt상태로 진입
+        이 작업을 위해 각 AP는 세마포어를 통해서 동시실행을 막음. 
+       code : $(top)/src/cpu/x86/sipi_vector.S, _start symbol, line 51-245
+              $(top)/src/cpu/x86/mp_init.c, ap_init()
+step8) 모든 AP의 초기화 완료후, BSP가 수행. BSP는 프로세서의 전체 갯수를 카운팅하고 bootstrap코드를 완료.
+        이후 startup코드(ex. OS / bootloader)를 실행.
+       code : $(top)/src/cpu/x86/mp_init.c, start_aps(), line 495-501
+step9) AP는 대기상태이고 일부 메시지(ex. INIT IPI)에만 반응할 수 있는 상태가 됨.
+
+7-2. x86 arch multiprocessor task실행
+  coreboot에서는 확인은 안되고,
+  다른 데서(ex. linux kernel의 start_secondary) 깨워서 실행한다.!
+
+
+용어집.
+  BSP(BootStrap Processor) : Power-up 시점에 BSP Selection Mechanism으로 결정되는 프로세서. 
+                             IA32_APIC_BASE MSR의 BSP flag가 1로 셋팅됨.
+                                 시스템 초기화 및 AP초기화를 수행하게 됨.
+                             Hyper-Threading인 경우 물리가 아닌 논리프로세서단위로 다뤄지고 개념은 동일하다.
+                                 참고. Intel64 and IA-32 Architectures Software Developer's Manual, Vol3. 8.4.1
+  AP(Application Processr) : BSP제외한 나머지 프로세서. 
+                             IA32_APIC_BASE MSR의 BSP flag가 0으로 셋팅됨.
+                             Power-up후 최소한의 self-config만 수행하고 SIPI message를 대기.
+                             SIPI message수신후 AP초기화코드를 수행하고 halt state로 넘어감.
+                             Hyper-Threading인 경우 물리가 아닌 논리프로세서단위로 다뤄지고 개념은 동일하다.
+                                 참고. Intel64 and IA-32 Architectures Software Developer's Manual, Vol3. 8.4.1
+
+8단계(이것저것해보기) - 7단계 주요흐름에서 잘 이해안가던 내용들 파악(w/코드수정하면서 디버깅) 
+
+
+9단계(유용한 것을 할수있는 수준까지 파기) - 관련 이슈1개처리.
+
+
+10단계(가르치기) - 내용정리
+  알게된것
+  코멘트

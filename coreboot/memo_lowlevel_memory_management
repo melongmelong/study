@@ -1,0 +1,288 @@
+next : 완료
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - coreboot에서 low-level memory management(ex. x86 segmentation을 어떻게 구성하는가? 그래서 coreboot은 어떤 메모리 layout을 가지는가?)에 대한 내용 확인
+
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+
+학습목표
+coreboot에서 x86 memory segmentation은 어떻게 사용하는가?
+  coreboot 각 stage별(bootblock ~ ramstage까지만) 사용하는 GDT, LDT, Segment Descriptor 값 분석.
+  각 값별 memory layout 분석(그림이 그려져야 함)
+실습을 통해 직접확인한다.
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+  구글링
+
+학습계획
+  milestone1. coreboot에서 low-level memory management 대한 내용 확인
+  *코드는 24.05 기준
+  
+=======================
+milestone1. coreboot에서 low-level memory management 대한 내용 확인
+
+7단계(대충 사용 수준까지) - 각 stage의 coreboot x86 memory segmentation 관련코드분석(GDT, LDT, Segment Descriptor 값 분석)
+x86 Segmentation 개요
+  주소변환 : Logical Address -> (x86 segmentation) -> Linear Address -> (x86 Paging *optional) -> Physical Address
+  GDT : Global Descriptor Table. Segment Descritpor의 테이블임.
+  GDTR : GDT의 시작주소(Linear Address임.)와 Limit 정보를 저장한 레지스터.
+  LDT : Local Descriptor Table. Segment Descritpor의 테이블임.
+  LDTR : LDT의 시작 주소와 Limit 정보를 저장한 레지스터
+  Segment Descriptor : Segment의 정보(ex. base address, DPL). 8-bytes 사이즈임.
+  Segment Selector : 사용할 Segement Descriptor의 정보를 나타내는 값.(GDT/LDT내의 index와, GDT/LDT 사용여부, RPL)
+  Segment Register : Segement Selector정보를 저장한 레지스터, CS,SS,DS,ES,FS,GS가 존재하며, CPU에서 필요시 적합한 Segment Register를 선택하여 사용.
+
+-bootblock
+-real address mode
+bootblock의 경우 real address mode먼저 시작.
+real address모드는 20bit linear address를 사용. 즉 최대 1MB까지 addressing이 가능
+real address모드는 Segmentation 기능을 사용하지 않음.
+linear address 계산은 다음과 같음.
+  Segment Selecteor<<4(20bit) + Effective Address(16bit) = Linear Address(20bit)
+
+GDTR : N/A *real address mode에서는 미사용
+Segment Descriptor : N/A *real address mode에서는 미사용
+Segment Register *real address mode에서는 Segment Selector값만 유효하므로 해당값만 표기.
+  cs
+    Segment Selector=0xf000
+  ds
+    Segment Selector=0x0000
+  ss : same as ds
+  es : same as ds
+
+-protected mode
+GDTR : gdtptr사용 *$(top)/src/arch/x86/gdt_init.S
+
+Segment Descriptor
+  gdt사용 *$(top)/src/arch/x86/gdt_init.S
+  GDT
+    Index 0 : dummy segment *x86 segmentation 스펙임.
+    Index 1
+      base : 0x00000000
+      limit : 0xfffff(G==1이므로 4GB)
+      type : Code(Execute/Read, accessed) 
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 1(limit은 4KBytes단위로 계산.)
+      L : 0(compatibility mode)
+      D/B : 1(32bit addresses + 32bit/8bit operands mode.) *쉽게말해 32bit mode면 1, 16bit면 0. *64bit는 무조건 0
+    Index 2
+      base : 0x00000000
+      limit : 0xfffff(G==1이므로 4GB)
+      type :  Data(Read/Write, accessed)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 1(limit은 4KBytes단위로 계산.)
+      L : 0(compatibility mode)
+      D/B : 1(4GB upper bound, 32bit stack mode.)  *쉽게말해 32bit mode면 1, 16bit면 0. *64bit는 무조건 0
+    Index 3
+      base : 0x00000000
+      limit : 0xfffff(G==1이므로 4GB)
+      type :  Code(Execute/Read, accessed)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 1(limit은 4KBytes단위로 계산.)
+      L : 1(64bit mode)
+      D/B : 0(must be 0 in 64bit mode)  *쉽게말해 32bit mode면 1, 16bit면 0. *64bit는 무조건 0
+
+Segement Register
+  cs
+    Index : 0x1(Index 1)
+    TI : 0(GDT)
+    RPL : level-0
+  ds
+    Index : 0x2(Index 2)
+    TI : 0(GDT)
+    RPL : level-0
+  ss : same as ds
+  es : same as ds
+  
+-romstage
+  bootblock에서 세팅된 것과 동일 *$(top)/src/arch/x86/assembly_entry.S line 30(gdt_init) 참조
+  
+-postcar
+  bootblock에서 세팅된 것과 동일 *$(top)/src/arch/x86/exit_car.S line 29(gdt_init) 참조
+
+-ramstage
+GDTR : gdtaddr 사용 *$(top)/src/arch/x86/c_start.S
+
+Segment Descriptor
+    gdt 사용 *$(top)/src/arch/x86/c_start.S
+    Index 0 : dummy segment *x86 segmentation 스펙임.
+    Index 1 : dummy segment
+    Index 2
+      base : 0x00000000
+      limit : 0xfffff(G==1이므로 4GB)
+      type : Code(Execute/Read, accessed)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 1(limit은 4KBytes단위로 계산.)
+      L : 0(compatibility mode)
+      D/B : 1(32bit addresses + 32bit/8bit operands mode.) *쉽게말해 32bit mode면 1, 16bit면 0. *64bit는 무조건 0
+    Index 3
+      base : 0x00000000
+      limit : 0xfffff(G==1이므로 4GB)
+      type : Data(Read/Write, accessed)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 1(limit은 4KBytes단위로 계산.)
+      L : 0(compatibility mode)
+      D/B : 1(4GB upper bound, 32bit stack mode.)  *쉽게말해 32bit mode면 1, 16bit면 0. *64bit는 무조건 0
+    Index 4 : dummy segment
+    Index 5
+      base : 0x00000000
+      limit : 0xffff(G==0이므로 64KB)
+      type : Code(Execute/Read)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 0(limit은 bytes단위로 계산.)
+      L : 0(compatibility mode)
+      D/B : 0
+    Index 6
+      base : 0x00000000
+      limit : 0xffff(G==0이므로 64KB)
+      type : Data(Read/Write)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 0(limit은 bytes단위로 계산.)
+      L : 0(compatibility mode)
+      D/B : 0
+    Index 7
+      base : 0x00000000
+      limit : 0xf0000(G==1이므로, 대강 4GB. *실제로는 더 작음.)
+      type : Data(Read/Write, accessed)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 1(limit은 4KBytes단위로 계산.)      
+      L : 0(compatibility mode)
+      D/B : 0
+    Index 8
+      base : 0x00000000
+      limit : 0xfffff(G==1이므로, 4GB.)
+      type : Code(Execute/Read, accessed)
+      DPL : level-0
+      P : 1(Present)
+      S : 1(non-System Descriptor(code/data))
+      G : 1(limit은 4KBytes단위로 계산.)      
+      L : 0(compatibility mode)
+      D/B : 0    
+
+Segment Register
+  cs
+    Index : 0x2(Index 2)
+    TI : 0(GDT)
+    RPL : level-0
+  ds
+    Index : 0x3(Index 3)
+    TI : 0(GDT)
+    RPL : level-0
+  ss : same as ds
+  es : same as ds
+  
+8단계(이것저것해보기) - 7단계 주요흐름에서 잘 이해안가던 내용들 파악
+  Chapter5. Protection(CPL vs DPL, Segment type관련) 내용도 학습하면 좋겠다.
+    CPL : Current Privilege Level. CS register에 표기됨.
+    DPL : Descriptor Privilege Level. Segement Descriptor에 표기됨
+    RPL : Requested Privilege Level. 세그먼트레지스터에 load하려는(=사용할) Segment Selector에 표기됨.
+
+    data접근이냐 code접근이냐에 따라 privilege check detail은 다르지만, 기본적으로 다음과 같다.
+    CPL이 RPL보다 privilege level이 같거나 높아야하고, RPL이 DPL보다 privilege level이 같거나 높아야한다.
+    그리고, CPL은 code접근 시에만(다른 privilege를 가진) 변경될때 수행된다.
+    상세한것은 Intel64 and IA-32 Architectures Software Developer's Manual, Volume 3(Chapter 5.5 - 5.8참조)
+
+  bootblock을 제외한 모든 stage들에서 왜 bootblock과 동일한 gdt를 한번더 세팅하는 지?
+    CAR이란 ? : cpu cache를 ram처럼 사용하는 것.(Cache-As-Ram)
+               https://web.archive.org/web/20140818050214/https://www.coreboot.org/data/yhlu/cache_as_ram_lb_09142006.pdf 참조.
+    아마 실행환경을 다시 셋업해줘야하는 상황이 있나봄. 본 건과 별도로 파보는 게 좋겠다.(아마도 ACPI S3 or SMP 기능과 관련있을 듯 여기를 먼저 봐야할 듯)
+    *$(top)/src/arch/x86/assembly_entry.S 최상단 주석 참조
+  
+  VGA / ACPI / dummy segment 는 왜 세팅하는 지? *($top)/src/arch/x86/c_start.S 참조
+    아마 VGA/ACPI는 해당 기능 실행시, 자체 실행환경 셋업이 필요하기때문일 것 같긴한데, 정확하게는 모르겠다.
+    dummy도 왜 있는지 모르겠다.
+    본 건과 별도로 별도로 파보는 게 좋겠다.(VGA / ACPI관련코드를 봐야할 듯)
+
+9단계(유용한 것을 할수있는 수준까지 파기) - 관련 이슈1개처리.
+  실제 세그먼트레지스터 값 확인
+  qemu의 -monitor stdio 옵션으로 monitor에서 info registers 명령어로 확인함.
+  hlt적절히 걸어서 확인하였음.
+  
+  bootblock - real address mode
+    CS =f000 ffff0000 0000ffff 00009b00
+    SS =0000 00000000 0000ffff 00009300
+    DS =0000 00000000 0000ffff 00009300
+     참고. 해당 값은 x86 arch reset시의 정보임.
+     참고. first instruction 주소(0xfffffff0)는 real address mode에서의 address translation rule과는 조금 다름.
+         Intel64 and IA-32 Architectures Software Developer's Manual, Volume 3(Chapter 9.1.4 참조)
+
+  bootblock - protected mode, segment descriptor에 기술된 값과 동일함을 알 수 있음.
+    CS =0008 00000000 ffffffff 00cf9b00 DPL=0 CS32 [-RA]
+    SS =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+    DS =0010 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+    GDT=     fffffef8 0000001f
+    참고. bootblock.elf에서 확인가능한 gdt symbol값. 아래 값들을 GDT 정보에서 확인 가능함.
+      nm ./build/cbfs/fallback/bootblock.elf | grep gdt
+      fffffef8 t gdt
+      ffffff18 t gdt_end
+
+  romstage - protected mode
+    CS,SS,DS값은 bootblock-protected mode와 동일.
+    but GDT값이다름. 다른 사유는 romstage초입에서 gdt_init을 한번더 수행함.!
+    GDT=     ffc00308 0000001f
+     참고. romstage는 relocated됨(by bootblock). 그래서 romstage.elf의 gdt주소와 GDT값에서 확인되는 gdt주소가 다름.!
+
+  postcar - protected mode
+    romstage와 동일함(CS,SS,DS값은 bootblock과 동일, but GDT값이 다름. 다른 이유도 gdt_init을 한번더 수행해서임)
+    GDT=     07fd9008 0000001f
+
+  ramstage - protected mode. 새로운 gdt가 사용됨을 알 수 있다!
+    CS =0010 00000000 ffffffff 00cf9b00 DPL=0 CS32 [-RA]
+    SS =0018 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+    DS =0018 00000000 ffffffff 00cf9300 DPL=0 DS   [-WA]
+    GDT=     07ec3178 00000067
+
+  참고. info registers 세그먼트레지스터 필드 의미
+    [segment selector] [base] [limit] [flag]
+      [segment selector] : 세그먼트레지스터에 세팅된 segment selector
+      [base] : 세그먼트디스크립터의 base값
+      [limit] : 세그먼트디스크립터의 limit값
+      [flag] : 세그먼트디스크립터의 flag값.
+
+  참고. info registers GDT 필드 의미
+    [gdt offset] [table limit]
+      [gdt offset] : gdt address
+      [table limit] : gdt limit
+    
+10단계(가르치기) - 내용정리
+  알게된것
+    x86 architecture의 메모리 메니지먼트 일부
+      real address mode
+      segmentation
+    coreboot에서 각 stage별 세그먼트레지스터가 어떻게 사용되는 지.
+  코멘트
+    실제 어렴풋이 알고있던 segmentation 개념과, 코드로만 봤던 segemntation 내용을 눈으로 직접 볼 수 있어 좀 더 깊이 이해 할 수 있었음.
+    그러나 9단계가 너무 약소했다. 여기서 공부한 것 가지고는 더 수정을 할 건 없었음.
+    

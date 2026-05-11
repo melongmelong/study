@@ -1,0 +1,249 @@
+next : 완료
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel timer interrupt
+
+학습이유
+  호기심(interrupt발생시 커널이 뭔일을 하는지가 궁금)
+  low-level지식습득.
+
+학습목표
+  kernel timer interrupt 초기화로직 파악(주요로직수준)
+  kernel timer interrupt 발생시 핸들러처리까지의 주요 로직 흐름(주요로직수준)
+  kernel timer interrupt 발생시 하는 일.(얘는 흐름정도만), lapic_events 변수(clockvents래이어)를 대강이라도 보면 될 듯.
+    
+학습자료
+  
+
+학습계획
+  milestone1. kernel timer interrupt 주요로직 파악.
+  
+================================================================
+7단계 *목표 : 학습목표관련 주요로직 분석.
+local apic timer 흐름
+  셋업 :  __setup_APIC_LVTT에서 local apic timer에 대한 초기화(ex. IRQ number 세팅) 수행.
+  인터럽트 흐름 : local apic timer interrupt! -> interrupt handler(asm_sysvec_apic_timer_interrupt) -> sysvec_apic_timer_interrupt -> __sysvec_apic_timer_interrupt -> local_apic_timer_interrupt
+  호출되는 처리루틴 : hrtimer_interrupt
+
+$(top)/arch/x86/include/asm/idtentry.h
+line 550-562
+  spurious_entries_start
+    spurious interrupt에 대한 공통 interrupt handler를 정의.
+    단, Local Timer Interrupt의 경우, idt_setup_apic_and_irq_gates()함수에서 다른 interrupt handler로 등록된다
+      $(top)/arch/x86/kernel/idt.c line 118-156참조
+
+line 676
+  sysvec_apic_timer_interrupt 함수 선언(by DECLARE_IDTENTRY_SYSVEC)
+  DECLARE_IDTENTRY_SYSVEC
+    C level, asm level의 매크로 존재
+    C level : DECLARE_IDTENTRY 매크로로 치환. $(top)/arch/x86/include/asm/idtentry.h line 32참조
+                매크로로 인해 sysvec_apic_timer_interrupt 함수선언으로 치환됨.
+    asm level : idtentry_sysvec asm매크로로 치환. $(top)/arch/x86/include/asm/idtentry.h line 485참조
+                  매크로로 인해 asm_sysvec_apic_timer_interrupt 치환됨. $(top)/arch/x86/entry/entry_64.S line 406참조
+                  idtentry는 kernel_interrupt.txt 참조
+
+$(top)/arch/x86/kernel/idt.c
+line 118-156
+  apic_idts
+    APIC interrupt handler들 정의.
+    Local Timer Interrupt도 등록됨. line 143참조.(asm_sysvec_apic_timer_interrupt)
+    idt_setup_apic_and_irq_gates함수 line 272에서 interrupt handler를 등록.
+    여기 등록된 경우, $(top)/arch/x86/include/asm/idtentry.h에 정의된(spurious_entries_start) 공통 interrupt handler는 사용하지 않음.
+
+$(top)/arch/x86/kernel/apic/apic.c
+line 323-371
+  __setup_APIC_LVTT
+    local apic timer 인터럽트를 초기셋업한다.
+      local apic timer irq number 등.
+       시스템 초기화시점에 수행되는 듯!(maybe)
+
+line 562
+  lapic_events
+    CPU별 clock event device정보
+
+    lapic_events 사용하는 함수. 와 call sequence 및 call sequence가 어느 시점에 called되는지에 대한 내용.
+      setup_APIC_timer
+        setup_boot_APIC_clock -> setup_APIC_timer
+          x86_init 구조체변수(.setup_percpu_clockev필드)에 세팅됨 *$(top)/arch/x86/kernel/x86_init.c
+           즉 시스템 초기화(아마 정확히는 CPU셋업시) 시, 호출됨
+        setup_secondary_APIC_clock -> setup_APIC_timer
+          x86_cpuinit 구조체변수(.setup_percpu_clockev필드)에 세팅됨 *$(top)/arch/x86/kernel/x86_init.c
+           즉 시스템 초기화(아마 정확히는 CPU셋업시) 시, 호출됨
+
+      tsc_refine_calibration_work -> lapic_update_tsc_freq -> __lapic_update_tsc_freq
+        delayed work로 schedule되어 호출 되는 듯.(static DECLARE_DELAYED_WORK(tsc_irqwork, tsc_refine_calibration_work)) *$(top)/arch/x86/kernel/tsc.c
+
+      setup_boot_APIC_clock -> calibrate_APIC_clock
+         위 setup_APIC_timer 참조
+
+      local_apic_timer_interrupt
+        apic local timer interrupt에 의해 수행
+
+line 620-647
+  setup_APIC_timer
+    해당 함수 call sequence는 기본적으로 아래 순서를 가진다고 보면됨.(가상환경 / SMP에서는 좀 다르겠지만, 기본적으로 아래 calltrace로 분석하면 되겠음)
+      kernel_init_freeable -> smp_prepare_cpus -> smp_ops.smp_prepare_cpus(native_smp_prepare_cpus) -> x86_init.timers.setup_percpu_clockev(setup_boot_APIC_clock) -> setup_APIC_timer()
+    
+    clockevents_register_device()를 통해서 clock event device에 event_handler가 세팅됨!
+      call sequence는 다음과 같음.
+        clockevents_register_device -> tick_check_new_device -> tick_setup_device *here!
+       등록되는 event_handler는 tick_handle_periodic.
+
+    cat /proc/timer_list 로 tick device및 event_handler확인가능, 등록된 event_handler는 hrtimer_interrupt로 확인됨.
+    hrtimer_interrupt는 clockevents_register_device()에 의해서가 아니라, 다른 경로(tick_init_highres함수)에 의해서 셋팅되는 것으로 확인됨. 
+      => 상세내용은 범위를 벗어나므로 skip!
+
+line 1066-1098
+  local_apic_timer_interrupt
+    현재 CPU의(=인터럽트를 수신한) clock event device에 등록된 event_handler를 수행.
+    line 1071
+      현재 CPU의 clock event device(lapic_events) 를 가져옴.
+    line 1073-1090
+      clock event device의 event_handler의 존재여부를 체크.
+      NULL인 상황은 일반적인 상황은 아님.(주석참고)
+    line 1092-1095
+     per-cpu irq통계값(apic_timer_irqs)을 1 증가(by inc_irq_stat)
+    line 1097
+      clock event device의 event_handler 수행
+      
+line 1100-1118
+  __sysvec_apic_timer_interrupt
+    DEFINE_IDTENTRY_SYSVEC매크로($(top)/arch/x86/include/asm/idtentry.h line 237참조)로 아래 함수 정의
+      __sysvec_apic_timer_interrupt : 필요기능을 실제로 구현. sysvec_apic_timer_interrupt에 의해서 호출됨.
+      fred_sysvec_apic_timer_interrupt *skip
+      sysvec_apic_timer_interrupt : local apic timer interrupt에 의해서 호출됨.
+      instr_sysvec_apic_timerinterrupt *skip
+      kernel_interrupt.txt $(top)/arch/x86/kernel/irq.c 분석내용참조(처리는 비슷함)
+
+$(top)/kernel/time/hrtimer.c
+line 1780-1873
+  hrtimer_interrupt
+    high resolution timer interrupt 루틴
+     대충... 타이머시간정보 업데이트하고, softirq(HRTIMER_SOFTIRQ) 수행하고, queue에 등록된 timer handler들을 수행한다.
+    queue에 등록은 hrtimer_start() 류의 함수로 수행되는 듯 함. grep -r 'enum hrtimer_restart' 로 search해보면 많이 나옴.
+    struct hrtimer->function에 timer callback이 등록됨.
+     자세한건 skip
+
+참고. local apic 타이머 인터럽트 통계정보 출력하는 로직(cat /proc/interrupts)
+  출력정보
+    LOC:     148712     157792     168055   Local timer interrupts 
+  로직
+    $(top)/arch/x86/kernel/irq.c, arch_show_interrupts
+
+참고. hrtimer_interrupt ftrace 예시
+ => hrtimer_interrupt
+ => __sysvec_apic_timer_interrupt
+ => sysvec_apic_timer_interrupt
+ => asm_sysvec_apic_timer_interrupt
+ => cp_start_xmit
+ => dev_hard_start_xmit
+ => sch_direct_xmit
+ => __dev_queue_xmit
+ => ip_finish_output2
+ => ip_output
+ => __ip_queue_xmit
+ => __tcp_transmit_skb
+ => tcp_write_xmit
+ => __tcp_push_pending_frames
+ => tcp_sendmsg_locked
+ => tcp_sendmsg
+ => __sock_sendmsg
+ => sock_write_iter
+ => new_sync_write
+ => vfs_write
+ => ksys_write
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+8단계 *목표 : 7단계 부족했던 부분 추가 학습 + 이것저것해보기
+(v)hrtimer_start()로 등록되어서 hrtimer_interrupt queue실행시 handler실행되는게 맞는지 확인해보기.(아니면 어떤 함수로 등록되는 지 확인해보기)
+  맞다.
+  hrtimer_start -> hrtimer_start_range_ns -> __hrtimer_start_range_ns -> enqueue_hrtimer 가 실행됨.
+  enqueue_hrtimer에서 hrtimer base의 active timer queue에 hrtimer를 add하는 로직이 있음.
+  그리고 최종적으로 __hrtimer_run_queues 에서 실행됨.(by hrtimer_interrupt)
+  참고. hrtimer_start호출 전, hrtimer_init을 호출해서 hrtimer base를 셋업해주는 과정이 필요함!
+  참고. hrtimer추가하는 로직은 io_timeout_update 코드 참조하면 좋음. 코드가 간단해서 확실히 보임.
+
+(v)hrtimer_interrupt queue에서 실행하는 것들이 뭐가있는지. 몇개만(jiffies업데이트랑 확인하기 쉬운거 아무거나 1개정도면 될 듯) 확인해보기.
+  $(top)/kernel/watchdog.c, watchdog_enable(). 내가아는 그거 ! soft lockup 로그 찍는 hrtimer handler를 등록!
+    *여기는 ftrace불가해서 못찍어봤음 ~ 
+
+  $(top)/kernel/time/tick-sched.c, tick_setup_sched_timer(). jifiies_64 업데이트 수행하는 hrtimer handler를 등록!
+tick_do_update_jiffies64 ftrace내역. hrtimer_interrupt에 의해서 실행됨을 알 수 있음. *다른 경로로도 called 되기는 함.
+             cat-4539    [002] d.H..   532.669056: tick_do_update_jiffies64 <-tick_sched_do_timer
+             cat-4539    [002] d.H..   532.669060: <stack trace>
+ => 0xffffffffc021b083
+ => tick_do_update_jiffies64
+ => tick_sched_do_timer
+ => tick_sched_timer
+ => __hrtimer_run_queues
+ => hrtimer_interrupt
+ => __sysvec_apic_timer_interrupt
+ => sysvec_apic_timer_interrupt
+ => asm_sysvec_apic_timer_interrupt
+ => cp_start_xmit
+ => dev_hard_start_xmit
+ => sch_direct_xmit
+ => __dev_queue_xmit
+ => ip_finish_output2
+ => ip_output
+ => __ip_queue_xmit
+ => __tcp_transmit_skb
+ => tcp_write_xmit
+ => __tcp_push_pending_frames
+ => tcp_rcv_established
+ => tcp_v4_do_rcv
+ => tcp_v4_rcv
+ => ip_protocol_deliver_rcu
+ => ip_local_deliver_finish
+ => ip_local_deliver
+ => ip_rcv
+ => __netif_receive_skb_core
+ => __netif_receive_skb_list_core
+ => netif_receive_skb_list_internal
+ => gro_normal_list.part.0
+ => napi_complete_done
+ => cp_rx_poll
+ => __napi_poll
+ => net_rx_action
+ => handle_softirqs
+ => irq_exit_rcu
+ => common_interrupt
+ => asm_common_interrupt
+ => queue_work_on
+ => tty_insert_flip_string_and_push_buffer
+ => do_output_char
+ => n_tty_write
+ => file_tty_write.isra.0
+ => new_sync_write
+ => vfs_write
+ => ksys_write
+ => do_syscall_64
+ => entry_SYSCALL_64_after_hwframe
+
+(v)multi-core인 경우 hrtimer_interrupt() 동시에 실행되는지 어케되는건지 확인해보기. (이게 만약에 커널코드 수정해서 확인하는 수준이라면 얘자체를 9단계로 ㄱㄱ)
+   (거의)동시에 여러 cpu에서 실행됨을 볼 수 있음.(근데 모든 cpu는 아님... 이건 다음에 확인)
+  ftrace내용 일부. '[000]'이 cpu number. 774.493504(sec.usec포맷의 relative time). 0번 1번 cpu에서 거의 동시에 hrtimer_interrupt발생함을 알 수 있음.
+    ftrace.sh-4609    [000] dNh..   774.493504: hrtimer_interrupt <-__sysvec_apic_timer_interrupt
+    pool-tracker-st-4608    [001] d.h..   774.493505: hrtimer_interrupt <-__sysvec_apic_timer_interrupt
+
+(v)9단계 *목표 : timer interrupt 발생시 커널단에 되게 사소한 로직 추가(ex. printk로 주기적으로 디버그로그라도 찍던가)
+  [    4.077902] KNWTEST, called tick_do_update_jiffies64, jiffies:4294671305 나왔다!
+  tick_do_update_jiffies64에 위 로그 찍도록 수정했음.(printk_once()함수호출함)
+
+(v)10단계 *목표 : 내용정리
+  알게된 것
+    timer interrupt 초기화로직과 실행경로를 알 수 있었다.
+      초기화로직 : __setup_APIC_LVTT에 의해 수행.
+      실행경로 : H/W interrupt발생 - timer interrupt handler - hrtimer_interrupt - tick_do_update_jiffies64
+  코멘트
+    timer interrupt 실행경로 추적이라는 목표는 달성
+    그러나 9단계가 너무 빈약했다.
+    

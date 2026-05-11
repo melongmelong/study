@@ -1,0 +1,635 @@
+next : 완료
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel oom killer
+
+학습이유
+  호기심(kernel oom killer가 출력하는 정보가 무언가?)
+  debugging시 도움
+  low-level지식습득.
+
+학습목표
+  kernel oom killer 로직 파악(주요로직수준)
+  kernel oom killer에서 출력하는 정보 파악
+    
+학습자료
+  구글링
+  kernel source
+
+학습계획
+  milestone1. kernel oom killer 주요로직 및 정보파악
+  
+================================================================
+7단계 *목표 : 학습목표관련 분석.
+
+oom-kill 수동발생 - sysrq trigger사용
+  echo f 1>/proc/sysrq-trigger
+
+oom-kill 발생시 calltrace(ftrace출력) *oom-kill 수동발생 시!. out_of_memory - oom_kill_process호출됨을 알 수 있음.
+     kworker/2:2-94      [002] .....   473.332956: oom_kill_process <-out_of_memory
+     kworker/2:2-94      [002] .....   473.332977: <stack trace>
+ => 0xffffffffc03fb083
+ => oom_kill_process
+ => out_of_memory
+ => moom_callback
+ => process_one_work
+ => worker_thread
+ => kthread
+ => ret_from_fork
+
+oom-kill 발생시(sysrq-trigger로 발생) 메시지 의미 분석
+[  276.341974] sysrq: Manual OOM execution 
+  sysrq에 의해서 발생했음을 의미. *여기서는 크게 중요하진 않음.
+[  276.342306] kworker/1:2 invoked oom-killer: gfp_mask=0xcc0(GFP_KERNEL), order=-1, oom_score_adj=0
+  oom killer를 발생시킨 태스크와, oom killer발생 정보를 출력.
+  dump_header()에 의해 출력
+[  276.342323] CPU: 1 PID: 77 Comm: kworker/1:2 Not tainted 5.15.175 #11
+[  276.342328] Hardware name: QEMU Standard PC (i440FX + PIIX, 1996), BIOS 1.10.2-1ubuntu1 04/01/2014
+[  276.342338] Workqueue: events moom_callback
+[  276.342355] Call Trace:
+[  276.342367]  <TASK>
+[  276.342380]  dump_stack_lvl+0x45/0x5d
+[  276.342391]  dump_header+0x51/0x30c
+[  276.342395]  ? trace_hardirqs_on+0x2b/0xc0
+[  276.342400]  ? _raw_spin_unlock_irqrestore+0x1a/0x20
+[  276.342407]  ? ___ratelimit+0x7d/0x100
+[  276.342415]  oom_kill_process.cold+0x54/0x79
+[  276.342419]  ? find_lock_task_mm+0x43/0x80
+[  276.342425]  out_of_memory+0x19c/0x6a0
+[  276.342431]  moom_callback+0x79/0xb0
+[  276.342437]  process_one_work+0x1e2/0x380
+[  276.342443]  worker_thread+0x4a/0x3c0
+[  276.342448]  ? process_one_work+0x380/0x380
+[  276.342453]  kthread+0x127/0x150
+[  276.342457]  ? set_kthread_struct+0x50/0x50
+[  276.342461]  ret_from_fork+0x22/0x30
+[  276.342467]  </TASK>
+  oom killer를 발생시킨 task의 calltrace정보
+  dump_stack()에 의해 출력됨.
+[  276.342469] Mem-Info:
+[  276.342476] active_anon:237 inactive_anon:75238 isolated_anon:0
+                active_file:58195 inactive_file:221569 isolated_file:0
+                unevictable:0 dirty:296 writeback:0
+                slab_reclaimable:19029 slab_unreclaimable:7486
+                mapped:56756 shmem:1099 pagetables:2787 bounce:0
+                kernel_misc_reclaimable:0
+                free:1646507 free_pcp:1260 free_cma:0
+  메모리의 global(=system wide)스탯을 출력함.
+  show_free_areas()에 의해 출력됨.
+[  276.342490] Node 0 active_anon:948kB inactive_anon:300952kB active_file:232780kB inactive_file:886276kB unevictable:0kB isolated(anon):0kB isolated(file):0kB mapped:227024kB dirty:1184kB writeback:0kB shmem:4396kB writeback_tmp:0kB kernel_stack:5760kB pagetables:11148kB all_unreclaimable? no
+[  276.342498] Node 0 DMA free:15360kB min:20kB low:32kB high:44kB reserved_highatomic:0KB active_anon:0kB inactive_anon:0kB active_file:0kB inactive_file:0kB unevictable:0kB writepending:0kB present:15992kB managed:15360kB mlocked:0kB bounce:0kB free_pcp:0kB local_pcp:0kB free_cma:0kB
+[  276.342508] lowmem_reserve[]: 0 2943 7921 7921
+[  276.342514] Node 0 DMA32 free:3029708kB min:4224kB low:7236kB high:10248kB reserved_highatomic:0KB active_anon:0kB inactive_anon:0kB active_file:0kB inactive_file:0kB unevictable:0kB writepending:0kB present:3129216kB managed:3031836kB mlocked:0kB bounce:0kB free_pcp:2072kB local_pcp:196kB free_cma:0kB
+[  276.342524] lowmem_reserve[]: 0 0 4978 4978
+[  276.342529] Node 0 Normal free:3540960kB min:7148kB low:12244kB high:17340kB reserved_highatomic:0KB active_anon:948kB inactive_anon:300952kB active_file:232780kB inactive_file:886276kB unevictable:0kB writepending:1184kB present:5242880kB managed:5098036kB mlocked:0kB bounce:0kB free_pcp:2968kB local_pcp:868kB free_cma:0kB
+[  276.342539] lowmem_reserve[]: 0 0 0 0
+  각 노드에 속한 각 zone의 스탯을 출력함.
+  show_free_areas()에 의해 출력 됨.
+[  276.342544] Node 0 DMA: 0*4kB 0*8kB 0*16kB 0*32kB 0*64kB 0*128kB 0*256kB 0*512kB 1*1024kB (U) 1*2048kB (M) 3*4096kB (M) = 15360kB
+[  276.342901] Node 0 DMA32: 3*4kB (UM) 4*8kB (M) 4*16kB (M) 3*32kB (M) 2*64kB (M) 5*128kB (M) 7*256kB (UM) 8*512kB (UM) 4*1024kB (UM) 4*2048kB (UM) 735*4096kB (M) = 3029708kB
+[  276.342936] Node 0 Normal: 2*4kB (ME) 3*8kB (UME) 0*16kB 2*32kB (ME) 2*64kB (ME) 2*128kB (ME) 2*256kB (UE) 0*512kB 1*1024kB (M) 2*2048kB (UM) 863*4096kB (M) = 3540960kB
+  각 노드에 속한 각 zone의 buddy allocator의 free영역과 해당영역의 마이그레이션타입정보를 출력함.
+  show_free_areas()에 의해 출력 됨
+[  276.342964] Node 0 hugepages_total=0 hugepages_free=0 hugepages_surp=0 hugepages_size=2048kB
+  hugepage를 사용하는 경우 출력하는 스탯.
+  hugetlb_show_meminfo()에 의해 출력 됨.
+[  276.342967] 279041 total pagecache pages
+  global(system wide)한 정보
+  show_free_areas()에 의해 출력 됨.
+[  276.342969] 0 pages in swap cache
+[  276.342970] Swap cache stats: add 0, delete 0, find 0/0
+[  276.342973] Free swap  = 2097148kB
+[  276.342975] Total swap = 2097148kB
+  memory 정보를 출력.
+  show_free_areas()에 의해 출력
+[  276.342976] 2097022 pages RAM
+[  276.342978] 0 pages HighMem/MovableOnly
+[  276.342986] 60714 pages reserved
+  global(=system wide)한 메모리 정보를 출력. 정확하게는 시스템에 존재하는 모든노드의 모든 존의 정보를 합산.
+  첫줄부터 순서대로
+    시스템의 전체 페이지 갯수(정확하겐 zone->present_pages 핪)
+    시스템의 모든 high memory 존 페이지 갯수(정확하겐 high memory zone의 zone->present_pages 합)
+    시스템의 reserved영역 페이지 갯수.(정확하겐 (zone->present_pages - zone->managed_pages) 의 합)
+    참고.
+      zone->present_pages : 쉽게말하면, 해당 zone에 존재하는 모든 페이지.(좀 더 정확하게는, hole은(실제로 사용할 수 없는 영역)은 제외)
+      zone->managed_pages : 쉽게말하면, 해당 zone에서 커널에서 예약한(ex. 버디얼로케이터에 의해) 페이지들.
+  show_mem()에 의해 출력
+[  276.342989] Tasks state (memory values in pages):
+[  276.342990] [  pid  ]   uid  tgid total_vm      rss pgtables_bytes swapents oom_score_adj name
+[  276.343000] [   3052]     0  3052    20362    11157   192512        0          -250 systemd-journal
+[  276.343007] [   3097]     0  3097     5283     1873    65536        0         -1000 systemd-udevd
+[  276.343013] [   3250]   128  3250     1777      940    57344        0             0 rpcbind
+[  276.343018] [   3251]   101  3251     6025     3031    86016        0             0 systemd-resolve
+[  276.343022] [   3252]   102  3252    22613     1624    90112        0             0 systemd-timesyn
+[  276.343027] [   3256]     0  3256    60958     2556   118784        0             0 accounts-daemon
+[  276.343031] [   3257]     0  3257      637      193    40960        0             0 acpid
+[  276.343042] [   3258]     0  3258     2347      175    57344        0             0 anacron
+[  276.343047] [   3259]   115  3259     2133      881    57344        0             0 avahi-daemon
+[  276.343051] [   3261]   103  3261     2192     1432    61440        0          -900 dbus-daemon
+[  276.343055] [   3262]     0  3262    66498     5364   147456        0             0 NetworkManager
+[  276.343059] [   3268]     0  3268    20475      934    69632        0             0 irqbalance
+[  276.343063] [   3269]     0  3269    10155     5073   110592        0             0 networkd-dispat
+[  276.343067] [   3270]     0  3270    59755     2940    98304        0             0 polkitd
+[  276.343071] [   3272]   104  3272    56088     1655    90112        0             0 rsyslogd
+[  276.343075] [   3273]     0  3273   272926     9669   274432        0          -900 snapd
+[  276.343079] [   3274]     0  3274    59226     1595    90112        0             0 switcheroo-cont
+[  276.343083] [   3275]     0  3275     4494     2275    86016        0             0 systemd-logind
+[  276.343087] [   3277]     0  3277    98856     3652   126976        0             0 udisksd
+[  276.343091] [   3278]     0  3278     3422     1248    69632        0             0 wpa_supplicant
+[  276.343095] [   3305]     0  3305     2680      764    57344        0             0 cron
+[  276.343098] [   3307]   115  3307     2087       82    57344        0             0 avahi-daemon
+[  276.343103] [   3377]     0  3377     7469     2205    90112        0             0 cupsd
+[  276.343106] [   3388]     0  3388    45110     3127   122880        0             0 cups-browsed
+[  276.343110] [   3392]     0  3392    59975     2543   106496        0             0 ModemManager
+[  276.343114] [   3406]     0  3406    29789     5698   131072        0             0 unattended-upgr
+[  276.343118] [   3408]     0  3408     1704      751    57344        0             0 vsftpd
+[  276.343122] [   3426]     0  3426     3048     1748    69632        0         -1000 sshd
+[  276.343126] [   3440]   120  3440    63400     4002   126976        0             0 whoopsie
+[  276.343130] [   3444]   116  3444     2815      111    73728        0             0 kerneloops
+[  276.343134] [   3446]   116  3446     2815      112    65536        0             0 kerneloops
+[  276.343138] [   3500]     0  3500    60195     2164   106496        0             0 gdm3
+[  276.343141] [   3511]   125  3511     4646     2443    77824        0             0 systemd
+[  276.343145] [   3512]   125  3512    42213      839   102400        0             0 (sd-pam)
+[  276.343149] [   3519]   125  3519   128159     6083   192512        0             0 tracker-miner-f
+[  276.343153] [   3522]   125  3522     1846     1112    49152        0             0 dbus-daemon
+[  276.343157] [   3525]   111  3525    38234      740    65536        0             0 rtkit-daemon
+[  276.343161] [   3533]   125  3533    60250     1957    98304        0             0 gvfsd
+[  276.343165] [   3545]   125  3545    79682     2889   131072        0             0 gvfs-udisks2-vo
+[  276.343169] [   3550]   125  3550    59251     1586    86016        0             0 gvfs-mtp-volume
+[  276.343172] [   3558]   125  3558    59820     1704    94208        0             0 gvfs-gphoto2-vo
+[  276.343176] [   3573]   125  3573    59294     1531    94208        0             0 gvfs-goa-volume
+[  276.343180] [   3590]   125  3590   136891     9144   262144        0             0 goa-daemon
+[  276.343183] [   3603]   125  3603    79977     2899   122880        0             0 goa-identity-se
+[  276.343187] [   3605]   125  3605    79507     2260   110592        0             0 gvfs-afc-volume
+[  276.343191] [   3805]     0  3805    42028     2331    94208        0             0 gdm-session-wor
+[  276.343195] [   3814]   125  3814    41329     1693    86016        0             0 gdm-x-session
+[  276.343199] [   3816]   125  3816   199569    12366   618496        0             0 Xorg
+[  276.343202] [   3831]   125  3831     1324      274    49152        0             0 dbus-run-sessio
+[  276.343207] [   3832]   125  3832     1886     1117    53248        0             0 dbus-daemon
+[  276.343211] [   3833]   125  3833   156726     4268   188416        0             0 gnome-session-b
+[  276.343214] [   3846]   125  3846    77386     2265   102400        0             0 at-spi-bus-laun
+[  276.343218] [   3851]   125  3851     1778      988    57344        0             0 dbus-daemon
+[  276.343222] [   3893]   125  3893  1096057    47740   950272        0             0 gnome-shell
+[  276.343232] [   3916]   125  3916    78972     2593   106496        0             0 ibus-daemon
+[  276.343236] [   3919]   125  3919    60352     2239   102400        0             0 ibus-dconf
+[  276.343239] [   3922]   125  3922    47911     4670   143360        0             0 ibus-x11
+[  276.343243] [   3924]   125  3924    60347     2262   106496        0             0 ibus-portal
+[  276.343247] [   3932]   125  3932    40726     1629    81920        0             0 at-spi2-registr
+[  276.343250] [   3947]   125  3947    59224     1176    94208        0             0 xdg-permission-
+[  276.343254] [   3957]   125  3957   201516     3584   163840        0             0 pulseaudio
+[  276.343258] [   3970]   125  3970   648418     6604   237568        0             0 gjs
+[  276.343262] [   3971]     0  3971    71596     4116   139264        0             0 packagekitd
+[  276.343266] [   3990]   125  3990   117518     3116   143360        0             0 gsd-sharing
+[  276.343269] [   3992]   125  3992    84091     4007   151552        0             0 gsd-wacom
+[  276.343273] [   3995]   125  3995   122148     5127   172032        0             0 gsd-color
+[  276.343277] [   3997]   125  3997   103325     4955   163840        0             0 gsd-keyboard
+[  276.343280] [   3999]   125  3999    62351     2883   114688        0             0 gsd-print-notif
+[  276.343284] [   4000]   125  4000   114600     1558   126976        0             0 gsd-rfkill
+[  276.343288] [   4001]   125  4001    79813     2680   122880        0             0 gsd-smartcard
+[  276.343291] [   4002]   125  4002    41928     2184    94208        0             0 ibus-engine-sim
+[  276.343295] [   4003]   125  4003    93883     4313   176128        0             0 gsd-datetime
+[  276.343299] [   4004]   125  4004   170632     5657   176128        0             0 gsd-media-keys
+[  276.343302] [   4005]   125  4005    59202     1505   102400        0             0 gsd-screensaver
+[  276.343306] [   4006]   125  4006    80736     2814   126976        0             0 gsd-sound
+[  276.343309] [   4007]   125  4007    78772     2298   114688        0             0 gsd-a11y-settin
+[  276.343313] [   4008]   125  4008    78831     2317   114688        0             0 gsd-housekeepin
+[  276.343316] [   4009]   125  4009   103623     5156   163840        0             0 gsd-power
+[  276.343320] [   4047]   125  4047    85873     3768   159744        0             0 gsd-printer
+[  276.343324] [   4078]   121  4078    62573     4208   131072        0             0 colord
+[  276.343328] [   4110]     0  4110     3498     2285    69632        0             0 sshd
+[  276.343332] [   4129]  1000  4129     4646     2469    81920        0             0 systemd
+[  276.343336] [   4130]  1000  4130    42545     1148   102400        0             0 (sd-pam)
+[  276.343340] [   4138]  1000  4138    70422     3629   147456        0             0 pulseaudio
+[  276.343343] [   4140]  1000  4140   128822     7829   196608        0             0 tracker-miner-f
+[  276.343347] [   4144]  1000  4144     1846     1092    57344        0             0 dbus-daemon
+[  276.343350] [   4148]  1000  4148    60250     1979   102400        0             0 gvfsd
+[  276.343354] [   4167]  1000  4167    79650     2909   114688        0             0 gvfs-udisks2-vo
+[  276.343358] [   4172]  1000  4172    59251     1590    86016        0             0 gvfs-mtp-volume
+[  276.343362] [   4176]  1000  4176    59820     1735   102400        0             0 gvfs-gphoto2-vo
+[  276.343365] [   4184]  1000  4184    59294     1517    90112        0             0 gvfs-goa-volume
+[  276.343369] [   4188]  1000  4188   136891     9217   258048        0             0 goa-daemon
+[  276.343374] [   4196]  1000  4196    79977     2917   118784        0             0 goa-identity-se
+[  276.343377] [   4202]  1000  4202    79507     2235   118784        0             0 gvfs-afc-volume
+[  276.343387] [   4279]  1000  4279     3531     1489    69632        0             0 sshd
+[  276.343391] [   4280]  1000  4280     3104     1439    65536        0             0 bash
+[  276.343394] [   4300]  1000  4300    89925     4866   167936        0             0 tracker-store
+[  276.343398] [   4473]     0  4473     3350     1208    61440        0             0 sudo
+[  276.343402] [   4475]     0  4475     3084     1135    69632        0             0 su
+[  276.343406] [   4476]     0  4476     2786     1032    61440        0             0 bash
+  kill할 task가 속해있는 memory cgroup/global group(=system-wide)의 모든 task정보를 출력.
+  dump_tasks()에 의해 출력
+[  276.343414] oom-kill:constraint=CONSTRAINT_NONE,nodemask=(null),cpuset=/,mems_allowed=0,task=gnome-shell,pid=3893,uid=125
+  oom killer의 동작정보(constraint, nodemask 등)과 kill할 task의 정보
+  dump_oom_summary()에 의해 출력
+[  276.343573] Out of memory: Killed process 3893 (gnome-shell) total-vm:4384228kB, anon-rss:76708kB, file-rss:111152kB, shmem-rss:3100kB, UID:125 pgtables:928kB oom_score_adj:0
+  kill할 태스크의 정보를 출력
+  __oom_kill_process()에 의해 출력
+
+관련용어/개념
+  mmu vs nommu(mmu가없는 => virtual -> physical address변환안되는 메모리관리)
+  virtual address vs physical adddress
+  paging 
+  page : kernel에서는 physical memory상에서의 page를 의미함!. 즉 개념적으로 page frame을 의미.
+  huge page : 말그대로 한개의 메모리 페이지크기를 크게 잡는 메카니즘. TLB hit ratio를 높여서 결국엔 성능향상이 목적임.(TLB는 한정된 자원이므로 페이지가 크면 TLB에 항목이 적게 들어갈 것이고, 하나의 항목이 커버하는 영역도 크므로 hit ratio가 높아진다로 보면 될 듯.)
+  zone : 사용목적에 따라 page(=page frame)들을 그룹화한 것을 zone이라함.(ex. DMA zone, HIGHMEM zone).
+          추후 필요시 각 zone에서 page를 할당받아서 매핑해서 사용하는 개념이라고 보면 되겠다.
+  node : NUMA에서, 각 memory bank(하드웨어적으로 메모리의 한 영역이라고 보면 될 듯. 하드웨어적으로 위치가 달름. 그래서 뱅크마다 접근속도등이 다를 수 있다). 각 node마다 독립적인 zone이 존재함.
+  page cache : 쉽게말하면 disk i/o시의 버퍼 역할. 바로 읽는게 아니라 page cache에 일정영역 미리 읽어놓고 불필요한 디스크 접근을 줄임. write도 마찬가지로 캐시에 write(dirty로만든)후 최종적으로 디스크접근.
+  anonymous memory(또는 anonymous mapping) : 쉽게말하면, 파일과 무관한 메모리영역. ex. stack, heap, mmap()으로 할당된 영역. virtual memory 영역임.
+  reclaim : reclaimable page를 free하는 행위.
+  reclaimable : free될수있는 page를 reclaimable(ex. page가 swap out(to disk)될 수 있으면 reclaimable하다.)
+  unreclaimable : 사용자(사람이됬든 다른 섭시스템이됬든간에)에 의해서만 free될수있는 page.(ex. kernel data structure를 유지하는 page)
+
+$(top)/mm/oom_kill.c
+최초 entry function : out_of_memory
+주요역할
+  메모리그룹(global(=system wide)또는 memory cgroup) 내에서 메모리가 부족한 경우, oom score에 따라 메모리그룹 내 태스크 중 하나를 kill한다. for 메모리확보
+
+참고.
+  memcg : memory cgroup 약자.
+  gfp : get free pages의 약자
+        kernel memory 할당 시, 어떻게 할당해야하는 지를 의미하는 플래그. 일반적으로 gfp_mask 변수명이고, 플래그는 GFP_* 형태로 선언되어있음.
+        $(top)/Documentation/core-api/memory-allocation.rst 참조.
+
+line 195-242
+  oom_badness
+    task의 oom점수를 계산한다.
+    line 209-227
+      아래조건을 만족하는 대상에 대해서는 가장낮은 점수를 리턴한다.
+      unkillable task or
+      mm_struct정보가없다 or
+      oom_score_adj값이 OOM_SCORE_ADJ_MIN(-1000)임 or
+      vfork중임
+    line 229-241
+      oom점수를 계산하고 return한다.
+      oom점수는 태스크가 가지고있는 rss, pagatable, swap space 사용량에 비례함.
+      
+line 311-361
+  oom_evaluate_task
+    kill대상을 찾는다.
+    line 316-317
+      task가 kill불가하다면 다른 kill 대상을 찾기 위해 goto next
+    line 319-321
+      task가 프리할 메모리가 없다면 다른 대상을 찾기 위해 goto next
+    line 323-333
+      task가 이미 oom victim인 경우(by tsk_is_oom_victim), 
+      flag값(MMF_OOM_SKIP)에 따라서 다른대상을 찾거나(goto next), 아니면 대상찾는것을 abort(goto abort)
+    line 335-355
+      kill대상을 선택
+      line 336-342
+        해당 task가 oom killer에 의해 kill대상이어야한다고 셋팅된 경우(다른 커널 시스템에 의해서 셋팅됨)
+        해당 task를 선택(goto select)
+      line 344-346
+        kill대상의 점수를 구하고(by oom_badness)
+         현재 선택된 대상의 점수와 비교. 점수가 큰 경우 새로운 대상이 선택, 작으면 선택되지않음.
+      line 348-353
+        kill대상 정보를 셋업.
+    line 356-360
+       대상찾는것을 abort함.
+        
+line 363-382
+  select_bad_process
+    kill대상을 찾는다.(by oom_evaluate_task)
+    global oom인 경우, 시스템전체 태스크대상으로, memory cgroup인경우 해당 cgroup내 태스크대상으로.
+
+line 886-966
+  __oom_kill_proccess
+    task를 kill한다.
+    line 892-906
+      kill할 task정보를 가져온다.(struct task_struct와 struct mm_struct정보)
+    line 908-910
+      oom kill event 발생을 통계정보에 추가하고(by count_vm_event)
+      memory cgroup에 notify한다.(by memcg_memory_event_mm)
+    line 912-926
+      kill할 task에 SIGKILL을 send(by do_send_sig_info)하고,
+      kill할 task에 대한 정보로그를 출력한다.
+    line 928-959
+      아래 조건을 모두 만족하는 task를 kill한다.(by do_send_sig_info)
+       kill할 task와 동일한 struct mm을 사용하는 task 이고,
+       init task(pid == 1)가 아니고,
+       kernel thread가 아니다.
+    line 961-962
+      task가 메모리를 해제하면서 종료(kill이든 자체적으로 exit이든)하는 경우
+       종료되어 메모리 확보를 기다리기 위해 타이머를셋업(by queue_oom_reaper).    
+
+line 983-1026
+  oom_kill_process
+    task를 kill한다.
+    line 990-1003
+      task가 메모리를 해제하면서 종료(kill이든 자체적으로 exit이든)하는 경우
+       종료되어 메모리 확보를 기다리기 위해 타이머를셋업(by queue_oom_reaper)하고 return.
+    line 1005-1006
+      oom killer 로그를 출력(by dump_header)
+      rate limited됨.(by __ratelimit)
+    line 1008-1025
+      task를 kill(by __oom_kill_process)
+       만약 memory cgroup내에서도 task kill이가 필요하다면, 수행한다.(by mem_cgroup_get_oom_group, mem_cgroup_scan_tasks)
+    
+line 1028-1050
+  check_panic_on_oom
+    panic_on_oom kernel설정이 되어있다면, panic을 발생시킴.
+    
+line 1066-1146
+  out_of_memory
+    oom killer entry 함수!
+    line 1079-1080
+      oom killer이 enable되었는지 체크.
+    line 1082-1087
+      global oom(cgroup내부에서의 oom이 아님. 즉 일반적인 경우)인 경우(is_memcg_oom()으로 check)
+      oom_notify_list에 등록된 callback들을 호출한다.(by blocking_notifier_call_chain)
+       만약, 메모리가 추가확도 되었다면, 그대로 return.
+    line 1089-1098
+      current(oom을 실행 task)가 메모리를 해제하면서 종료(kill이든 자체적으로 exit이든)하는 경우
+       종료되어 메모리 확보를 기다리기 위해 타이머를셋업(by queue_oom_reaper)하고 return.
+    line 1100-1108
+      oom killer를 실행시킨 메모리할당 조건이
+      global oom이고 gfp_mask에 GFP_FS플래그가 clear라면 oom killer를 더이상 실행시키지않고 return.
+    line 1110-1116
+      oom killer동작시, memory할당에 필요한 제약사항을 셋팅(by constrained_alloc)
+    line 1117
+      panic_on_oom kernel설정이 되어있다면, panic을 발생시킴.(by check_panic_on_oom)
+    line 1119-1127
+      oom_kill_allocating_task kernel설정이 되어있는 경우의 처리
+      set되어있다면 oom killer를 동작시킨 task를 kill(죽일태스크를 찾는 과정없음), clear라면 죽일다른태스크를 찾아서 죽임
+        $(top)/Documentation/admin-guide/sysctl/vm.rst oom_kill_allocating_task section참조.
+       물론, 다른 팩토들도 확인한다.(ex. global oom이냐, current task는 죽일수있냐, oom_score_adj값이 적절하냐 등)
+      oom_kill_process로 현재 태스크를 kill한다.
+    line 1129
+      oom killer에의해 kill될 태스크를 찾는다.(by select_bad_process)
+    line 1131-1141
+      kill할 task를 찾지못한 경우 panic을 발생시킨다.
+    line 1142-1144
+      kill할 task가 있다면, kill수행(by oom_kill_process)
+
+$(top)/include/linux/oom.h
+line 25-55
+  struct oom_control
+    oom killer의 동작을 정의하기 위한 구조체
+    주요필드
+      memcg : oom이 발생한 memory cgroup.
+              non-NULL이면 memory cgroup내에서 oom이 발생, NULL이면 global하게 발생.
+      order : oom kill이 sysrq에 의해서 발생했는 지 여부 플래그
+      chosen : kill할 task
+      chosen_points : kill할 task의 oom 점수
+
+8단계 *목표 : dmesg로 출력하는 memory 정보 뉘앙스 파악가능한 부분(1-2개 필드)정도만 확인!(더 할 수 있으면 더하는데 ... 좀 빡세보임)
+  할 수 있는 만큼, 7단계 'oom-kill 발생시(sysrq-trigger로 발생) 메시지 의미 분석'에 주석 달아놓음.
+
+9단계 *목표 : 
+*만약에 커널코드 수정할 수 있어보이면 커널컨트리뷰션 ㄱㄱ 코어부트마냥
+*진짜할거 없으면 커널컨트리뷰션 하는 법 확인하기(그래서 실제 오타수정정도라도 ㄱㄱ해보기)
+
+커널 패치 프로세스
+기본적으로 이메일을 통해서 collabo를한다. gerrit같은 code review시스템은 사용하지 않음.
+  https://docs.kernel.org/process/submitting-patches.html : 커널패치를 submit하기 위한 전반적인 가이드
+  https://docs.kernel.org/process/submitting-patches.html#the-canonical-patch-format : 커널패치 이메일 포맷
+  https://git-send-email.io/, https://docs.kernel.org/process/email-clients.html 커널 패치 이메일 보내기 위한 툴(git send-email 을 사용하는 듯) 과 email client 설정가이드
+  https://lore.kernel.org/ 커널메일링리스트아카이브. 남들이 커널 패치 이메일 어떻게 보냈는지 참고하기에 좋음
+  https://subspace.kernel.org/ 커널메일링리스트서버. 가입방법 등 일부 메일링리스트 사용 가이드 존재.
+패치 시리즈
+  하나의 패치를 여러단위로 나눈 것을 의미함. 의미는 단순.
+  커널 패치 이메일의 제목에 아래처럼 '0/4' 형태로 몇번째인지 순서를 나타냄!
+  [PATCH 0/4] Avoid using perror
+  이 역시 위 링크 뒤져보면 상세한 내용이 나온다.
+tutorial(git을 사용시의 예시, https://nickdesaulniers.github.io/blog/2017/05/16/submitting-your-first-patch-to-the-linux-kernel-and-responding-to-feedback/ 참조)
+  1) 수정 / git commit 수행
+  2) 이메일로 보낼 patch파일 생성(git format-patch HEAD~). 메일내용이 하나 생성됨
+  3) 해당 patch를 이메일로 전송(git send-email ~) *적절한 메인테이너 찾는 법((top)/scripts/get_maintainer.pl [patchfile])
+  참고. 이렇게하면, kernel 가이드문서에 있는 건 일부 자동화(ex. 메일내용)가 됨.
+요점은,
+  https://docs.kernel.org/process/submitting-patches.html 나와있는 포맷에 맞춰서 메일을 보내면된다.
+  단, 위 tutorial처럼, 어느정도 편리하게 보낼 수 있도록 tool이 있긴하다.
+  그리고 남들이 어떻게 하고있는 지 커널메일링리스트를 참조하자!
+  그리고, git.kernel.org의 커밋들도 커널메일링리스트에서 확인가능하고 여기에 없는 것들도 있어보임(ex. 다른 르포지토리의 커밋 땡겨오기)
+
+커널 개발 프로세스 관련 용어
+  mainline release : linus torvalds에 의해 관리되는 릴리즈.(repository : https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/)
+  stable release : mainline release로부터 여러 rc release를(=개발기간) 거쳐온 최종 릴리즈(repository : https://git.kernel.org/pub/scm/linux/kernel/git/stable/linux.git/)
+  update release(=stable update) : stable release에서 버그픽스 등이 포함된 업데이트된 릴리즈
+    ex) 5.4(stable), 5.4.1(update), 5.4.2(update), 5.x.y...)
+  rc(release candidate) release : 하나의 merge window 기간동안의 개발사항을 포함하는 릴리즈.
+    merge window : 약 2주정도되는 개발 cycle로보면됨.
+    ex)
+      September 15 5.3 stable release
+      September 30 5.4-rc1               //5.4 rc release개발(=개발사이클 시작)
+      October 6 5.4-rc2
+      October 13 5.4-rc3
+      October 20 5.4-rc4
+      October 27 5.4-rc5
+      November 3 5.4-rc6
+      November 10 5.4-rc7
+      November 17 5.4-rc8
+      November 24 5.4 stable release     //5.4 stable release수행
+  커널개발흐름
+    mainline
+       | 
+       rc1 *무조건있음(mainline이므로)
+       rc2   -> stable(x.y)
+                   |
+                  rc1 *없을수도 있음
+                  rc2         -> update(x.y.z)
+                                     |
+                                    rc1 *없을수도 있음
+                                    rc2         ->  update2(x.y.z')
+  git branch가 mainline(master branch) / stable(update포함하는, ex. linux-7.0.y) 개발브랜치이고
+  git tag로 각 릴리즈에 태깅함(ex. v7.0-rc7, v7.0, v.6.19.12)                                                  
+
+  mainline말고는 특정 stable only만 패치하는건 드문케이스인 듯.
+    mainline으로부터 stable로 stable maintainer에 의해 backport되는것이 일반적.
+    mainline에 들어갔다고 다 backport되는 것도 아님.(기준이있음)
+    stable only도 그냥 메일써서 특정버젼에 해주세요~라고 요청하면 되는 부분인 듯 함.
+  
+  참고. https://www.kernel.org/category/releases.html
+      https://docs.kernel.org/process/backporting.html
+ 
+ubuntu는 ubuntu만의 패치 프로세스를 가짐.(upstream(kernel.org)를 기본적으로 반영하는 흐름임)
+  가능한한 upstream(kernel.org의 커널)에 반영된것을 ubuntu kernel이 반영한다.
+  upstream이 아닌 ubuntu only도 가능은한데 rare하다.
+  즉, Ubuntu 커널은 upstream-first를 기본으로 하며, upstream에 반영된 변경을 주로 따라가되 필요하면 Ubuntu 전용 패치를 제한적으로 추가한다
+  참고.
+    https://kernel.ubuntu.com/ : 우분투 커널 개발 공식 홈
+    https://wiki.ubuntu.com/Kernel : 우분투 커널 개발 위키 홈
+    https://wiki.ubuntu.com/Kernel/Dev : 우분투 커널 개발 관련 문서 모음. 패치제시방법, 커밋포맷 등의 내용을 찾을 수 있음.
+    https://canonical-kernel-docs.readthedocs-hosted.com/. 위키문서들을 여기로 옮기고 있는 듯(위키문서에 적혀있다.)
+    *위 사이트모두 ubuntu.com에서 바로 진입은 안되는 듯.(제일 마지막 링크는 ubuntu.com 뒤져보면 들어갈 수 있음)
+
+check_panic_on_oom($(top)/mm/oom_kill.c)에 newline집어넣고 바닐라커널 mainline에 머지
+  원래는 과거버전(stable) 및 ubuntu에 하려하였으나, 절차가 아직 안 와닿아서 과거버전에만 반영되는건 일반적인 건 아니라서(가능은한듯) 지금 단계에서는 일단 '일반적인 절차는 아님' 정도로만 이해하고 skip하고, 최신 mainline에 반영하는 것을 수행한다.
+
+아래는 보낼 patch내용
+Subject: [PATCH] mm/oom_kill: Insert newline for better readability
+
+Insert a newline in check_panic_on_oom() for better readability.
+
+Signed-off-by: Nyunwoo Kim <knw0507@naver.com>
+---
+This is my first patch and I am using it as practice to learn kernel
+development. If this has wasted your time, I apologize; it was unintentional.
+Thank you for your consideration.
+
+diff --git a/mm/oom_kill.c b/mm/oom_kill.c
+index 5c6c95c169ee..86a08deaa697 100644
+--- a/mm/oom_kill.c
++++ b/mm/oom_kill.c
+@@ -1076,6 +1076,7 @@ static void check_panic_on_oom(struct oom_control *oc)
+ {
+        if (likely(!sysctl_panic_on_oom))
+                return;
++
+        if (sysctl_panic_on_oom != 2) {
+                /*
+                 * panic_on_oom == 1 only affects CONSTRAINT_NONE, the kernel
+@@ -1085,9 +1086,11 @@ static void check_panic_on_oom(struct oom_control *oc)
+                if (oc->constraint != CONSTRAINT_NONE)
+                        return;
+        }
++
+        /* Do not panic for oom kills triggered by sysrq */
+        if (is_sysrq_oom(oc))
+                return;
++
+        dump_header(oc);
+        panic("Out of memory: %s panic_on_oom is enabled\n",
+                sysctl_panic_on_oom == 2 ? "compulsory" : "system-wide");
+
+patch수신인 *./scripts/get_maintainer.pl ./patch의 출력. *patch는 git diff 내용임.
+Michal Hocko <mhocko@suse.com> (maintainer:MEMORY MANAGEMENT - OOM KILLER)
+David Rientjes <rientjes@google.com> (reviewer:MEMORY MANAGEMENT - OOM KILLER)
+Shakeel Butt <shakeel.butt@linux.dev> (reviewer:MEMORY MANAGEMENT - OOM KILLER)
+Andrew Morton <akpm@linux-foundation.org> (maintainer:MEMORY MANAGEMENT)
+linux-mm@kvack.org (open list:MEMORY MANAGEMENT - OOM KILLER)
+linux-kernel@vger.kernel.org (open list)
+
+naver application password (git send-email때문에 필요)
+TDXXZUQE5ERS
+
+실제 patch 보내는 step for test
+git commit : commit msg는 포맷을 따르되, [PATCH] 태그는 따로 없어도 됨.(git format-patch가 알아서 해줌)
+git format-patch HEAD^1
+위 결과파일에서 추가코멘트 등 편집(optional)
+git send-email --to knw0507@naver.com ./0001-mm-oom_kill-Insert-newline-for-better-readability.patch
+비밀번호입력 시, 위 naver application password입력
+
+실제 patch보내는 step for real
+git commit : commit msg는 포맷을 따르되, [PATCH] 태그는 따로 없어도 됨.(git format-patch가 알아서 해줌)
+git format-patch HEAD^1
+위 결과파일에서 추가코멘트 등 편집(optional)
+수신자목록추출(open list는 Cc로전달)
+  knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/git/linux$ ./scripts/get_maintainer.pl ./0001-mm-oom_kill-Insert-newline-for-better-readability.patch 
+  Michal Hocko <mhocko@suse.com> (maintainer:MEMORY MANAGEMENT - OOM KILLER)
+  David Rientjes <rientjes@google.com> (reviewer:MEMORY MANAGEMENT - OOM KILLER)
+  Shakeel Butt <shakeel.butt@linux.dev> (reviewer:MEMORY MANAGEMENT - OOM KILLER)
+  Andrew Morton <akpm@linux-foundation.org> (maintainer:MEMORY MANAGEMENT)
+  linux-mm@kvack.org (open list:MEMORY MANAGEMENT - OOM KILLER)
+  linux-kernel@vger.kernel.org (open list)
+git send-email --dry-run 으로 테스트
+  knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/git/linux$ git send-email --dry-run --to 'Michal Hocko <mhocko@suse.com>' --to 'David Rientjes <rientjes@google.com>' --to 'Shakeel Butt <shakeel.butt@linux.dev>' --to 'Andrew Morton <akpm@linux-foundation.org>'  --cc 'linux-mm@kvack.org' --cc 'linux-kernel@vger.kernel.org' ./0001-mm-oom_kill-Insert-newline-for-better-readability.patch
+./0001-mm-oom_kill-Insert-newline-for-better-readability.patch
+(mbox) Adding cc: Nyunwoo Kim <knw0507@naver.com> from line 'From: Nyunwoo Kim <knw0507@naver.com>'
+(body) Adding cc: Nyunwoo Kim <knw0507@naver.com> from line 'Signed-off-by: Nyunwoo Kim <knw0507@naver.com>'
+Dry-OK. Log says:
+Server: smtp.naver.com
+MAIL FROM:<knw0507@naver.com>
+RCPT TO:<mhocko@suse.com>
+RCPT TO:<rientjes@google.com>
+RCPT TO:<shakeel.butt@linux.dev>
+RCPT TO:<akpm@linux-foundation.org>
+RCPT TO:<linux-mm@kvack.org>
+RCPT TO:<linux-kernel@vger.kernel.org>
+RCPT TO:<knw0507@naver.com>
+From: Nyunwoo Kim <knw0507@naver.com>
+To: Michal Hocko <mhocko@suse.com>,
+	David Rientjes <rientjes@google.com>,
+	Shakeel Butt <shakeel.butt@linux.dev>,
+	Andrew Morton <akpm@linux-foundation.org>
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Nyunwoo Kim <knw0507@naver.com>
+Subject: [PATCH] mm/oom_kill: Insert newline for better readability
+Date: Thu, 30 Apr 2026 21:51:47 +0900
+Message-Id: <20260430125147.5616-1-knw0507@naver.com>
+X-Mailer: git-send-email 2.25.1
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+
+Result: OK
+
+--dry-run빼고 실제 전송
+  *--tocmd, --cccmd 추가해서 자동으로 입력하는 방법도 있다고는 함.
+비밀번호입력 시, 위 naver application password입력
+결과.(실제보냄.. 메일링리스트에도 등록됨:https://lore.kernel.org/all/20260430125321.5679-1-knw0507@naver.com/T/#u)
+knw@knw-Standard-PC-i440FX-PIIX-1996:~/Desktop/git/linux$ git send-email --to 'Michal Hocko <mhocko@suse.com>' --to 'David Rientjes <rientjes@google.com>' --to 'Shakeel Butt <shakeel.butt@linux.dev>' --to 'Andrew Morton <akpm@linux-foundation.org>'  --cc 'linux-mm@kvack.org' --cc 'linux-kernel@vger.kernel.org' ./0001-mm-oom_kill-Insert-newline-for-better-readability.patch
+./0001-mm-oom_kill-Insert-newline-for-better-readability.patch
+(mbox) Adding cc: Nyunwoo Kim <knw0507@naver.com> from line 'From: Nyunwoo Kim <knw0507@naver.com>'
+(body) Adding cc: Nyunwoo Kim <knw0507@naver.com> from line 'Signed-off-by: Nyunwoo Kim <knw0507@naver.com>'
+
+From: Nyunwoo Kim <knw0507@naver.com>
+To: Michal Hocko <mhocko@suse.com>,
+	David Rientjes <rientjes@google.com>,
+	Shakeel Butt <shakeel.butt@linux.dev>,
+	Andrew Morton <akpm@linux-foundation.org>
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Nyunwoo Kim <knw0507@naver.com>
+Subject: [PATCH] mm/oom_kill: Insert newline for better readability
+Date: Thu, 30 Apr 2026 21:53:21 +0900
+Message-Id: <20260430125321.5679-1-knw0507@naver.com>
+X-Mailer: git-send-email 2.25.1
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+
+    The Cc list above has been expanded by additional
+    addresses found in the patch commit message. By default
+    send-email prompts before sending whenever this occurs.
+    This behavior is controlled by the sendemail.confirm
+    configuration setting.
+
+    For additional information, run 'git send-email --help'.
+    To retain the current behavior, but squelch this message,
+    run 'git config --global sendemail.confirm auto'.
+
+Send this email? ([y]es|[n]o|[e]dit|[q]uit|[a]ll): y
+Password for 'smtp://knw0507%40naver.com@smtp.naver.com:587': 
+OK. Log says:
+Server: smtp.naver.com
+MAIL FROM:<knw0507@naver.com>
+RCPT TO:<mhocko@suse.com>
+RCPT TO:<rientjes@google.com>
+RCPT TO:<shakeel.butt@linux.dev>
+RCPT TO:<akpm@linux-foundation.org>
+RCPT TO:<linux-mm@kvack.org>
+RCPT TO:<linux-kernel@vger.kernel.org>
+RCPT TO:<knw0507@naver.com>
+From: Nyunwoo Kim <knw0507@naver.com>
+To: Michal Hocko <mhocko@suse.com>,
+	David Rientjes <rientjes@google.com>,
+	Shakeel Butt <shakeel.butt@linux.dev>,
+	Andrew Morton <akpm@linux-foundation.org>
+Cc: linux-mm@kvack.org,
+	linux-kernel@vger.kernel.org,
+	Nyunwoo Kim <knw0507@naver.com>
+Subject: [PATCH] mm/oom_kill: Insert newline for better readability
+Date: Thu, 30 Apr 2026 21:53:21 +0900
+Message-Id: <20260430125321.5679-1-knw0507@naver.com>
+X-Mailer: git-send-email 2.25.1
+MIME-Version: 1.0
+Content-Transfer-Encoding: 8bit
+
+Result: 250 
+
+10단계 *목표 : 내용정리
+  알게된 것
+    oom 매우 기본 내용
+    kernel code submit방법
+    kernel(kernel.org 와 ubuntu kernel) code의 프로세스
+  코멘트
+    호흡이 너무 길었다(kernel code submit해보겠다고 이것저것(ubuntu커널소스기여방법, kernel.org기여방법 등..) 많이 확인해서)
+    oom도 전체를 알지는 못함. 역시 더 정진 하긴 해야겠다...
+    하여간... 어쩌다보니 kernel code submit 을 해보게 되었는데, 물론 빠꾸 당했으나... 좋은 공부가 됬었다.

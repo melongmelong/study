@@ -418,7 +418,7 @@ $(top)/src/cpu/x86/reset16.S
 line 5-6
   _start symbol 정의
 line 7-8
-  _start16bbit symbol로 jmp하는 instruction.($(top)/src/cpu/x86/entry16.S 참조)  
+  _start16bit symbol로 jmp하는 instruction.($(top)/src/cpu/x86/entry16.S 참조)  
 
 $(top)/src/cpu/x86/entry16.S
 각종 초기화 작업들을 수행함.

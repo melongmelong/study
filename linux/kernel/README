@@ -14,3 +14,4 @@ SMP관련 내용(?)
   pause_on_oops동작방식(do_oops_enter_exit function)
 kernel SMP동작 어떻게 할까?(coreboot SMP셋업이랑 어떻게 다를까)
 this_cpu_read/write 등 per-cpu 변수 내부 구현.
+OOM kill 코드분석!

@@ -35,11 +35,18 @@ SECTIONS {
 }
 
 TODO list
-  (v)SMBIOS로직분석
+  ACPI *코드분석하다 나온건 아니고, 많이 접한 용어라서 추가함.
+  SMBIOS로직분석
   하드웨어로직 상세분석
-    (v)cpu bring up 상세분석
+    cpu bring up 상세분석
     hardware dedicated logic 상세분석
-  (v)CBMEM 로직 분석
+  CBMEM 로직 분석
   CBFS layout / 관련 로직(빌드, 툴, etc) 분석
   rmodule?
+  coreboot 메모리관리(GDT)내용 detail
+  coreboot 인터럽트(IDT)내용 detail
+  coreboot SMP내용 detail
+  coreboot device관리(ex. devicetree) detail
   실제이슈해결(버그/개선/리팩토링(큰 덩어리로) 등)
+    https://ticket.coreboot.org/issues/580 SMBIOS관련이슈. 좀 현실적으로 가능하지 않을까 싶긴함...(2025년 3월달 이슈, 그누구도 팔로우업안해줬음)
+  

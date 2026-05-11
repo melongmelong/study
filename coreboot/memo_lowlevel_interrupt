@@ -1,0 +1,270 @@
+next : 완료
+       *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
+       *make -p 도 분석에 도움됨!
+       *x86 asm syntax는 gnu as document 참조!
+       *NOTICE : 확인중 Make, ld, asm, x86 arch등에 대해서 잘 모르는 내용이 나올 수 있고, 해당 내용 별도학습 없이 더이상 진행불가로 판단될 경우에는 해당 내용을 학습하고 다시 진행(function call ~ return 수행 ㅋㅋ)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - coreboot에서 각 stage별(payload제외) low-level interrupt환경이 어떻게 구성되는 지 확인.
+
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+
+학습목표
+  각 stage별(payload제외)로 x86 interrupt register 세팅로직과 실제 값 확인.
+  x86 arch interrupt에 대한 현실적인(=피부에와닿는) 이해.
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+  구글링
+
+학습계획
+  milestone1.   coreboot에서 low-level interrupt환경이 어떻게 동작하는 지 확인.
+  *코드는 24.05 기준
+  
+=======================
+milestone1. coreboot에서 각 stage별(payload제외) low-level interrupt환경이 어떻게 구성되는 지 확인.
+
+7단계(대충 사용 수준까지) - 각 stage별 x86 interrupt register 및 IDT값 확인
+용어
+  IDT : Interrupt Descriptor Table.
+        IDT Descriptor들로 구성되어있음.
+        GDT와 비슷함.
+  IDTR : IDT의 시작주소(Linear Address임.)와 Limit 정보를 저장한 레지스터
+  IDT Descriptor : IDT Descriptor
+
+real address mode일때의 인터럽트 동작
+  Protected mode(즉 IDT 사용방식)과는 다름.
+  Interrupt Vector table : real address mode의 IDT로 볼 수 있음
+                               각 entry는 4bytes이고, segment selector(2bytes)와 offset(2bytes)정보로 구성됨.
+  IDTR : 최초리셋시에는 base = 0, limit = 0x3ff *physical address.
+         lidt로 변경할 수 있다.
+  Intel64 and IA-32 Architectures Software Developer's Manual, Volume 3, 20.1.4참조.
+
+after reset
+  IDTR : CPU 초기상태값(base = 0, limit = 0x3ff)
+  IDT : N/A *별도셋업없음
+
+bootblock
+  real address mode ~ protected mode
+    IDTR : nullidt 사용 *$(top)/src/cpu/x86/entry16.S.
+           nullidt(base, limit 모두 0)이므로 인터럽트가 발생하면 GP가 발생할 것.
+    IDT : N/A *별도셋업없음
+
+    참고. option에 따라서 exception_init()이 호출되어 셋업될 수는 있음. 그러나 현재 옵션으로는 셋업되지 않는다.
+         exception_init()호출여부는 CONFIG_BOOTBLOCK_CONSOLE만 보면 안됨. exception_init() 선언부를 보면 추가적으로 다른 옵션에따라서 no-op일수 있음. 이것때문에 당황했었음. ㅎ
+
+romstage
+  bootblock과 동일 
+
+postcar
+  bootblock과 동일 
+
+ramstage
+  IDTR : idt 사용 *$(top)/src/arch/x86/exception.c
+  IDT :
+    총20개의 entry가 offset만 다르고 아래형태로 세팅됨.
+    Segment Selector : ramstage에서의 cs레지스터 값. *memo_lowlevel_memory_management 내용 참조
+    Offset : interrupt handler offset *$(top)/src/arch/x86/exception.c, intr_entries에 정의되어있음.
+    P : 1
+    DPL : 0
+    D : 1
+
+8단계(이것저것해보기) - 7단계 주요흐름에서 잘 이해안가던 내용들 파악.
+실제 IDTR 레지스터 및 IDT값 확인 
+  cpu reset
+    IDTR값 확인(Intel64 and IA-32 Architectures Software Developer's Manual, Volume 3에서 System Reset시 표기되어있는 값과, real address mode에서 설명한 값이 다름.)
+    qemu에서 확인불가해보임. 매뉴얼이 잘못되지는 않을 것 같고... 그냥 그렇다라고만 하고 skip
+    
+  bootblock
+    real address mode ~ protected mode
+      IDT=     00000000 00000000
+      
+  romstage
+    bootblock과 동일
+
+  postcar
+    bootblock과 동일
+
+  ramstage
+    IDT=     07ecf3d8 0000009f
+
+    limit 0x0000009f => 159-bytes => 20개의 IDT(8-bytes) entry(160bytes)
+    base는 실행환경마다 조금씩 변경됨!
+    아래는 IDT 20개 값 출력.
+(qemu) x/100 0x07ecf3d8
+0000000007ecf3d8: 0x00106dc8 0x07eb8e00 0x00106dce 0x07eb8e00
+0000000007ecf3e8: 0x00106dd4 0x07eb8e00 0x00106dda 0x07eb8e00
+0000000007ecf3f8: 0x00106de0 0x07eb8e00 0x00106de6 0x07eb8e00
+0000000007ecf408: 0x00106dec 0x07eb8e00 0x00106df2 0x07eb8e00
+0000000007ecf418: 0x00106df8 0x07eb8e00 0x00106dfc 0x07eb8e00
+0000000007ecf428: 0x00106e02 0x07eb8e00 0x00106e06 0x07eb8e00
+0000000007ecf438: 0x00106e0a 0x07eb8e00 0x00106e0e 0x07eb8e00
+0000000007ecf448: 0x00106e12 0x07eb8e00 0x00106e16 0x07eb8e00
+0000000007ecf458: 0x00106e1c 0x07eb8e00 0x00106e22 0x07eb8e00
+0000000007ecf468: 0x00106e26 0x07eb8e00 0x00106e2c 0x07eb8e00
+
+  참고
+    qemu의 -monitor stdio 옵션으로 monitor에서 info registers 명령어로 확인함.
+    hlt적절히 걸어서 확인하였음.
+
+IDT실제 동작(Intel64 and IA-32 Architectures Software Developer's Manual, Volume 3, 6.12.1 내용) 확인해보기
+  ramstage에서 테스트 수행함.
+  아래 diff 반영하여 qemu monitor로 확인함!.
+  int $0x00을 적절한 값으로 변경하면서 테스트하였음.
+diff --git a/src/arch/x86/exception.c b/src/arch/x86/exception.c
+index aecce7b7b1..9cab374cac 100644
+--- a/src/arch/x86/exception.c
++++ b/src/arch/x86/exception.c
+@@ -556,6 +556,21 @@ void x86_exception(struct eregs *info)
+                else if ((uintptr_t)ptr == info->esp)
+                        printk(BIOS_EMERG, " <-esp");
+        }
+// 인터럽트 발생시, 호출되는핸들러(x86_exception)에서 vector값을 eax레지스터에 넣고 hlt.(GP익셉션 발생 확인목적)
++       asm volatile (
++           "movl %0, %%eax;"  // info->vector 값을 eax로 이동
++           :
++           : "m" (info->vector)  // input: 구조체 멤버 메모리 주소
++           : "eax", "cc", "memory"  // clobber: eax 사용, 플래그 변경, 메모리 접근
++       );
++       asm volatile ("hlt\n");
++       
+ 
+        die("\n");
+ #endif
+@@ -642,6 +657,8 @@ static void load_idt(void *table, size_t sz)
+ 
+        if (ENV_RAMSTAGE)
+                memcpy(&idtarg, &lidtarg, sizeof(idtarg));
+//임의의 인터럽트를 소프트웨어적으로 발생시킴!
++       
++       asm volatile ("int $0x00\n");
+ }
+ 
+ asmlinkage void exception_init(void)
+diff --git a/src/arch/x86/idt.S b/src/arch/x86/idt.S
+index 99d6e95ec5..957a22afac 100644
+--- a/src/arch/x86/idt.S
++++ b/src/arch/x86/idt.S
+@@ -9,8 +9,9 @@
+ .global vec0, vec1, vec2, vec3, vec4, vec5, vec6, vec7, vec8, vec9
+ .global vec10, vec11, vec12, vec13, vec14, vec15, vec16, vec17, vec18, vec19
+ vec0:
+// 인터럽트벡터. 확인을 위해 시그니쳐값을 추가함. int $0x00 수행시, 시그니쳐값을 푸시하고 hlt(스택확인목적)
+-       push    $0 /* error code */
+-       push    $0 /* vector */
++       push    $0x12341234 /* error code */
++       push    $0x11111111 /* vector */
++       hlt
+        jmp int_hand
+ vec1:
+        push    $0 /* error code */
+
+  테스트결과.
+    인터럽트 발생(int $0x00)시 stack값 확인(qemu monitor의 info registers 명령어 및 메모리덤프명령어로 확인)
+      ESP=07ec4f9c
+       스택값.
+        0000000007ec4f90: 0x00000006 0x07ec3000 0x00013f98 0x11111111
+        0000000007ec4fa0: 0x12341234 0x07eb6f1d 0x00000010 0x00000003      
+      즉 위 스택내용을 다시 풀어보면, 매뉴얼대로 들어가있음을 알 수 있음!
+        주소                value         
+                                  <- stack_pointer(ESP) //stack TOP
+     0000000007ec4f9c 0x11111111  //handler push값2
+     0000000007ec4fa0 0x12341234  //handler push값1
+     0000000007ec4fa4 0x07eb6f1d  //EIP
+     0000000007ec4fa8 0x00000010  //CS
+     0000000007ec4fac 0x00000003  //EFLAGS
+
+    IDT limit초과시 GP인터럽트 발생여부 동작확인(qemu monitor의 info registers 명령어사용)
+      int $0x13 이하(즉 20번째 인터럽트까지)인 경우 vector값
+        EAX=00000013
+      int $0x13 초과한 경우 vector값.
+        EAX=0000000d(즉 GP가 발생함을 확인!)
+    
+9단계(유용한 것을 할수있는 수준까지 파기) - 관련 이슈1개처리.
+  src/lib/bootblock.c에서 exception_init()호출하는 거 리팩토링해보고 싶긴한데... (사유 : qemu테스트환경에서 exception_init호출되는 줄 알았는데 안되서 조금 헷갈렸다!)
+    그리고 src/lib/bootblock.c exception_init()호출조건은 if문에 CONFIG_BOOTBLOCK_CONSOLE만 기술되어있다. => 헷갈린다.
+    exception.c파일자체는 (다른 파일이지만) x86, arm 아키텍쳐에서만 관여한다.!
+  생각보다 난도가 좀 잇어보이네요(맥락을 파악할 필요가있고, 이거할려면 Kconfig 및 빌드를 좀 더 잘알아야할듯... 근데 이건 핑계지 머...)
+  흐음.... 일단 저질러볼까?
+  
+  확인memo
+    src/lib/bootblock.c는 bootblock에 항상 포함된다.(src/lib/Makefile.mk 에 별도 옵션타는거 없고 무조건 -y임). 
+     즉 아키텍쳐무관하게 빌드에 포함되고 공통으로 사용되는 로직이다.
+    
+    exception_init()은 x86, arm, ppc64, risc-v 네개 아키텍쳐에서 정의한 exception_init중 하나이고, make menuconfig시 선택된 아키텍쳐의 exception_init()함수의 구현($(top)/src/arch/[arch]/Makefile.mk 참조)이 링크된다.
+    참고로, 현재 coreboot는 4개 아키텍쳐만 지원(arm/arm64, ppc64, risc-v, x86-32/64)한다.
+    
+    각 아키텍쳐의 exception_init()은 
+      no-op이아니면(로직이존재한다) $(top)/src/arch/[arch]/exception.c파일에 정의되어있고
+      no-op이면, 동일경로의 exception.h에 no-op으로 정의되어있다.
+   
+    ARM의 경우, CONFIG_BOOTBLOCK_CONSOLE 옵션에 따라서 exception.c파일이 빌드에 포함됨.
+       단, armv7(32bit), armv8(64bit)에만 연관됨. armv4는 연관X
+    x86은 ARM과 달리... CONFIG_IDT_IN_EVENTY_STAGE 옵션에 따라서 exception.c파일이 빌드에 포함됨
+    ppc64, risc-v는 항상 빌드에 포함되는 exception.c가 없다. *exception_init이 no-op이다.
+  
+    CONFIG(BOOTBLOCK_CONSOLE)은, 예전에 ARM아키텍쳐의 bootblock로직 일환으로 추가된 것으로 확인됨.(git log 86fc11d0c9b 참조)
+
+    Kconfig?
+      kernel에서 configuration을 하기위해 개발한 메카니즘.
+      coreboot에서도 차용해서 사용($(top)/util/kconfig)
+       직관적으로 되어있음
+       'mainmenu' keyword찾아서 make menuconfig랑 직접 비교해보면서 보면 바로 이해 됨.
+       매우 기본내용은 다음과 같다.
+       'mainmenu' keyword가 가장 톱레벨을 의미
+       'menu' 'config' 'choice' ... 'endmenu' 가 하나의 메뉴를 구성
+       'config' keyword가 설정하나
+       'choice' 'config'... 'endcohice'가 설정덩어리 하나(여러개 config중 하나를 선택)
+       'default'는 기본값
+       'depends on'은 해당 설정에 의존한다는 의미.
+       'select' 는 'y'로 해당 옵션을 키겠다는 의미.
+       'bool' 만 적혀있으면 default 'n'임.
+
+      BOOTBLOCK_CONSOLE은, 아키텍쳐랑은 무관하게 설정가능한 configuration임.
+
+       아키텍쳐는 직접선택하는게 아니라 간접적으로(ex. 사용하는 메인보드종류) 선택되는 것으로 보인다.
+         grep -r 'select ARCH_X86' ($top) 출력참조
+          메인보드 qemu i440fx선택하면 ARCH_X86이 on된다고 보면 됨
+
+   $(top)/src/include/rules.h의 __ARCH_x86_32와 같은 상수정의는 $(top)/toolchain.mk에 의해서 셋팅되서, 컴파일시 -D 옵션으로 추가된다.
+    근데 여기에 ppc64(ex. ENV_PPC64, __ARCH_ppc64)가 없다...
+
+    1안. if문 조건을 2개로 쪼갠다 => 나름 갠찮을 듯? 당장 내가 할 수 있는 최선일 듯? => 다른 아키텍쳐들까지 고려하면... 이거 아님. 로직이 달라짐.(riscv, ppc에서도 BOOTBLOCK_CONSOLE on되면 루틴 타야하는 거 아니냐???) => 아래 조건 분리해서 하면 될 것 같긴한데..너저분하다...해도되긴할것같긴하다.
+      if (CONFIG(BOOTBLOCK_CONSOLE)) {
+        console_init()
+      }
+      if(ENV_X86 && IDT_IN_EVERY_STAGE 
+        || ((ENV_ARM || ENV_ARM64) && CONFIG_BOOTBLOCK_CONSOLE)) {
+        exception_init()
+      }
+        
+    2안. 모든 아키텍쳐 고려시 모두 벗겨버리고 exception_init()만 남기는게 좋을 것 같다.
+      if (CONFIG(BOOTBLOCK_CONSOLE)) {
+        console_init()
+      }
+      exception_init();
+        사유. BOOTBLOCK_CONSOLE에 따른 exception_init여부는 ARM아키텍쳐(그중에서도 일부만)한정이고 그 외는 해당 옵션이 아니라 다른 옵션임.
+             그리고 약간 버그성같은디? x86에서는 BOOTBLOCK_CONSOLE봐서도 안될 것 같음... 이게 맞을 듯???(x86_exception()은 GDB_STUB걸려있으면 글로도 쏴야함 console여부 무관해보임.)
+
+
+  드디어 올렸다!
+    https://review.coreboot.org/c/coreboot/+/92105
+
+10단계(가르치기) - 내용정리
+  알게된것
+    x86 아키텍쳐의 low-level에서의 interrupt 동작 메카니즘.
+      주요키워드 : IDT, IDTR, IDT Descriptor
+  코멘트
+    low-level interrupt 개념과 실제 동작을 확인해서 좀 더 깊이 이해할 수 있던것은 좋았다.
+    그러나 9단계한다고 호흡이 너무 길었다...Kconfig나 빌드프로세스를 좀 더 잘 알수 있었던 것은 좋았다. 근데 테스트를 못한부분이... 좀 그렇다.
