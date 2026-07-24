@@ -1,0 +1,94 @@
+next : 7단계 ㄱㄱ. 남들 어떻게 했는지 gerrit참고해서 mainboard어케추가하는 지 확인시도 ㄱㄱ..(정모르겠으면 8단계넘어가자...)
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - coreboot에서 mainboard 지원하기 위한 방식을 확인
+
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+  coreboot에서 mainboard 지원하는 동방식을 확인
+  
+학습목표
+  $(top)/src/mainboard/emulation/qemu-i440fx 각 소스코드의 의미 확인
+  $(top)/src/mainboard/emulation/qemu-i440fx코드가 coreboot에 integration되는 방식을 확인
+  새로운 mainboard를 추가할 경우, 어떻게 처리해야하는 지 내용 정리(기본개념이라도)
+    
+학습자료
+  coreboot 공식홈페이지 doc(https:/
+
+학습계획
+  milestone1. coreboot에서 mainboard 지원하기 위한 방식을 확인
+  
+=======================
+milestone1. coreboot에서 mainboard 지원하기 위한 방식을 확인
+
+7단계(대충 사용 수준까지) - qemu-i440fx 메인보드 지원방식과 coreboot에 mainboard추가 방식 확인.
+
+mainboard qemu-i440fx 디렉토리 소스코드
+  devicetree.cb : devicetree파일
+  bootmode.c : VBOOT 지원을 위한 코드. $(top)/src/security/vboot/vboot_logic.c에서 사용됨.
+                 모든 stage에 포함.(all-y make변수에 추가됨) $(top)/src/mainboard/emulation/qemu-i440fx/Makefile.mk 참조
+  irq_table.c : irq routing table 셋업하는 로직. $(top)/src/arch/x86/table.c에서 사용됨
+                $(top)/src/arch/x86/Makefile.mk에서 해당 소스코드를 ramstage-y make변수에 추가
+  mainboard.c : struct device_operations를 정의. devicetree와 연관. devicetree.cb로 부터 생성되는 $(top)/build/mainboard/emulation/qemu-i440fx/static.c에서 사용됨.
+  memory.h : 함수선언만 존재. 같은 경로의 memmap.c에 #include 됨.
+  romstage.c : romstage에서 mainboard entry 로직.
+               $(top)/src/cpu/intel/car/romstage.c에서 참조함.
+               $(top)/src/arch/x86/Makefile.mk, romstage-srcs에 추가됨.
+  Kconfig/Kconfig.name : Kconfig파일
+  Makefile.mk : makefile
+  northbridge.c : struct chip_operations를 정의. devicetree와 연관. devicetree.cb로 부터 생성되는 $(top)/build/mainboard/emulation/qemu-i440fx/static.c에서 사용됨.
+  exit_car.S : car stage에서 사용됨. 동일경로 Makefile.mk에 의해 postcar-y 에 추가됨.
+  memmap.c : 메모리정보관련 로직. $(top)/src/lib/imd_cbmem.c 과 동일경로 다른 소스코드에서 사용됨
+               동일경로 Makefile.mk에의해서 romstage-y, postcar-y, ramstage-y에 추가됨
+  rom_media.c : ROM관련 로직. $(top)/src/lib/boot_device.c, $(top)/src/lib/fmap.c 에서 참조됨.
+                  동일경로 Makefile.mk에 의해서 ramstage-y에 추가됨
+  board_info.txt : 메인보드에 대한 정보성 파일
+  acpi : ACPI정보. dsdt.asl에서 #include로 포함함. *cpu-hotplug.asl은 안쓰는 듯(???)
+  cmos.default : CMOS정보. CBFS에 들어가나봄. $(top)/src/arch/x86/Kconfig 에 default값으로되어있음.
+  cmos.layout : CMOS정보. CBFS에 들어가나봄. $(top)/src/Kconfig 에 default값으로되어있음. $(top)/src/arch/x86/Makefile.mk에 파일을 사용한 make rule있음. $(top)/src/lib/coreboot_table.c에서 cmos_layout.bin을 참조함.
+    CMOS이란?
+      BIOS setting을 저장한 nonvolatile memory.
+      https://en.wikipedia.org/wiki/Nonvolatile_BIOS_memory
+  vboot-rwa-8M.fmd : VBOOT 관련. *skip(https://doc.coreboot.org/security/vboot/index.html)
+  dsdt.asl : ACPI정보. CBFS에 들어가나봄. $(top)/src/acpi/Makefile.mk에 dsdt빌드룰 만듬.asl_template매크로는 $(top)/Makefile.mk에 존재. $(top)/src/acpi/acpi.c, write_acpi_tables()에서 dsdt.aml을 참조함.
+    ASL이란?
+      ACPI Source Language (ASL).
+      ASL is a source language for defining ACPI objects including writing ACPI control methods. OEMs and platform firmware developers define objects and write control methods in ASL and then use a translator tool (compiler) to generate ACPI Machine Language (AML) versions of the control methods (https://uefi.org/htmlspecs/ACPI_Spec_6_4_html/19_ASL_Reference/ACPI_Source_Language_Reference.html)
+      iasl이라는 tool로 컴파일함.(asl -> aml).
+
+mainboard qemu-i440fx 빌드 산출물
+공통
+  *.o, *.d 파일
+    $(top)/src/mainboard/emulation/qemu-i440fx/Makefile.mk 에 의해 각 stage별 포함된 소스코드파일에 대한 컴파일 결과.
+    static.o, static.d 는 $(top)/Makefile.mk line 782-808에 의해 거의 대부분 stage에 추가됨.
+    irq_tables.o, irq_tables.d는 $(top)/src/arch/x86/Makefile.mk 에 의해 ramstage에 추가됨.
+      
+$(top)/build/mainboard/emulation/qemu-i440fx
+  static.c : qemu-i440fx devicetree빌드결과. $(top)/Makefile.mk line 798에 빌드룰 존재
+$(top)/build/ramstage/mainboard/emulation/qemu-i440fx
+$(top)/build/postcar/mainboard/emulation/qemu-i440fx
+$(top)/build/smm/mainboard/emulation/qemu-i440fx
+$(top)/build/bootblock/mainboard/emulation/qemu-i440fx
+$(top)/build/verstage/mainboard/emulation/qemu-i440fx
+$(top)/build/romstage/mainboard/emulation/qemu-i440fx
+
+8단계(이것저것해보기) - 
+cmos.default, cmos.layout관계 파기.
+$(top)/build/mainboard/emulation/qemu-i440fx 의 cbfs*파일정체???? 어떻게 생성되나????
+ACPI/ASL 파기(?)
+
+9단계(유용한 것을 할수있는 수준까지 파기) - 관련 이슈1개처리.  
+
+10단계(가르치기) - 내용정리
+  알게된것
+  코멘트

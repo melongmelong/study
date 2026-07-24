@@ -1,0 +1,407 @@
+next : 8단계 ㄱㄱ (cpumask 제어 매크로)
+
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : kernel smp
+
+학습이유
+  coreboot smp공부와 연관하여, coreboot smp공부내용기반으로는, ap가 INIT IPI를 대기하면서 hlt상태가 됨. kernel에서는 어떻게 초기화하고 ap를 구동시키는 지가 궁금하다. (coreboot소스에서는 ap구동관련 코드는 확인되지 않으므로 kernel소스기반으로 확인한다)
+  즉 kernel x86 smp초기화와 ap의 구동은 어떻게 되느냐?
+  low-level지식습득.
+
+학습목표
+  kernel x86 smp초기화 로직 파악
+  kernel에서 x86 smp에서 ap가 어떻게 instruction을 실행하는 지?
+    
+학습자료
+  구글링
+  kernel source
+  coreboot smp 공부내용
+
+학습계획
+  milestone1. kernel x86 smp초기화 로직 파악 + ap 구동이 어떻게되는 지 파악
+  
+================================================================
+7단계 *목표 : 학습목표관련 분석.
+
+분석 entry point 함수들...
+  smp_init : SMP초기화관련
+  do_boot_cpu : AP초기화관련
+  start_secondary : AP구동관련
+  by chat gpt
+  BSP 부팅
+   └─ start_kernel()
+       └─ smp_init()
+           └─ native_cpu_up()
+               └─ AP 깨우기(INIT/SIPI)
+  AP 측:(AP깨우기후)
+  real mode trampoline
+   └─ startup_32/startup_64
+       └─ cpu_init()
+       └─ smp_callin()
+       └─ start_secondary()
+  *x86_64의 흐름...
+    trampoline_64.S
+     → secondary_startup_64
+     → start_secondary
+  
+kernel x86 smp초기화 로직
+순서는 다음과 같다.
+  1.struct real_mode_header초기화
+    빌드시점에 값 셋팅. $(top)/arch/x86/realmode/rm/realmode.lds.S 참조
+    초기화에의해 값 셋팅. $(top)/arch/x86/realmode/init.c 참조
+  2.smp_init() -> ... -> do_boot_cpu()함수호출. 각 함수 분석내용 참조.
+    do_boot_cpu()에서, 각 AP로 IPI를 보내서 초기화를 수행한다.
+    AP의 start up address는 real_mode_header->trampoline_start 값이다.
+
+$(top)/kernel/smp.c
+line 1082-1102
+  smp_init()    
+    cpu들을 bringup한다.
+    참고. smp_init까지의 주요흐름 : start_kernel -> arch_call_rest_init -> rest_init -> kernel_init -> kernel_init_freeable -> smp_init
+    참고. BSP에서 실행되는 코드임.
+    참고. $(top)/Documentation/core-api/cpu_hotplug.rst(native_cpu_init함수가 해당 layer를 통해 호출되므로, 대략적인 내용 파악은 필요)
+    line 1087
+      idle thread(=task) 생성(by idle_threads_init)
+    line 1088
+      hot plug thread 생성(by cpuhp_threads_init)
+    line 1092
+      setup_max_cpus : kernel parameter 'maxcpus'
+                       'maxcpus' : kerneldl 부팅할 때 bring-up 할 최대 cpu 개수.
+      cpu를 online(=bringup)한다.(bringup_nonboot_cpus)
+    line 1094-1098
+      디버그로그출력(몇개의 memory node와 cpu가 online이 되었는지)
+    line 1100-1101
+      skip(뭔지 감도 안옴)
+    
+
+$(top)/kernel/smpboot.c
+line 44-61
+  idle_init()
+    주어진 cpu에 대해, idle thread(=task)가 없으면 생성.
+
+line 63-76
+  idle_threads_init()
+    bsp(boot_cpu)가 아닌 cpu에 대해서 idle thread(=task)를 생성(by idle_init)
+    line 70
+      bsp(boot_cpu) id값을 가져옴
+    line 72-75
+      bsp가 아닌 cpu에 대해 idle thread생성(idle_init)
+      
+$(top)/kernel/cpu.c
+line 114-139
+  struct cpuhp_step
+    cpu state callback정보를 가지고있음
+    주요필드
+      name : step 이름
+      startup : startup callback. multi_instance필드값 따라서 single / multi callback 셋팅이 나뉘어짐
+      teardown : teardown callback
+      multi_instance : multiple instace이냐? 지금보는 범위에서는 false                     
+
+line 144-147
+  cpuhp_get_step()
+    cpu의 현재 state callback정보를(struct cpuhp_step) 가져옴
+
+line 149-152
+  cpuhp_step_empty()
+    해당 cpu state에 대한 callback존재여부를 확인
+    bringup : true면 cpu start-up callback을 확인, false면 cpu tear-down callback을 확인
+
+line 154-246
+  cpuhp_invoke_callback()
+    cpu state callback function을 실행한다.(callback이 없으면 바로 return)
+    line 176-184
+      validation check
+    line 186-194
+      callback을 수행
+    line remained
+      skip(multi-instance는 우선 skip)
+
+line 629-663
+  cpuhp_next_state()
+    cpu의 다음 상태를 셋팅.
+    target 상태에 도달하면 바로 return한다.
+     참고. bringup : true면 cpu가 start-up임. false가 cpu가 tear-down중임.
+
+line 665-694
+  __cpuhp_invoke_callback_range()
+    cpu target state도달할때까지 callback을 수행한다.
+    line 674
+      cpu state 가 target에 도달하였는지 확인 / 상태업데이트를 수행한다(by cpuhp_next_state)
+    line 677
+      cpu 다음 state에 대해 callback을 실행한다
+    
+line 696-702
+  cpuhp_invoke_callback_range()
+    상태업데이트callback를 수행(by __cpuhp_invoke_callback_range)
+
+line 726-744
+  cpuhp_up_callbacks()
+    cpu상태 업데이트작업을 수행한다.
+    line 732-742
+      line 732
+        target state에 도달할때까지 상태업데이트 callback을 수행(by cpuhp_invoke_callback_range)
+      line 733-742
+         상태업데이트 실패 시 rollback을 수행
+
+line 923-927
+  cpuhp_hpthreads_init()
+    hot plug thread를 생성해서 각 cpu에 등록(by smpboot_register_percpu_thread)
+
+line 1347-1406
+  _cpu_up()
+    cpu target state까지 상태 업데이트를 수행한다.
+    line 1350
+      cpu상태정보를 가져옴.
+    line 1356-1359
+      cpu가 system에 인식되었는 지 체크(cpu_present())
+       참고. cpu_present_mask symbol 정의에 기술된 주석참조 *$(top)/include/linux/cpumask.h line 50-99참조
+    line 1361-1375
+       예외처리(현재 cpu상태를 확인, idle thread 존재여부를 확인. 자세한건 skip) *$(top)/include/linux/cpuhotplug.h line 7-255참조
+    line 1379
+      cpu target state를 셋팅(cpuhp_set_state()) *$(top)/include/linux/cpuhotplug.h line 7-255참조
+    line 1380-1392
+      현재 cpu상태가 AP hotplug thread를 깨워야한다면, 해당 thread를 깨움(cpuhp_kick_ap_work())
+    line 1394-1400
+      cpu target state까지 상태 업데이트작업을 수행(cpuhp_up_callbacks())
+    line 1401-1405
+      clean-up로직들. 자세한건 skip...
+
+line 1408-1439
+  cpu_up()
+    cpu를 target state까지 상태 업데이트를 수행한다.
+    line 1412-1419
+      cpu가 online가능한지를 check. online불가하면 return
+    line 1421-1423
+      cpu와 연관된 memory node를 online(?) *자세한건 skip(메모리관련이므로...일단)
+    line 1427-1434
+      cpu hotplug기능이 사용가능한지,
+      cpu SMT기능이 허용되었는지를 체크(?)
+    line 1436
+      cpu상태를 target state까지 업데이트 한다.(_cpu_up())
+
+line 1494-1504
+  bringup_nonboot_cpus()
+    cpu를 online상태로 만든다.(=bringup한다)
+    line 1498-1503
+      line 1499-1500
+        online(=bring up)된 cpu갯수가 setup_max_cpus보다많으면 break
+      line 1501-1502
+        cpu가 online이 아니면, cpu를 online(=bring up)(by cpu_up())
+
+line 1668-1851
+  cpuhp_hp_states
+    cpu상태별 callback function을 정의한 global var.
+
+$(top)/include/linux/cpuhotplug.h
+line 7-255
+  cpu hot plug state enum 정의.
+
+$(top)/arch/x86/kernel/smp.c
+line 260-279
+  struct smp_ops smp_ops정의
+    smp관련 callback을 정의
+
+$(top)/arch/x86/kernel/smpboot.c
+line 1038-1146
+  do_boot_cpu()
+    AP를 실행시킨다.
+    line 1047-1059
+      AP실행을 위한 환경(ex. 실행주소, 스택...) 셋업
+       실행주소인 start_ip는 real_mode_header->trampoline_start는 $(top)/arch/x86/realmode/*소스코드분석내용들을 참조.
+    line 1061-1062
+      디버그로그출력
+    line 1064-1081
+      skip.(x86 warm reset관련내용은 일단 skip. 대강... legacy기능이라는 듯함.)
+    line 1092-1102
+      AP로 IPI전달. 로직자체는 coreboot의 것과 비슷함. 자세한 분석은 일단 skip합니다.(어차피 APIC reg건드려서 처리함.)
+      APIC driver로직이 존재하면, 해당 로직으로 깨움, 아니면 default로직 사용.
+       어쨋든 핵심은 INIT, STARTUP을 전달하는건 두 방식 모두 동일함.
+    line 1104-1136
+      AP 초기화 완료를 대기.
+        cpu_*_mask변수를 통해 BSP / AP 간 동기화를 수행함.(AP에서 실행하는 start_secondary함수의 smp_callin에서 set함)
+       대기하면서 BSP는 다른 태스크를 실행할 수 있음.(by schedule()).
+      
+line 1148-1221
+  native_cpu_up()
+    AP를 실행시킨다
+    호출과정
+      _cpu_up의 state machine에 의해서 호출됨.
+      _cpu_up -> cpuhp_up_callbacks -> cpuhp_invoke_callback_range -> __cpuhp_invoke_callback_range -> cpuhp_invoke_callback -> cpuhp_hp_states[CPUHP_BRINGUP_CPU].startup.single(=bringup_cpu) -> __cpu_up() -> smp_ops.cpu_up(=native_cpu_up))
+    line 1159-1164
+      sanity check(ex. apic id가 유효하냐)
+    line 1166-1172
+      이미 cpu가 boot(=초기화)되었는지 체크
+    line 1174-1190
+      cpu boot을 위한 준비를 함
+      MTRR관련(by mtrr_save_sate)
+      cpu상태변경(by cpu_check_up_prepare)
+      FPU context
+      CPU 메모리영역(ex. irqstack) 초기화(by common_cpu_up)
+    line 1192-1197
+      AP를 실행시킴(by do_boot_cpu)
+    line 1199-1220
+      clean up logic
+      
+$(top)/arch/x86/realmode/init.c
+line 14
+  real_mode_header
+    struct real_mode_header 변수 선언
+    실제 정의는 $(top)/arch/x86/realmode/rm/header.S 에 기술되어있음.    
+
+line 203-213
+  init_real_mode()
+    real_mode_header 초기화를 수행.
+      주요사항 중 하나는, real_mode_header->trampoline_header 의 값을 세팅한다.(ex. start_, gdt_*)
+    kernel 초기화 시점에 호출 됨.
+
+$(top)/arch/x86/include/asm/realmode.h
+  struct real_mode_header 구조체 선언
+    변수는 $(top)/arch/x86/realmode/rm/header.S에 의해 정의된다.
+
+$(top)/arch/x86/realmode/rm/header.S
+struct real_mode_header *real_mode_header의 본체를 정의.
+일부 pa_* symbol은(ex pa_text_start) linker script에 정의 ($top)/arch/x86/realmode/rm/realmode.lds.S
+또 다른 pa_* symbol은 build output인 pasyms.h 파일에 정의되어있음. realmode.lds.S에서 #include함.
+파일 내용은 다음과 같음
+  1 pa_HEAP = HEAP;
+  2 pa_adapter = adapter;
+  3 pa_copy_from_fs = copy_from_fs;
+  4 pa_copy_to_fs = copy_to_fs;
+  5 pa_do_restore = do_restore;
+  6 pa_end_signature = end_signature;
+  7 pa_force_x = force_x;
+  8 pa_force_y = force_y;
+  9 pa_graphic_mode = graphic_mode;
+ 10 pa_heap_end = heap_end;
+ 11 pa_initregs = initregs;
+ 12 pa_intcall = intcall;
+ 13 pa_machine_real_restart_asm = machine_real_restart_asm;
+ 14 pa_machine_real_restart_gdt = machine_real_restart_gdt;
+ 15 pa_machine_real_restart_idt = machine_real_restart_idt;
+ 16 pa_machine_real_restart_paging_off = machine_real_restart_paging_off;
+ 17 pa_main = main;
+ 18 pa_memcpy = memcpy;
+ 19 pa_memset = memset;
+ 20 pa_mode_defined = mode_defined;
+ 21 pa_probe_cards = probe_cards;
+ 22 pa_real_mode_header = real_mode_header;
+ 23 pa_rm_heap = rm_heap;
+ 24 pa_rm_stack = rm_stack;
+ 25 pa_rm_stack_end = rm_stack_end;
+ 26 pa_set_mode = set_mode;
+ 27 pa_startup_32 = startup_32;
+ 28 pa_startup_64 = startup_64;
+ 29 pa_tr_cr4 = tr_cr4;
+ 30 pa_tr_efer = tr_efer;
+ 31 pa_tr_flags = tr_flags;
+ 32 pa_tr_gdt = tr_gdt;
+ 33 pa_trampoline_header = trampoline_header;
+ 34 pa_trampoline_pgd = trampoline_pgd;
+ 35 pa_trampoline_start = trampoline_start;
+ 36 pa_vga_crtc = vga_crtc;
+ 37 pa_wakeup_gdt = wakeup_gdt;
+ 38 pa_wakeup_header = wakeup_header;
+ 39 pa_wakeup_start = wakeup_start;
+
+line 190-195
+  tramploine_header
+    trampoline_header의 본체
+    real_mode_header->trampoline_header필드에서 가리키는 공간임.
+
+$(top)/arch/x86/realmode/rmpiggy.S
+real_mode_blob 본체를 정의.
+realmode 바이너리 그 자체임.
+
+$(top)/arch/x86/realmode/rm/realmode.lds.S
+realmode 바이너리 링커스크립트
+.header section이 맨 앞에 나오며, 해당 section은 real_mode_header 데이터를 가짐($(top)/arch/x86/realmode/rm/header.S 참조)
+
+kernel x86 ap 구동 로직
+주요흐름
+  IPI(by APIC) -> trampoline_start -> startup_32 -> startup_64 -> secondary_startup_64 -> start_secondary() -> cpu_startup_entry() -> do_idle()
+  do_idle에 의해 스케줄링이 수행됨!
+  참고. BSP도 start_kernel() -> ...-> cpu_startup_entry() -> do_idle()호출하게 됨!
+
+$(top)/arch/x86/realmode/rm/trampoline_64.S
+line 37-82
+  trampoline_start
+    trampoline_start의 본체
+    real_mode_header->trampoline_start필드에서 가리키는 공간임.
+    16->32bit 전환후, startup_32로 jmp(코드는 pa_startup_32로 jmp이지만, linker script에 의해 startup_32값과 동일함)
+
+line 108-162
+  startup_32
+    32bit -> 64bit전환후, startup_64로 jmp.(코드는 pa_startup_64로 jmp이지만, linker script에 의해 startup_64값과 동일함)
+
+line 167-170
+  startup_64
+    real_mode_header->trampoline_header->start로(=secondary_startup_64) jmp (init_real_mode() 참조)
+
+$(top)/arch/x86/kernel/head_64.S
+line 100-285
+  secondary_startup_64
+    실행환경을 셋업 후, start_secondary(initial_code, do_boot_cpu에서 셋팅됨)로 jmp
+
+$(top)/arch/x86/kernel/smpboot.c
+line 232-282
+  start_secondary
+    실행을 위한 초기화작업 수행 후, cpu_startup_entry()호출
+
+$(top)/kernel/sched/idle.c
+line 398-404
+  cpu_startup_entry
+    do_idle()호출. 즉 AP에서 task를 실행하게 됨
+    do_boot_cpu의 cpu_callout_mask, cpu_callin_mask로 동기화됨
+      cpu_callout_mask : start_secondary가 실행해도 될 지를 AP가 체크(cpu_init_secondary()->cpu_init()에 의해 체크). BSP가 set.
+      cpu_callin_mask : BSP가 do_boot_cpu를 실행해도 될 지를 BSP가 체크, AP가 set(smp_callin()에 의해 셋)
+
+8단계 *목표 : 7단계에서 넘어갔던 부분 디테일하게 확인
+  num_online_cpus
+    __num_online_cpus를 return하는 함수
+    *SMP config 아니면, 1로 #define되어있음.
+    __num_online_cpus?
+      $(top)/kernel/cpu.c에 atomic_t타입으로 정의되어있음.
+      set_cpu_online()함수에서 값이 업데이트(increase/decrease)됨.
+      *set_cpu_online()호출 예시 : start_secondary()에서 호출됨.
+
+  cpu mask
+    DECLARE_BITMAP macro
+      n bits 저장하기 위한 long type배열의 사이즈를 계산.
+      $(top)/include/linux/types.h에 정의
+    cpumask_t
+      system에 존재가능한 최대CPU갯수(=NR_CPU Kconfig)만큼의 bit를 표현.
+      DECLARE_BITMAP macro사용.
+      $(top)/include/linux/cpumask.h에 정의
+    cpumask종류
+      $(top)/kernel/cpu.c에 정의되어있음.
+      $(top)/include/linux/cpumask.h 상단 주석에 각 mask별 설명되어있음.
+      __cpu_possible_mask
+      __cpu_online_mask
+      __cpu_present_mask
+      __cpu_active_mask
+      __cpu_dying_mask
+    cpumask 제어 매크로
+      for_each_possible_cpu, for_each_present_cpus
+      cpu_online
+
+  per_cpu
+    this_cpu_read
+
+  smp_processor_id
+
+관련개념
+  idle thread
+  hotplug thread
+
+9단계 *목표 : 코드레벨에서 처리(ex. contribution)
+
+10단계 *목표 : 내용정리
+  알게된 것
+  코멘트

@@ -1,4 +1,4 @@
-next : 7단계 7-2내용확인(누가 halt상태인 AP를 깨워서 작업을 수행하냐, 퍼플렉시티등으로 정보검색수준만하고 7단계 시마이치자.)
+next : 완료
        *$(top)/build/cbfs/fallback/ 에 중간산출물들(ex. bootblock.elf) 존재함!
        *make -p 도 분석에 도움됨!
        *x86 asm syntax는 gnu as document 참조!
@@ -64,9 +64,21 @@ step8) 모든 AP의 초기화 완료후, BSP가 수행. BSP는 프로세서의 �
 step9) AP는 대기상태이고 일부 메시지(ex. INIT IPI)에만 반응할 수 있는 상태가 됨.
 
 7-2. x86 arch multiprocessor task실행
-  coreboot에서는 확인은 안되고,
-  다른 데서(ex. linux kernel의 start_secondary) 깨워서 실행한다.!
+  coreboot에서는 확인되지않음.(x86 기준으로는 AP는 hlt상태 or CONFIG가있으면 특정 job을 실행하기 위해 loop를 돔)
 
+  x86 kernel은 아래 기준으로 실행하는 것으로 확인됨. 
+  어쨋든, AP에서 hlt로 끝나는 것이 아니라 signal을받고 명령들을 수행함!. 자세한 것은 skip
+    BSP 부팅
+     └─ start_kernel()
+         └─ smp_init()
+             └─ native_cpu_up()
+                 └─ AP 깨우기(INIT/SIPI)
+    AP 측: (on SIPI)
+    real mode trampoline
+     └─ startup_32/startup_64
+         └─ cpu_init()
+         └─ smp_callin()
+         └─ start_secondary()
 
 용어집.
   BSP(BootStrap Processor) : Power-up 시점에 BSP Selection Mechanism으로 결정되는 프로세서. 
@@ -81,12 +93,138 @@ step9) AP는 대기상태이고 일부 메시지(ex. INIT IPI)에만 반응할 �
                              Hyper-Threading인 경우 물리가 아닌 논리프로세서단위로 다뤄지고 개념은 동일하다.
                                  참고. Intel64 and IA-32 Architectures Software Developer's Manual, Vol3. 8.4.1
 
-8단계(이것저것해보기) - 7단계 주요흐름에서 잘 이해안가던 내용들 파악(w/코드수정하면서 디버깅) 
+8단계(이것저것해보기) - 7단계 AP초기화 step을 디버그로그(추가해서라도) / 레지스터 값으로 눈으로 직접 확인해보기. 그리고 각 확인내용(디버그로그나 레지스터 값 등)을 기록한다.
+  qemu실행옵션 : qemu-system-x86_64 -smp 4 -bios ./build/coreboot.rom -serial stdio 1>./knwtest.txt
 
+  1 ^[[0m[DEBUG]  BS: BS_DEV_ENABLE run times (exec / console): 1 / 1 ms^[[0m
+  2 ^[[0m[INFO ]  Initializing devices...^[[0m
+  3 ^[[0m[DEBUG]  CPU_CLUSTER: 0 init^[[0m
+  4 ^[[0m[INFO ]  CPU: QEMU Virtual CPU version 2.5+.^[[0m //BSP가 실행(init_bsp())
+  5 ^[[0m[INFO ]  LAPIC 0x0 in XAPIC mode.^[[0m //BSP가 실행(enable_lapic_mode())
+  6 ^[[0m[DEBUG]  CPU: APIC: 00 enabled^[[0m //BSP가 실행(add_cpu_device())
+  7 ^[[0m[DEBUG]  CPU: APIC: 01 enabled^[[0m //BSP가 실행(add_cpu_device())
+  8 ^[[0m[DEBUG]  CPU: APIC: 02 enabled^[[0m //BSP가 실행(add_cpu_device())
+  9 ^[[0m[DEBUG]  CPU: APIC: 03 enabled^[[0m //BSP가 실행(add_cpu_device())
+ 10 ^[[0m[DEBUG]  Loading module at 0x00030000 with entry 0x00030000. filesize: 0x178 memsize: 0x178^[[0m //BSP가 실행
+ 11 ^[[0m[DEBUG]  Processing 16 relocs. Offset value of 0x00030000^[[0m //BSP가 실행
+ 12 ^[[0m[DEBUG]  Attempting to start 3 APs^[[0m            //BSP가 실행(start_aps())
+ 13 ^[[0m[DEBUG]  knwtest, send 1 INIT^[[0m                 //BSP가 실행
+ 14 ^[[0m[DEBUG]  Waiting for 10ms after sending INIT.^[[0m //BSP가 실행
+ 15 ^[[0m[DEBUG]  knwtest, send 1 Startup^[[0m           //BSP가 실행(init_bsp())
+ 16 ^[[0m[DEBUG]  Waiting for SIPI to complete...^[[0m   //BSP가 실행(init_bsp())
+ 17 ^[[0m[DEBUG]  done.^[[0m                             //BSP가 실행(init_bsp())
+ 18 ^[[0m[DEBUG]  knwtest wait for aps entered val : 0 target : 3^[[0m //BSP가 실행(wait_for_aps())
+ 19 ^[[0m[INFO ]  LAPIC 0x1 in XAPIC mode.^[[0m //AP가 실행 0x1이 apic id. 즉, 이값이 다르면 다른 AP(enable_lapic_mode())
+ 20 ^[[0m[INFO ]  AP: slot 1 apic_id 1^[[0m     //AP가 실행 slot값이 ap index. 즉 이값이 다르면 다른 AP(ap_init())
+ 21 ^[[0m[INFO ]  LAPIC 0x2 in XAPIC mode.^[[0m //AP가 실행(enable_lapic_mode())
+ 22 ^[[0m[INFO ]  AP: slot 2 apic_id 2^[[0m     //AP가 실행(ap_init())
+ 23 ^[[0m[INFO ]  LAPIC 0x3 in XAPIC mode.^[[0m //AP가 실행(enable_lapic_mode())
+ 24 ^[[0m[INFO ]  AP: slot 3 apic_id 3^[[0m     //AP가 실행(ap_init())
+ 25 ^[[0m[DEBUG]  knwtest APs are ready after 15us^[[0m //BSP가 실행(wait_for_aps())
+ 26 ^[[0m[DEBUG]  knwtest, send 2 Startup^[[0m          //BSP가 실행(start_aps())
+ 27 ^[[0m[DEBUG]  Waiting for SIPI to complete...^[[0m  //BSP가 실행(send_sipi_to_aps)
+ 28 ^[[0m[DEBUG]  done.^[[0m                            //BSP가 실행(send_sipi_to_aps)
+ 29 ^[[0m[DEBUG]  knwtest wait for aps entered val : 3 target : 3^[[0m //BSP가 실행. send 2 Startup이후 실행됨. 첫번째 Startup에서 완료(wait_for_aps())
+ 30 ^[[0m[DEBUG]  knwtest APs are ready after 0us^[[0m                 //BSP가 실행.(wait_for_aps())
+ 31 ^[[0m[DEBUG]  knwtest wait for aps entered val : 3 target : 3^[[0m //BSP가 실행.(wait_for_aps()) 첫번쨰 BSP-AP flight plan쌍
+                                                                       //BSP-AP flight plan은 mp_steps변수에 정의되어있음
+                                                                       //flight plan실행순서는 기본적으로 다음과 같음(bsp_do_flight_plan, ap_do_flight_plan함수 참조)
+                                                                       //1. BSP가 AP모두 check-in될때까지 대기
+                                                                       //   BSP는 bsp_do_flight_plan에서 대기, AP는 ap_do_flight_plan에서 check-in수행
+                                                                       //2. AP모두 check-in후, BSP의 flight plan callback수행
+                                                                       //3. BSP flight plan callback수행완료 후, barrier(동기화메카니즘)를 release.
+                                                                       //4. AP에서 AP의 flight plan callback 수행.
+                                                                       //5. BSP는 AP flight plan callback 수행완료와 상관없이 다음 flight plan실행(step 1.로 돌아감)
+ 32 ^[[0m[DEBUG]  knwtest APs are ready after 0us^[[0m                 //BSP가 실행.(wait_for_aps()) 첫번쨰 BSP-AP flight plan쌍. 아마, 너무 빨라서(ap callback이 NULL임) 0us인듯.?
+ 33 ^[[0m[DEBUG]  knwtest wait for aps entered val : 0 target : 3^[[0m //BSP가 실행.(wait_for_aps()) 세번쨰 BSP-AP flight plan쌍
+                                                                                 //두번째는 ap wait 대상이 아니므로(flight plan record가 NOBLOCK임) 해당 로직이 실행되지 않음.
+ 34 ^[[0m[DEBUG]  knwtest APs are ready after 100us^[[0m               //BSP가 실행.(wait_for_aps()) 세번쨰 BSP-AP flight plan쌍
+ 35 ^[[0m[INFO ]  Initializing CPU #0^[[0m                            //BSP가 실행(cpu_initialize()) 바로 위 flight plan실행순서에 입각해서 BSP의 callback이 먼저 수행.
+ 36 ^[[0m[DEBUG]  CPU: vendor AMD device 663^[[0m                     //BSP가 실행(cpu_initialize())
+ 37 ^[[0m[DEBUG]  CPU: family 06, model 06, stepping 03^[[0m          //BSP가 실행(cpu_initialize())
+ 38 ^[[0m[INFO ]  CPU #0 initialized^[[0m                             //BSP가 실행(cpu_initialize())
+ 39 ^[[0m[DEBUG]  knwtest wait for aps entered val : 0 target : 3^[[0m //BSP가 실행.(wait_for_aps()) 네번쨰 BSP-AP flight plan쌍. 
+                                                                                 //바로 위 flgiht plan 실행순서에 입각해서 BSP는 AP flight plan callback 수행완료와 상관없이 다음 flight plan실행을 위한 대기.
+ 40 ^[[0m[INFO ]  Initializing CPU #1^[[0m                            //AP가 실행(cpu_initialize())
+ 41 ^[[0m[DEBUG]  CPU: vendor AMD device 663^[[0m                     //AP가 실행(cpu_initialize()) 
+ 42 ^[[0m[DEBUG]  CPU: family 06, model 06, stepping 03^[[0m          //AP가 실행(cpu_initialize())   
+ 43 ^[[0m[INFO ]  CPU #1 initialized^[[0m                             //AP가 실행(cpu_initialize())
+ 44 ^[[0m[INFO ]  Initializing CPU #2^[[0m                            //AP가 실행(cpu_initialize())
+ 45 ^[[0m[DEBUG]  CPU: vendor AMD device 663^[[0m                     //AP가 실행(cpu_initialize())
+ 46 ^[[0m[DEBUG]  CPU: family 06, model 06, stepping 03^[[0m          //AP가 실행(cpu_initialize()) 
+ 47 ^[[0m[INFO ]  CPU #2 initialized^[[0m                             //AP가 실행(cpu_initialize())
+ 48 ^[[0m[INFO ]  Initializing CPU #3^[[0m                            //AP가 실행(cpu_initialize())
+ 49 ^[[0m[DEBUG]  CPU: vendor AMD device 663^[[0m                     //AP가 실행(cpu_initialize())
+ 50 ^[[0m[DEBUG]  CPU: family 06, model 06, stepping 03^[[0m          //AP가 실행(cpu_initialize())
+ 51 ^[[0m[INFO ]  CPU #3 initialized^[[0m                             //AP가 실행(cpu_initialize())
+ 52 ^[[0m[DEBUG]  knwtest APs are ready after 100us^[[0m              //BSP가 실행.(wait_for_aps()) 네번쨰 BSP-AP flight plan쌍.
+ 53 ^[[0m[INFO ]  bsp_do_flight_plan done after 2 msecs.^[[0m //BSP가 실행.(bsp_do_flight_plan())
+ 54 
+ 
+ 참고. 디버그로그 추가한 diff commit 9f1030feae813751e607a282d5ec2cff8668b1b5 기준.
+diff --git a/src/cpu/x86/mp_init.c b/src/cpu/x86/mp_init.c
+index bb516974c9..7d980dd79f 100644
+--- a/src/cpu/x86/mp_init.c
++++ b/src/cpu/x86/mp_init.c
+@@ -142,6 +142,9 @@ static enum cb_err wait_for_aps(atomic_t *val, int target, int total_delay,
+                        int delay_step)
+ {
+        int delayed = 0;
++       
++       printk(BIOS_DEBUG, "knwtest wait for aps entered val : %d target : %d\n", atomic_read(val), target);
++
+        while (atomic_read(val) != target) {
+                udelay(delay_step);
+                delayed += delay_step;
+@@ -152,6 +155,7 @@ static enum cb_err wait_for_aps(atomic_t *val, int target, int total_delay,
+        }
+ 
+        /* APs ready before timeout */
++       printk(BIOS_DEBUG, "knwtest APs are ready after %dus\n", delayed);
+        printk(BIOS_SPEW, "APs are ready after %dus\n", delayed);
+        return CB_SUCCESS;
+ }
+@@ -474,6 +478,7 @@ static enum cb_err start_aps(struct bus *cpu_bus, int ap_count, atomic_t *num_ap
+        }
+ 
+        /* Send INIT IPI to all but self. */
++       printk(BIOS_DEBUG, "knwtest, send 1 INIT\n");
+        lapic_send_ipi_others(LAPIC_INT_ASSERT | LAPIC_DM_INIT);
+ 
+        if (!CONFIG(X86_INIT_NEED_1_SIPI)) {
+@@ -481,6 +486,7 @@ static enum cb_err start_aps(struct bus *cpu_bus, int ap_count, atomic_t *num_ap
+                mdelay(10);
+ 
+                /* Send 1st Startup IPI (SIPI) */
++               printk(BIOS_DEBUG, "knwtest, send 1 Startup\n");
+                if (send_sipi_to_aps(ap_count, num_aps, sipi_vector) != CB_SUCCESS)
+                        return CB_ERR;
+ 
+@@ -489,6 +495,7 @@ static enum cb_err start_aps(struct bus *cpu_bus, int ap_count, atomic_t *num_ap
+        }
+ 
+        /* Send final SIPI */
++       printk(BIOS_DEBUG, "knwtest, send 2 Startup\n");
+        if (send_sipi_to_aps(ap_count, num_aps, sipi_vector) != CB_SUCCESS)
+                return CB_ERR;
+ 
+@@ -550,6 +557,7 @@ static enum cb_err init_bsp(struct bus *cpu_bus)
+ 
+        /* Print processor name */
+        fill_processor_name(processor_name);
++
+        printk(BIOS_INFO, "CPU: %s.\n", processor_name);
+ 
+        /* Ensure the local APIC is enabled */
 
 9단계(유용한 것을 할수있는 수준까지 파기) - 관련 이슈1개처리.
-
+  mp_init함수 refactoring
+    https://review.coreboot.org/c/coreboot/+/93595
+   
 
 10단계(가르치기) - 내용정리
   알게된것
+    intel x86 architecrue에서의 SMP 초기화 과정 detail.
+    coreboot x86 SMP초기화 로직 detail.
   코멘트
+    SMP동작과 초기화관련하여 detail한 내용을 알 수 있어서 좋은 기회였다.
