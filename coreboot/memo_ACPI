@@ -1,0 +1,85 @@
+next : 7단계
+         아래문서 바탕으로 ASL, AML, ACPI내용 좀 더 정리하기~(ACPI description table구조를 좀 더 파악/정리 ㄱㄱ)
+         Advanced Configuration and Power Interface (ACPI) Specification(https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf)
+*1-10단계학습법 적용
+*참고.
+  1-6단계, 목표, 계획, 학습데이터 모으는 단계
+  7단계(대충 사용 수준까지)
+  8단계(이것저것해보기)
+  9단계(유용한 것을 할수있는 수준까지 파기)
+  10단계(가르치기)
+
+주제 : coreboot 오픈소스 분석 - SMBIOS 처리 로직 분석
+학습이유
+  coreboot 오픈소스 분석
+    low-level 지식 향상
+    오픈소스 프로젝트 참여
+    => low-level 커리어 up!
+
+학습목표
+  ACPI 개념
+  ASL / AML 개념
+  coreboot에서 어떻게 사용되는 지 개념
+    
+학습자료
+  coreboot 공식홈페이지 doc(https://doc.coreboot.org/getting_started/index.html)
+  coreboot source code
+
+학습계획
+  milestone1. ACPI, ASL/AML, coreboot에서 어떻게 사용되는 지 개념을 확인한다.
+  
+=======================
+milestone1. ACPI, ASL/AML, coreboot에서 어떻게 사용되는 지 개념을 확인한다.
+
+7단계(대충 사용 수준까지) - ACPI, ASL/ADL개념, coreboot 어떻게 사용되는지 개념확인
+ACPI란? (개념만)
+  Advanced Configuration and Power Interface
+  to establish industry common interfaces enabling robust operating system (OS)-directed motherboard device configuration and power management of both devices and entire systems.
+  ACPI is the key element in Operating System-directed configuration and Power Management(OSPM).
+  쉽게말하면, BIOS가아닌 OS가 직접 system(H/W)을 configuration, power management를 하기위한 interface.
+
+ASL/AML이란?(개념 + 기본문법 + 실제어떻게 쓰이는지)
+  ASL
+    ACPI Source Language.
+    compile하여 AML bytecode가 됨. ASL -(compile)-> AML
+
+  AML
+    ACPI Machine Language
+    ACPI 기능(Definition Block)을 기술한 bytecode
+    ACPI tables에 저장됨.
+    ACPI를 사용하는 system이 AML bytecode interpreter를 가지고 있어야만 함. 
+    interpreter 구현 reference는 ACPICA(ACPI Component Architecture)에의해 제공됨
+
+  Definition Block
+    AML로 기술된 데이터.
+    DSDT(Differentiated System Description Table), SSDT(Secondary System Description Table)에 포함되어있음
+
+  DSDT(Differentiated System Description Table)
+    ACPI description table중 하나
+    entry로 Defnition Block을 포함    
+
+  SSDT(Secondary System Description Table)
+    ACPI description table중 하나
+    entry로 Defnition Block을 포함
+
+  DSDT vs SSDT
+    둘 다 ACPI namespace를 구성하는 AML 테이블이고, 
+    가장 큰 구조적 차이는 DSDT는 FADT를 통해 지정되는 메인 테이블이고 
+   SSDT는 여러 개의 추가 테이블로 로드된다는 것    
+
+참고.
+ ACPI Wikipedia
+ Advanced Configuration and Power Interface (ACPI) Specification(https://uefi.org/sites/default/files/resources/ACPI_Spec_6.6.pdf)
+
+그럼 coreboot에서는 어떻게 사용되는지?
+
+8단계 - 7단계 부족 분 분석
+
+    
+9단계(유용한 것을 할수있는 수준까지 파기) - ACPI 관련 이슈 1개 처리
+
+
+10단계(가르치기) - 내용정리
+알게된것
+코멘트
+

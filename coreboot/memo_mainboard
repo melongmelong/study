@@ -1,4 +1,4 @@
-next : 7단계 ㄱㄱ. 남들 어떻게 했는지 gerrit참고해서 mainboard어케추가하는 지 확인시도 ㄱㄱ..(정모르겠으면 8단계넘어가자...)
+next : 완료
 
 *1-10단계학습법 적용
 *참고.
@@ -82,13 +82,115 @@ $(top)/build/bootblock/mainboard/emulation/qemu-i440fx
 $(top)/build/verstage/mainboard/emulation/qemu-i440fx
 $(top)/build/romstage/mainboard/emulation/qemu-i440fx
 
-8단계(이것저것해보기) - 
-cmos.default, cmos.layout관계 파기.
-$(top)/build/mainboard/emulation/qemu-i440fx 의 cbfs*파일정체???? 어떻게 생성되나????
-ACPI/ASL 파기(?)
+mainboard에 coreboot포팅(=추가)방법.
+  요점
+    빌드시스템에추가 : Kconfig, Makefile.mk
+    각 stage에서, 필요한 weak symbol을 정의하는 로직 구현. : *.c. grep __weak 으로 코드베이스 검색하면 함수들 확인 가능.
+    devicetree 구성. : devicetree.cb, 
+    ACPI 구성. : *.asl
+    이 외 하드웨어초기화로직(ex gpio), struct chip_operations 같은 구조체 등도 연결하는 작업이 필요.
+  참고. mainboard 포팅 편의를 위한 tool도 존재하는 것으로 보임 : $(top)/util/autoport
+  
+8단계(이것저것해보기) - 아래 잘 몰랐던 부분도 추가확인.
 
-9단계(유용한 것을 할수있는 수준까지 파기) - 관련 이슈1개처리.  
+mainboard추가 프로세스 확인을 위한, 기존 mainboard관련 코드 샘플링.
+결론 : 메 바 베(mainboard by mainboard)라서, 기본적인 틀이랑 구현된 코드 기반으로 잘 구현해야할 듯;;
+$(top)/src/mainboard/intel/apollolake_rvp
+  Kconfg / Kconfig.name
+  Makefile.mk
+  board_info.txt
+  devicetree.cb
+  dsdt.asl
+  gpio.h
+  bootblock.c
+    bootblock_mainboard_early_init()
+  romstage.c
+    mainboard_memory_init_params()
+
+$(top)/src/mainboard/intel/coffeelake_rvp
+  Kconfig/Kconfig.name
+  Makefile.mk
+  board_info.txt
+  dsdt.asl
+  bootblock.c
+    bootblock_mainboard_early_init()
+  chromeos.c
+  memory.c
+  mainboard.c
+    struct chip_operations mainboard_ops
+  variants/
+    baseboard/
+      Makefile.mk
+      devicetree.cb
+      gpio.c
+      nhlt.c
+
+$(top)/src/mainboard/amd/bilby
+  Kconfig/Kconfig.name
+  Makefile.mk
+  board_info.txt
+  dsdt.asl
+  devicetree.cb
+  bootblock.c
+    bootblock_mainboard_early_init()
+  early_gpio.c
+  gpio.h/gpio.c
+  hda_verb.c
+  mainboard.h/mainboard.c
+    struct chip_operations mainboard_ops
+  port_descriptors.c
+  romstage.c
+  
+cmos.default, cmos.layout관계 파기.
+  딱히 없어보인다. 일단 skip...
+
+$(top)/build/mainboard/emulation/qemu-i440fx 의 cbfs*파일정체???? 어떻게 생성되나????
+  make -p 1>$(path/to/log)로 빌드하면 path/to/log에 빌드룰 어떤게 실행되는 지 확인 가능. 그걸로 확인함.
+  2가지종류가 생성됨
+  - coreboot config 헤더
+    build/mainboard/emulation/qemu-i440fx/cbfs-file.ioMhTt.out: /home/knw/Desktop/Study/coreboot/coreboot/src/coreboot/.config build/build.h build/util/kconfig/conf
+    $(top)/Makefile.mk의 cbfs-files-processor-config 룰에 의해 생성
+    $(top)/Makefile.mk의 'config-file := $(DOTCONFIG):config'에서 cbfs-files-handler의 tmp-cbfs-method를 정의(config)
+
+  - cbfs_header
+    build/mainboard/emulation/qemu-i440fx/cbfs-file.voo0oZ.out: src/lib/cbfs_master_header.c build/build.h build/fmap_config.h build/config.h
+    $(top)/Makefile.mk의 cbfs-files-processor-struct 룰에 의해 생성
+  둘다 cbfs에 들어감.
+    $(top)/src/lib/Makefile.mk의 'cbfs_master_header-file := cbfs_master_header.c:struct'에서 cbfs-files-handler의 tmp-cbfs-method를 정의(struct)
+
+   - 참고. coreboot Makefile에서의 cbfs-files 조작
+     cbfs-files-y 변수에 file추가후 아래 변수들 셋팅됨.
+       $(file)-file :=
+       $(file)-type :=
+       $(file)-postion :=
+     이후 $(top)/Makefile.mk의 cbfs-files-handler에서 위 변수값을 참조하여 handler / 변수 등록.
+
+    knw@knw-System-Product-Name:~/Desktop/Study/coreboot/coreboot/src/coreboot$ ./build/cbfstool ./build/coreboot.rom print
+    FMAP REGION: COREBOOT
+    Name                           Offset     Type           Size   Comp
+    cbfs_master_header             0x0        cbfs header        32 none                       ====> 이거
+    fallback/romstage              0x80       stage           19152 none
+    fallback/ramstage              0x4bc0     stage           62779 LZMA (126640 decompressed)
+    config                         0x14180    raw              2156 LZMA (6474 decompressed)   ====> 이거
+    revision                       0x14a40    raw               773 none
+    build_info                     0x14d80    raw               114 none
+    fallback/dsdt.aml              0x14e40    raw              4073 none
+    cmos_layout.bin                0x15e80    cmos_layout       640 none
+    fallback/postcar               0x16140    stage           20328 none
+    fallback/payload               0x1b100    simple elf      44131 none
+    (empty)                        0x25dc0    null          4018660 none
+    bootblock                      0x3fafc0   bootblock       16384 none
+  
+ACPI/ASL 파기(?) *이건안하는 게 맞다.
+
+9단계(유용한 것을 할수있는 수준까지 파기) - qemu-i440fx 디버그로그찍어서 동작 확인 + qemu-i440fx 매인보드 로직 리팩토링같은걸로 commit
+디버그로그찍었는데 특별한 insight는 얻을 수 없음...(그냥 호출되야할 때되면 호출됨...)
+https://review.coreboot.org/c/coreboot/+/94842
 
 10단계(가르치기) - 내용정리
   알게된것
+    mainboard추가는 정답이없다. 여기저기 필요한 부분의 로직을 적절히 제어한다.
+    포팅 제일 좋은 시작점은, 가장 비슷한 mainboard 또는 tool(autotool)이다.
   코멘트
+    mainboard는 어렵다.
+    더 정진합시다 아직 갈길이 멀다.

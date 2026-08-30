@@ -10,6 +10,7 @@ interrupt
 kernel utility functions(ex 자료구조, 락프리미티브들, etc)
 scheduleing
   do_idle부터 하나씩 해나가면 될 듯?
+  task가 어떻게 실행되어지냐..(cpuhp, swapper...가 어케 실행되냐?)
 memory management
 SMP관련 내용(?)
   pause_on_oops동작방식(do_oops_enter_exit function)

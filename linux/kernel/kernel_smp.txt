@@ -1,4 +1,4 @@
-next : 8단계 ㄱㄱ (cpumask 제어 매크로)
+next : 완료
 
 *1-10단계학습법 적용
 *참고.
@@ -388,20 +388,276 @@ line 398-404
       __cpu_active_mask
       __cpu_dying_mask
     cpumask 제어 매크로
-      for_each_possible_cpu, for_each_present_cpus
-      cpu_online
+      for_possible_cpu, for_each_present_cpus, for_each_online_cpu
+        각 cpumask종류 별 해당 cpu bit가 set된 cpu를 순회(by for_each_cpu macro)
+      cpu_online / cpu_possible / cpu_present / cpu_active / cpu_dying
+        각 cpumask종류 별 해당 cpu bit가 set(=해당case에속한다)되었는 지 체크(by test_bit macro)
 
   per_cpu
-    this_cpu_read
+    DEFINE_PER_CPU
+      .data..percpu section에 해당 변수를 정의.
+    DECLARE_PER_CPU
+      DEFINE_PER_CPU로 정의한 변수에 대해 선언.
+      쉽게생각하면 extern을 붙인다.
+    this_cpu_read / this_cpu_write
+      현재CPU(=this_cpu_read/this_cpu_write를 실행하는)의 percpu variable을/로 read/write한다.
+      x86의 경우 gs register가 percpu변수의 기준offset값.
+      개념적으로는 어쨋든 base offset값 기준으로 percpu변수에 접근함.
 
   smp_processor_id
+    현재 프로세서의 id를 의미.
+    percpu variable임. 그러므로, 결국 percpu operator(ex. this_cpu_read)로 접근한다.
+    setup_per_cpu_areas함수에의해 초기화됨. (해당 함수는 start_kernel()에서 호출함)
 
 관련개념
   idle thread
+    swapper/%d 이름을 가지는 kernel thread
   hotplug thread
+    cpuhp/%d 이름을 가지는 kernel thread
 
 9단계 *목표 : 코드레벨에서 처리(ex. contribution)
+  분석한 코드에 자체적인 디버그로그 남겨서 흐름확인(5.15.175 vanilla로하자). contribution은 할만한게 확인안되서 포기(coreboot처럼 사소한 리팩토링은 accept되지않음. 대신 실제 submit하지말고 연습이나 해봅시다.)
+  분석한 로직 순서대로 디버그로그 남는 것으로 확인.
+[    0.048810] smp: Bringing up secondary CPUs ...                           // smp_init() 시작
+[    0.048810] knwtest : bringup_nonboot_cpus, cpu:0                         // bringup_nonboot_cpus()에서 cpu core별 loop수행
+[    0.048810] knwtest : bringup_nonboot_cpus, cpu:1
+[    0.048810] knwtest : cpu_up
+[    0.048810] knwtest : _cpu_up
+[    0.048810] knwtest : cpuhp_up_callbacks
+[    0.048810] knwtest : cpuhp_invoke_callback_range
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:1
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:2
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:33
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:40
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:41
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:43
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:46
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:47
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:50
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:62
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:68
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : __cpuhp_invoke_callback_range, state:91
+[    0.048810] knwtest : cpuhp_invoke_callback
+[    0.048810] knwtest : bringup_cpu                                                    
+[    0.048810] smpboot: knwtest : native_cpu_up
+[    0.048810] x86: Booting SMP configuration:
+[    0.048810] .... node  #0, CPUs:      #1
+[    0.048810] smpboot: knwtest : do_boot_cpu, initial_code:85ba2a61 start_ip:9a000    // BSP가 AP를 깨움.
+[    0.002030] smpboot: knwtest : start_secondary AP:1                                 // AP실행됨
+[    0.002030] smpboot: CPU 1 Converting physical 0 to logical die 1
+[    0.002030] knwtest : __cpuhp_invoke_callback_range, state:94
+[    0.002030] knwtest : cpuhp_invoke_callback
+[    0.108813] knwtest : cpu_startup_entry start do_idle AP:0                          // BSP do_idle loop
+[    0.108814] knwtest : cpu_startup_entry start do_idle AP:1                          // AP do_idle loop
+[    0.108814] knwtest : cpuhp_invoke_callback
+[    0.108814] knwtest : cpuhp_invoke_callback
+[    0.108815] knwtest : cpuhp_invoke_callback
+[    0.108815] knwtest : cpuhp_invoke_callback
+[    0.108825] knwtest : cpuhp_invoke_callback
+[    0.108825] knwtest : cpuhp_invoke_callback
+[    0.108825] knwtest : cpuhp_invoke_callback
+[    0.108825] knwtest : cpuhp_invoke_callback
+[    0.108825] knwtest : cpuhp_invoke_callback
+[    0.108825] knwtest : bringup_nonboot_cpus, cpu:2                                  // bringup_nonboot_cpus()에서 cpu core별 loop수행
+[    0.108825] knwtest : cpu_up
+[    0.108825] knwtest : _cpu_up
+[    0.108825] knwtest : cpuhp_up_callbacks
+[    0.108825] knwtest : cpuhp_invoke_callback_range
+[    0.108825] knwtest : __cpuhp_invoke_callback_range, state:1
+[    0.108825] knwtest : cpuhp_invoke_callback
+[    0.108850] knwtest : __cpuhp_invoke_callback_range, state:2
+[    0.108850] knwtest : cpuhp_invoke_callback
+[    0.108851] knwtest : __cpuhp_invoke_callback_range, state:33
+[    0.108851] knwtest : cpuhp_invoke_callback
+[    0.108852] knwtest : __cpuhp_invoke_callback_range, state:40
+[    0.108852] knwtest : cpuhp_invoke_callback
+[    0.108852] knwtest : __cpuhp_invoke_callback_range, state:41
+[    0.108853] knwtest : cpuhp_invoke_callback
+[    0.108877] knwtest : __cpuhp_invoke_callback_range, state:43
+[    0.108877] knwtest : cpuhp_invoke_callback
+[    0.108878] knwtest : __cpuhp_invoke_callback_range, state:46
+[    0.108878] knwtest : cpuhp_invoke_callback
+[    0.108879] knwtest : __cpuhp_invoke_callback_range, state:47
+[    0.108879] knwtest : cpuhp_invoke_callback
+[    0.108880] knwtest : __cpuhp_invoke_callback_range, state:50
+[    0.108880] knwtest : cpuhp_invoke_callback
+[    0.108880] knwtest : __cpuhp_invoke_callback_range, state:62
+[    0.108882] knwtest : __cpuhp_invoke_callback_range, state:68
+[    0.108882] knwtest : cpuhp_invoke_callback
+[    0.108882] knwtest : __cpuhp_invoke_callback_range, state:91
+[    0.108883] knwtest : cpuhp_invoke_callback
+[    0.108883] knwtest : bringup_cpu
+[    0.108883] smpboot: knwtest : native_cpu_up
+[    0.108893]  #2
+[    0.108894] smpboot: knwtest : do_boot_cpu, initial_code:85ba2a61 start_ip:9a000 // BSP가 AP를 깨움.
+[    0.002030] smpboot: knwtest : start_secondary AP:2                              // AP수행
+[    0.002030] smpboot: CPU 2 Converting physical 0 to logical die 2
+[    0.002030] knwtest : __cpuhp_invoke_callback_range, state:94
+[    0.002030] knwtest : cpuhp_invoke_callback
+[    0.169815] knwtest : cpu_startup_entry start do_idle AP:2                       // AP do_idle loop
+[    0.169815] knwtest : cpuhp_invoke_callback
+[    0.169815] knwtest : cpuhp_invoke_callback
+[    0.169815] knwtest : cpuhp_invoke_callback
+[    0.169815] knwtest : cpuhp_invoke_callback
+[    0.169817] knwtest : cpuhp_invoke_callback
+[    0.169817] knwtest : cpuhp_invoke_callback
+[    0.169818] knwtest : cpuhp_invoke_callback
+[    0.169818] knwtest : cpuhp_invoke_callback
+[    0.169819] knwtest : cpuhp_invoke_callback
+[    0.169914] smp: Brought up 1 node, 3 CPUs                                       //smp_init() 종료
+
+command
+메일생성
+git format-patch HEAD^1
+
+git sendemail 설정
+git config --global sendemail.smtpServer smtp.naver.com
+git config --global sendemail.smtpServerPort 587
+git config --global sendemail.smtpEncryption tls
+git config --global sendemail.smtpUser "knw0507@naver.com"
+git config --global sendemail.from "knw0507@naver.com"
+
+naver도설정필요(LLM에 물어물어하면 됨 크게 어렵진 않음...)
+
+테스트용으로 전송
+git send-email --to knw0507@naver.com ./0001-add-debuglog-for-debugging.patch
+
+수신한메일내용
+From: knwtest <knwtest@test.com>
+
+Add debuglog.
+This is for test
+---
+arch/x86/kernel/smpboot.c | 4 ++++
+kernel/cpu.c              | 8 ++++++++
+kernel/sched/idle.c       | 1 +
+3 files changed, 13 insertions(+)
+
+diff --git a/arch/x86/kernel/smpboot.c b/arch/x86/kernel/smpboot.c
+index 714f66aa0338..5b1d7941eb21 100644
+--- a/arch/x86/kernel/smpboot.c
++++ b/arch/x86/kernel/smpboot.c
+@@ -231,6 +231,7 @@ static int enable_start_cpu0;
+ */
+static void notrace start_secondary(void *unused)
+{
++ pr_info("knwtest : start_secondary AP:%d\n", smp_processor_id());
+/*
+* Don't put *anything* except direct CPU state initialization
+* before cpu_init(), SMP booting is too fragile that we want to
+@@ -1060,6 +1061,8 @@ static int do_boot_cpu(int apicid, int cpu, struct task_struct *idle,
+
+/* So we see what's up */
+announce_cpu(cpu, apicid);
++
++ pr_info("knwtest : do_boot_cpu, initial_code:%x start_ip:%x\n", initial_code, start_ip);
+
+/*
+* This grunge runs the startup process for
+@@ -1154,6 +1157,7 @@ int native_cpu_up(unsigned int cpu, struct task_struct *tidle)
+
+lockdep_assert_irqs_enabled();
+
++ pr_info("knwtest : native_cpu_up\n");
+pr_debug("++++++++++++++++++++=_---CPU UP  %u\n", cpu);
+
+if (apicid == BAD_APICID ||
+diff --git a/kernel/cpu.c b/kernel/cpu.c
+index acf16e342651..5b32f388b8c8 100644
+--- a/kernel/cpu.c
++++ b/kernel/cpu.c
+@@ -188,6 +188,7 @@ static int cpuhp_invoke_callback(unsigned int cpu, enum cpuhp_state state,
+cb = bringup ? step->startup.single : step->teardown.single;
+
+trace_cpuhp_enter(cpu, st->target, state, cb);
++ pr_info("knwtest : cpuhp_invoke_callback\n");
+ret = cb(cpu);
+trace_cpuhp_exit(cpu, st->state, state, ret);
+return ret;
+@@ -590,6 +591,7 @@ static int bringup_cpu(unsigned int cpu)
+struct task_struct *idle = idle_thread_get(cpu);
+int ret;
+
++ pr_info("knwtest : bringup_cpu\n");
+/*
+* Reset stale stack state from the last time this CPU was online.
+*/
+@@ -674,6 +676,7 @@ static int __cpuhp_invoke_callback_range(bool bringup,
+while (cpuhp_next_state(bringup, &state, st, target)) {
+int err;
+
++ pr_info("knwtest : __cpuhp_invoke_callback_range, state:%d", state);
+err = cpuhp_invoke_callback(cpu, state, bringup, NULL, NULL);
+if (!err)
+continue;
+@@ -698,6 +701,7 @@ static inline int cpuhp_invoke_callback_range(bool bringup,
+     struct cpuhp_cpu_state *st,
+     enum cpuhp_state target)
+{
++ pr_info("knwtest : cpuhp_invoke_callback_range\n");
+return __cpuhp_invoke_callback_range(bringup, cpu, st, target, false);
+}
+
+@@ -729,6 +733,7 @@ static int cpuhp_up_callbacks(unsigned int cpu, struct cpuhp_cpu_state *st,
+enum cpuhp_state prev_state = st->state;
+int ret = 0;
+
++ pr_info("knwtest : cpuhp_up_callbacks\n");
+ret = cpuhp_invoke_callback_range(true, cpu, st, target);
+if (ret) {
+pr_debug("CPU UP failed (%d) CPU %u state %s (%d)\n",
+@@ -1396,6 +1401,7 @@ static int _cpu_up(unsigned int cpu, int tasks_frozen, enum cpuhp_state target)
+* CPUHP_BRINGUP_CPU. After that the AP hotplug thread is
+* responsible for bringing it up to the target state.
+*/
++ pr_info("knwtest : _cpu_up\n");
+target = min((int)target, CPUHP_BRINGUP_CPU);
+ret = cpuhp_up_callbacks(cpu, st, target);
+out:
+@@ -1433,6 +1439,7 @@ static int cpu_up(unsigned int cpu, enum cpuhp_state target)
+goto out;
+}
+
++ pr_info("knwtest : cpu_up\n");
+err = _cpu_up(cpu, 0, target);
+out:
+cpu_maps_update_done();
+@@ -1496,6 +1503,7 @@ void bringup_nonboot_cpus(unsigned int setup_max_cpus)
+unsigned int cpu;
+
+for_each_present_cpu(cpu) {
++ pr_info("knwtest : bringup_nonboot_cpus, cpu:%d\n", cpu);
+if (num_online_cpus() >= setup_max_cpus)
+break;
+if (!cpu_online(cpu))
+diff --git a/kernel/sched/idle.c b/kernel/sched/idle.c
+index 499a3e286cd0..32c4204598b0 100644
+--- a/kernel/sched/idle.c
++++ b/kernel/sched/idle.c
+@@ -399,6 +399,7 @@ void cpu_startup_entry(enum cpuhp_state state)
+{
+arch_cpu_idle_prepare();
+cpuhp_online_idle(state);
++ printk("knwtest : cpu_startup_entry start do_idle AP:%d\n", smp_processor_id());
+while (1)
+do_idle();
+}
+--
+2.25.1
 
 10단계 *목표 : 내용정리
   알게된 것
+    linux kernel에서의 x86 SMP 셋업 과정의 주요 흐름.
+    percpu 변수 의미.(내부구현은 파악하지못함)
   코멘트
+    계속 열심히 합시다. 포기란 없다.

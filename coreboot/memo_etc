@@ -36,6 +36,7 @@ SECTIONS {
 
 TODO list
   ACPI *코드분석하다 나온건 아니고, 많이 접한 용어라서 추가함.
+    ASL/AML(dsdt.asl)
   SMBIOS로직분석
   하드웨어로직 상세분석
     cpu bring up 상세분석
